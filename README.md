@@ -107,6 +107,17 @@ sha256sum -c SHA256SUMS --ignore-missing
 ```
 On Windows (PowerShell): `Get-FileHash CaissaDesk-win-x64.zip -Algorithm SHA256` and compare with the value in `SHA256SUMS`.
 
+### In-App Updates
+CaissaDesk checks [GitHub Releases](https://github.com/duckarp/CaissaDesk/releases) for newer versions:
+
+- **When:** a few seconds after startup (if *Settings → Updates → Check for updates on startup* is on, at most every 6 hours so the anonymous GitHub API limit is respected), or whenever you click the version badge in the header or *Check Now* in Settings. When a newer release exists an **Update to vX.Y.Z** pill appears in the header.
+- **What you see:** release title, date, size, the release notes and a changelog grouped by category, built from the commits between your version's tag and the new one.
+- **How it installs:** the archive for your system (`CaissaDesk-linux-x64.tar.gz` or `CaissaDesk-win-x64.zip`) and the release's `SHA256SUMS` are downloaded over HTTPS from GitHub only. The archive's SHA-256 must match `SHA256SUMS`; otherwise it is deleted and nothing is installed. The single executable is extracted into a private per-update folder (`~/.local/share/CaissaDesk/updates` / `%LOCALAPPDATA%\CaissaDesk\updates`), rejecting any other entry, link or path traversal. On *Restart & update* CaissaDesk closes, a small helper script replaces the executable (the previous one is kept as `CaissaDesk.bak` / `CaissaDesk.exe.bak` and restored if the swap fails) and starts the new version. A log is kept in `updates/update.log`.
+- **When it cannot install in place** (development builds run with `dotnet run`, AppImage, a read-only install folder such as `/usr/bin` or `Program Files`, unsupported OS/CPU, or a release without `SHA256SUMS`), the dialog offers to open the release page instead.
+- *Settings → Updates* also lets you include pre-releases or point the updater at another `owner/repo` (e.g. a fork).
+
+**Releases must be tagged `vX.Y.Z`** (semantic versioning, e.g. `v1.2.0`, or `v1.3.0-beta.1` for pre-releases marked as such on GitHub). Pushing the tag runs `.github/workflows/release.yml`, which builds with `-p:Version=X.Y.Z` and attaches the two archives plus `SHA256SUMS`; the updater compares that version with the running one, so tags that are not semantic versions, draft releases and releases without these exact asset names are not offered for in-app installation.
+
 ---
 
 ## 🛠️ Building from Source
