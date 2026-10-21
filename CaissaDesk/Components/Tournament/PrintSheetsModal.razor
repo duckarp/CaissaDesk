@@ -5,10 +5,14 @@
 @using CaissaDesk.Components.Icons
 @using CaissaDesk.Localization
 @using CaissaDesk.Data
+@using CaissaDesk.Core.Standings
+@using CaissaDesk.Core.Notifications
 @inject ITiebreakService TiebreakService
 @inject IJSRuntime JS
 @inject ILocalizationService Loc
 @inject IFileExportService FileExport
+@inject INotificationService Notifications
+@inject ILogger<PrintSheetsModal> Logger
 @implements IDisposable
 
 @if (IsOpen && Tournament != null)
@@ -334,7 +338,7 @@
 											}
 											else
 											{
-												string cellRes = GetHeadToHeadResult(pRow.Id, pCol.Id);
+												string cellRes = CrossTable.GetHeadToHeadResult(Tournament, pRow.Id, pCol.Id);
 												<td style="text-align: center; font-family: monospace; font-weight: 700; font-size: 9.5pt;">@cellRes</td>
 											}
 										}
@@ -487,36 +491,14 @@
 	private async Task DownloadTrfAsync()
 	{
 		if (Tournament == null) return;
-		string trfContent = TrfHandler.GenerateTrf(Tournament);
-		string safeName = string.Join("_", Tournament.Name.Split(Path.GetInvalidFileNameChars())).Replace(" ", "_");
-		string filename = $"{safeName}_{DateTime.Now:yyyyMMdd}.trf";
-		await FileExport.SaveTextFileAsync(
-			Loc["Export_TrfDialogTitle"],
-			filename,
-			trfContent,
-			(Loc["Export_TrfFilterName"], new[] { ".trf" }));
-	}
-
-	private string GetHeadToHeadResult(string p1Id, string p2Id)
-	{
-		if (Tournament == null) return "-";
-		foreach (var round in Tournament.Rounds)
+		try
 		{
-			var match = round.Pairings.FirstOrDefault(p =>
-				(p.WhitePlayerId == p1Id && p.BlackPlayerId == p2Id) ||
-				(p.WhitePlayerId == p2Id && p.BlackPlayerId == p1Id));
-
-			if (match == null || match.Result == MatchResult.NotPlayed) continue;
-			var (wPts, bPts) = match.Result.ToPoints();
-			if (match.WhitePlayerId == p1Id)
-			{
-				return wPts switch { 1.0 => "1", 0.5 => "½", 0.0 => "0", _ => "-" };
-			}
-			else
-			{
-				return bPts switch { 1.0 => "1", 0.5 => "½", 0.0 => "0", _ => "-" };
-			}
+			await FileExport.SaveTrfAsync(Tournament, Loc);
 		}
-		return "-";
+		catch (Exception ex)
+		{
+			Logger.LogError(ex, "TRF export of {Tournament} failed.", Tournament.Name);
+			Notifications.ShowError(Loc["Toast_ActionFailed", ex.Message]);
+		}
 	}
 }

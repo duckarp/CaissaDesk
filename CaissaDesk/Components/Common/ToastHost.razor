@@ -1,0 +1,43 @@
+@namespace CaissaDesk.Components.Common
+@using CaissaDesk.Core.Notifications
+@using CaissaDesk.Localization
+@inject INotificationService Notifications
+@inject ILocalizationService Loc
+@implements IDisposable
+
+<div role="status" aria-live="polite" style="position: fixed; right: 16px; bottom: 16px; z-index: 2000; display: flex; flex-direction: column; gap: 8px; max-width: min(420px, calc(100vw - 32px)); pointer-events: none;">
+	@foreach (var n in Notifications.Notifications)
+	{
+		var (border, color, icon) = Style(n.Kind);
+		<div @key="n.Id" class="panel-card" style="pointer-events: auto; display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; background: var(--bg-surface-elevated); border: 1px solid @border; box-shadow: var(--shadow-lg); font-size: 13px; color: var(--text-primary);">
+			<span style="color: @color; margin-top: 1px; display: flex;"><AppIcon Name="@icon" Size="15" /></span>
+			<span style="flex: 1; line-height: 1.4; word-break: break-word;">@n.Message</span>
+			<button type="button" class="modal-close-btn" style="width: 22px; height: 22px; color: var(--text-secondary);" title="@Loc["Common_Dismiss"]" @onclick="() => Notifications.Dismiss(n.Id)">
+				<AppIcon Name="x" Size="12" />
+			</button>
+		</div>
+	}
+</div>
+
+@code {
+	protected override void OnInitialized()
+	{
+		Notifications.Changed += HandleChanged;
+	}
+
+	// Raised from timer threads as well: marshal onto the renderer
+	private void HandleChanged() => _ = InvokeAsync(StateHasChanged);
+
+	private static (string Border, string Color, string Icon) Style(NotificationKind kind) => kind switch
+	{
+		NotificationKind.Error => ("var(--accent-danger)", "var(--accent-danger)", "alert"),
+		NotificationKind.Warning => ("var(--accent-warning)", "var(--accent-warning)", "warning"),
+		NotificationKind.Success => ("var(--accent-success)", "var(--accent-success)", "check"),
+		_ => ("var(--border-subtle)", "var(--accent-info-hover)", "lightbulb")
+	};
+
+	public void Dispose()
+	{
+		Notifications.Changed -= HandleChanged;
+	}
+}

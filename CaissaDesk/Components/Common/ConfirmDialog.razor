@@ -1,0 +1,34 @@
+@namespace CaissaDesk.Components.Common
+@using CaissaDesk.Core.Notifications
+@using CaissaDesk.Localization
+@inject INotificationService Notifications
+@inject ILocalizationService Loc
+@inject ILogger<ConfirmDialog> Logger
+
+<ConfirmModal IsOpen="State.IsOpen"
+			  Title="@State.Title"
+			  Message="@State.Message"
+			  Details="@State.Details"
+			  ConfirmText="@State.ConfirmText"
+			  HeaderIcon="@State.HeaderIcon"
+			  ConfirmIcon="@State.ConfirmIcon"
+			  IsDestructive="@State.IsDestructive"
+			  OnConfirm="HandleConfirmAsync"
+			  OnCancel="State.Cancel" />
+
+@code {
+	[Parameter, EditorRequired] public ConfirmDialogState State { get; set; } = default!;
+
+	private async Task HandleConfirmAsync()
+	{
+		try
+		{
+			await State.ConfirmAsync();
+		}
+		catch (Exception ex)
+		{
+			Logger.LogError(ex, "Confirmed action \"{Title}\" failed.", State.Title);
+			Notifications.ShowError(Loc["Toast_ActionFailed", ex.Message]);
+		}
+	}
+}

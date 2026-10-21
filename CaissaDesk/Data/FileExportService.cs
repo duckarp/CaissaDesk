@@ -1,14 +1,18 @@
 using System.Text;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CaissaDesk.Data;
 
 public class FileExportService : IFileExportService
 {
     private readonly IAppWindowProvider _windowProvider;
+    private readonly ILogger<FileExportService> _logger;
 
-    public FileExportService(IAppWindowProvider windowProvider)
+    public FileExportService(IAppWindowProvider windowProvider, ILogger<FileExportService>? logger = null)
     {
         _windowProvider = windowProvider;
+        _logger = logger ?? NullLogger<FileExportService>.Instance;
     }
 
     public async Task<string?> SaveTextFileAsync(
@@ -30,7 +34,7 @@ public class FileExportService : IFileExportService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[FileExportService] Native save dialog error: {ex.Message}");
+            _logger.LogWarning(ex, "Native save dialog failed for {FileName}.", defaultFileName);
         }
 
         if (string.IsNullOrWhiteSpace(targetPath))

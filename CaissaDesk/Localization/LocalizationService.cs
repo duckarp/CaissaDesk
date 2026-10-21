@@ -592,6 +592,14 @@ public class LocalizationService : ILocalizationService
         ["Tiebreak_GamesWon"] = "Games Won over the Board (WON)",
         // Async pairing / engine self-test
         ["Pairings_Generating"] = "Pairing…",
+        // Error handling and notifications
+        ["Toast_SaveFailed"] = "Changes could not be saved: {0}",
+        ["Toast_ActionFailed"] = "The action failed: {0}",
+        ["Toast_LoadFailed"] = "Tournaments could not be loaded: {0}",
+        ["Toast_OpenLinkFailed"] = "Could not open {0} in the browser.",
+        ["Error_UnexpectedTitle"] = "Something went wrong",
+        ["Error_UnexpectedDesc"] = "An unexpected error interrupted this view. Your saved data is safe; the details were written to the log file.",
+        ["Error_Recover"] = "Reload view",
     };
 
     private static Dictionary<string, string> GetSlovakStrings() => new()
@@ -1022,5 +1030,13 @@ public class LocalizationService : ILocalizationService
         ["Tiebreak_GamesWon"] = "Výhry za šachovnicou (WON)",
         // Async pairing / engine self-test
         ["Pairings_Generating"] = "Párujem…",
+        // Error handling and notifications
+        ["Toast_SaveFailed"] = "Zmeny sa nepodarilo uložiť: {0}",
+        ["Toast_ActionFailed"] = "Akcia zlyhala: {0}",
+        ["Toast_LoadFailed"] = "Turnaje sa nepodarilo načítať: {0}",
+        ["Toast_OpenLinkFailed"] = "Odkaz {0} sa nepodarilo otvoriť v prehliadači.",
+        ["Error_UnexpectedTitle"] = "Niečo sa pokazilo",
+        ["Error_UnexpectedDesc"] = "Toto zobrazenie prerušila neočakávaná chyba. Uložené údaje sú v poriadku; podrobnosti sa zapísali do denníka.",
+        ["Error_Recover"] = "Znovu načítať zobrazenie",
     };
 }

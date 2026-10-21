@@ -1,6 +1,8 @@
 using System.Runtime.InteropServices;
 using Caissa.Shared.Tiebreak;
 using CaissaDesk.Components;
+using CaissaDesk.Core;
+using CaissaDesk.Core.Notifications;
 using CaissaDesk.Core.Arbiter;
 using CaissaDesk.Core.PairingEngine;
 using CaissaDesk.Core.Roster;
@@ -76,6 +78,8 @@ internal class Program
         appBuilder.Services.AddSingleton<IRoundGenerationService, RoundGenerationService>();
         appBuilder.Services.AddSingleton<IRosterService, RosterService>();
         appBuilder.Services.AddSingleton<IPlayerLookupService, PlayerLookupService>();
+        appBuilder.Services.AddSingleton<INotificationService, NotificationService>();
+        appBuilder.Services.AddSingleton<IExternalLinkService, ExternalLinkService>();
         appBuilder.Services.AddScoped<WorkspaceState>();
         appBuilder.Services.AddScoped<LocalizationService>(sp =>
             new LocalizationService(sp.GetRequiredService<IAppSettingsService>()));
