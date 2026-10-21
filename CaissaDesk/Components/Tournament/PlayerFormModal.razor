@@ -1,0 +1,244 @@
+@namespace CaissaDesk.Components.Tournament
+@using Caissa.Shared.Models
+@using CaissaDesk.Core.Roster
+@using CaissaDesk.Data
+@using CaissaDesk.Localization
+@inject IPlayerLookupService PlayerLookup
+@inject ILocalizationService Loc
+
+@* Register (Player == null) or edit player form, with the FIDE / national database auto-lookup *@
+@if (IsOpen && _form != null)
+{
+	<div class="modal-overlay" @onclick="Close">
+		<div class="modal-content" style="max-width: 620px;" @onclick:stopPropagation="true">
+			<div class="modal-header">
+				<div class="modal-title">
+					@if (IsEdit)
+					{
+						<span style="color: var(--brand-gold);"><AppIcon Name="edit" Size="18" /></span>
+						<span>@Loc["Roster_EditPlayer"] - @Player!.FullName</span>
+					}
+					else
+					{
+						<span style="color: var(--brand-gold);"><AppIcon Name="users" Size="18" /></span>
+						<span>@Loc["Roster_RegisterPlayer"]</span>
+					}
+				</div>
+				<button class="modal-close-btn" @onclick="Close" type="button" title="@Loc["Common_Close"]">
+					<AppIcon Name="x" Size="15" />
+				</button>
+			</div>
+
+			<div class="modal-body">
+				<!-- Instant FIDE ID lookup tool -->
+				<div class="panel-card" style="margin-bottom: 16px; background-color: var(--bg-surface-elevated);">
+					<label class="form-label" style="display: flex; align-items: center; justify-content: space-between;">
+						<span>@Loc["Roster_FideAutoLookup"]</span>
+						@if (_isSearching)
+						{
+							<span style="color: var(--brand-gold); font-size: 11px;">@Loc["Roster_SearchingFide"]</span>
+						}
+					</label>
+					<div style="display: flex; gap: 8px;">
+						<input type="text" class="form-input" style="flex: 1;" placeholder="@Loc["Roster_FideLookupPrompt"]" @bind="_form.FideId" @bind:event="oninput" />
+						<button class="btn-secondary" @onclick="LookupAsync" disabled="@(_isSearching || !_form.CanLookup)">
+							<AppIcon Name="search" Size="13" />
+							<span>@Loc["Roster_Fetch"]</span>
+						</button>
+					</div>
+					@if (!string.IsNullOrEmpty(_lookupMessage))
+					{
+						<div style="color: @(_lookupIsError ? "var(--accent-danger-hover)" : "var(--accent-success)"); font-size: 11px; margin-top: 6px;">
+							@_lookupMessage
+						</div>
+					}
+				</div>
+
+				<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+					<div class="form-group">
+						<label class="form-label">@Loc["Common_LastName"] <span style="color: #ef4444;">*</span></label>
+						<input type="text" class="form-input" @bind="_form.LastName" placeholder="e.g. Kasparov" />
+					</div>
+					<div class="form-group">
+						<label class="form-label">@Loc["Common_FirstName"]</label>
+						<input type="text" class="form-input" @bind="_form.FirstName" placeholder="e.g. Garry" />
+					</div>
+				</div>
+
+				<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+					<div class="form-group">
+						<label class="form-label">@Loc["Common_Title"]</label>
+						<select class="form-select" @bind="_form.Title">
+							<option value="">None</option>
+							<option value="GM">GM (Grandmaster)</option>
+							<option value="IM">IM (International Master)</option>
+							<option value="FM">FM (FIDE Master)</option>
+							<option value="CM">CM (Candidate Master)</option>
+							<option value="WGM">WGM (Woman Grandmaster)</option>
+							<option value="WIM">WIM (Woman Int. Master)</option>
+							<option value="WFM">WFM (Woman FIDE Master)</option>
+							<option value="WCM">WCM (Woman Cand. Master)</option>
+							<option value="AGM">AGM (Arena Grandmaster)</option>
+							<option value="AIM">AIM (Arena Int. Master)</option>
+							<option value="AFM">AFM (Arena FIDE Master)</option>
+							<option value="ACM">ACM (Arena Cand. Master)</option>
+						</select>
+					</div>
+
+					<div class="form-group">
+						<label class="form-label">@Loc["Common_Federation"]</label>
+						<input type="text" class="form-input" @bind="_form.Federation" placeholder="e.g. SVK" maxlength="3" />
+					</div>
+				</div>
+
+				<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+					<div class="form-group">
+						<label class="form-label">@Loc["Roster_FideElo"]</label>
+						<input type="number" class="form-input" @bind="_form.FideRating" min="0" max="3000" />
+					</div>
+
+					<div class="form-group">
+						<label class="form-label">@Loc["Common_NationalRating"]</label>
+						<input type="number" class="form-input" @bind="_form.NationalRating" min="0" max="3000" />
+					</div>
+				</div>
+
+				<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+					<div class="form-group">
+						<label class="form-label">@Loc["Common_Club"]</label>
+						<input type="text" class="form-input" @bind="_form.Club" placeholder="e.g. ŠK Slovan Bratislava" />
+					</div>
+
+					<div class="form-group">
+						<label class="form-label">@Loc["Roster_BirthYear"]</label>
+						<input type="number" class="form-input" @bind="_form.BirthYear" min="1900" max="2026" />
+					</div>
+				</div>
+
+				<div style="display: grid; grid-template-columns: @(IsEdit ? "1fr 1fr 1fr" : "1fr 1fr"); gap: 12px;">
+					<div class="form-group">
+						<label class="form-label">@Loc["Common_Gender"]</label>
+						<select class="form-select" @bind="_form.Gender">
+							<option value="M">@Loc["Common_Male"]</option>
+							<option value="F">@Loc["Common_Female"]</option>
+						</select>
+					</div>
+
+					<div class="form-group">
+						<label class="form-label">@Loc["Common_NationalId"]</label>
+						<input type="text" class="form-input" @bind="_form.NationalId" placeholder="e.g. 12345" />
+					</div>
+
+					@if (IsEdit)
+					{
+						<div class="form-group">
+							<label class="form-label">@Loc["Common_Status"]</label>
+							<select class="form-select" @bind="_form.Status">
+								<option value="@PlayerStatus.Active">Active</option>
+								<option value="@PlayerStatus.Paused">Paused</option>
+								<option value="@PlayerStatus.Withdrawn">Withdrawn</option>
+							</select>
+						</div>
+					}
+				</div>
+			</div>
+
+			<div class="modal-footer">
+				<button class="btn-secondary" @onclick="Close">@Loc["Common_Cancel"]</button>
+				<button class="btn-primary" @onclick="SaveAsync" disabled="@(!_form.HasName)">
+					@if (IsEdit)
+					{
+						<AppIcon Name="save" Size="14" />
+						<span>@Loc["Roster_EditPlayerBtn"]</span>
+					}
+					else
+					{
+						<AppIcon Name="plus" Size="14" />
+						<span>@Loc["Roster_AddPlayerBtn"]</span>
+					}
+				</button>
+			</div>
+		</div>
+	</div>
+}
+
+@code {
+	[Parameter] public bool IsOpen { get; set; }
+
+	/// <summary>The player being edited, or null to register a new one.</summary>
+	[Parameter] public Player? Player { get; set; }
+
+	/// <summary>Supplies the default federation and the time control used to pick the FIDE rating list.</summary>
+	[Parameter] public Tournament? Tournament { get; set; }
+
+	[Parameter] public EventCallback OnClose { get; set; }
+
+	/// <summary>The validated form; the parent applies it, saves and closes the modal on success.</summary>
+	[Parameter] public EventCallback<PlayerFormModel> OnSave { get; set; }
+
+	private PlayerFormModel? _form;
+	private bool _wasOpen;
+	private Player? _loadedPlayer;
+	private bool _isSearching;
+	private string? _lookupMessage;
+	private bool _lookupIsError;
+
+	private bool IsEdit => Player != null;
+
+	protected override void OnParametersSet()
+	{
+		// Reset the form only when the modal opens or targets another player, never on a plain re-render
+		if (IsOpen && (!_wasOpen || !ReferenceEquals(Player, _loadedPlayer)))
+		{
+			_form = Player != null ? PlayerFormModel.FromPlayer(Player) : PlayerFormModel.ForNewPlayer(Tournament);
+			_lookupMessage = null;
+			_lookupIsError = false;
+		}
+
+		_wasOpen = IsOpen;
+		_loadedPlayer = IsOpen ? Player : null;
+	}
+
+	private async Task LookupAsync()
+	{
+		if (_form == null) return;
+		var form = _form;
+
+		if (!form.HasLookupQuery)
+		{
+			_lookupMessage = Loc["Roster_FideLookupEmptyQuery"];
+			_lookupIsError = true;
+			return;
+		}
+
+		_isSearching = true;
+		_lookupMessage = null;
+		_lookupIsError = false;
+
+		try
+		{
+			var outcome = await PlayerLookup.LookupIntoFormAsync(form, Tournament?.TimeControl);
+			(_lookupMessage, _lookupIsError) = outcome.Status switch
+			{
+				PlayerLookupStatus.Found => (Loc["Roster_FideLookupSuccess", outcome.MatchedName ?? ""], false),
+				PlayerLookupStatus.NotFound => (Loc["Roster_FideLookupNotFound"], true),
+				_ => ($"Lookup failed: {outcome.FailureMessage}", true)
+			};
+		}
+		finally
+		{
+			_isSearching = false;
+		}
+	}
+
+	private async Task SaveAsync()
+	{
+		if (_form == null || !_form.HasName) return;
+		await OnSave.InvokeAsync(_form);
+	}
+
+	private async Task Close()
+	{
+		await OnClose.InvokeAsync();
+	}
+}

@@ -1,0 +1,153 @@
+@namespace CaissaDesk.Components.Tournament
+@using Caissa.Shared.Models
+@using Caissa.Shared.Tiebreak
+@using CaissaDesk.Core.Standings
+@using CaissaDesk.Localization
+@inject ILocalizationService Loc
+
+@if (State.Tournament is { } tournament)
+{
+	<div style="display: flex; flex-direction: column; gap: 16px;">
+		<div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+			<div>
+				<h3 style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin: 0;">@Loc["Standings_Title"]</h3>
+				<div style="font-size: 12px; color: var(--text-secondary);">@Loc["Standings_Subtitle"]</div>
+			</div>
+
+			@if (tournament.System == TournamentSystem.RoundRobin)
+			{
+				<div style="display: flex; align-items: center; background-color: var(--bg-surface-elevated); padding: 3px; border-radius: 6px; border: 1px solid var(--border-subtle);">
+					<button class="@(!State.ShowCrossTable ? "workspace-tab tab-active" : "workspace-tab")" @onclick="() => State.ShowCrossTable = false">
+						@Loc["Standings_Leaderboard"]
+					</button>
+					<button class="@(State.ShowCrossTable ? "workspace-tab tab-active" : "workspace-tab")" @onclick="() => State.ShowCrossTable = true">
+						@Loc["Standings_CrossTable"]
+					</button>
+				</div>
+			}
+		</div>
+
+		@if (State.ShowCrossTable && tournament.System == TournamentSystem.RoundRobin)
+		{
+			var seeded = tournament.Players.OrderBy(p => p.StartRank).ToList();
+
+			<!-- Berger Cross-Table Matrix N x N -->
+			<div class="data-table-container">
+				<table class="data-table" style="table-layout: fixed;">
+					<thead>
+						<tr>
+							<th style="width: 40px; text-align: center;">#</th>
+							<th style="width: 180px;">@Loc["Common_Name"]</th>
+							@foreach (var p in seeded)
+							{
+								<th style="width: 36px; text-align: center; font-family: var(--font-mono);">@p.StartRank</th>
+							}
+							<th style="width: 55px; text-align: right;">@Loc["Common_Points"]</th>
+						</tr>
+					</thead>
+					<tbody>
+						@foreach (var pRow in seeded)
+						{
+							<tr>
+								<td style="text-align: center; font-weight: 700; color: var(--text-secondary); font-family: var(--font-mono);">
+									@pRow.StartRank
+								</td>
+								<td style="font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+									@pRow.FullName
+								</td>
+								@foreach (var pCol in seeded)
+								{
+									if (pRow.Id == pCol.Id)
+									{
+										<td style="text-align: center; background-color: var(--bg-surface-active); color: var(--text-muted); font-size: 11px;">✕</td>
+									}
+									else
+									{
+										string cellResult = CrossTable.GetHeadToHeadResult(tournament, pRow.Id, pCol.Id);
+										<td style="text-align: center; font-family: var(--font-mono); font-weight: 700; font-size: 12px; color: @GetCellColor(cellResult);">
+											@cellResult
+										</td>
+									}
+								}
+								<td style="text-align: right; font-weight: 800; color: var(--brand-gold); font-family: var(--font-mono);">
+									@State.Standings.GetPoints(tournament, pRow.Id).ToString("0.0")
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		}
+		else
+		{
+			<!-- Leaderboard Table with Dynamic FIDE Tiebreaks (cached; recomputed only when results change) -->
+			var standings = State.Standings.GetStandings(tournament);
+			var tiebreaksToShow = tournament.TiebreakOrder;
+
+			<div class="data-table-container">
+				<table class="data-table">
+					<thead>
+						<tr>
+							<th style="width: 50px; text-align: center;">@Loc["Common_Rank"]</th>
+							<th style="width: 50px; text-align: center;">@Loc["Common_Seed"]</th>
+							<th style="width: 60px;">@Loc["Common_Title"]</th>
+							<th>@Loc["Common_Name"]</th>
+							<th style="width: 65px; text-align: center;">Fed</th>
+							<th style="width: 75px; text-align: right;">@Loc["Common_Rating"]</th>
+							<th style="width: 65px; text-align: center;">@Loc["Common_Games"]</th>
+							<th style="width: 75px; text-align: right;">@Loc["Common_Points"]</th>
+							@foreach (var tb in tiebreaksToShow)
+							{
+								<th style="width: 75px; text-align: right;" title="@(Loc[$"Tiebreak_{tb}"] != $"Tiebreak_{tb}" ? Loc[$"Tiebreak_{tb}"] : tb.ToFullName())">@tb.ToShortName()</th>
+							}
+						</tr>
+					</thead>
+					<tbody>
+						@foreach (var standing in standings)
+						{
+							<tr>
+								<td style="text-align: center; font-weight: 800; color: var(--brand-gold); font-family: var(--font-mono);">
+									@standing.Rank
+								</td>
+								<td style="text-align: center; color: var(--text-secondary); font-family: var(--font-mono);">
+									@standing.Player.StartRank
+								</td>
+								<td>
+									@if (!string.IsNullOrEmpty(standing.Player.Title))
+									{
+										<span class="badge badge-gold">@standing.Player.Title</span>
+									}
+								</td>
+								<td style="font-weight: 600;">@standing.Player.FullName</td>
+								<td style="text-align: center;"><span class="badge badge-gray">@standing.Player.Federation</span></td>
+								<td style="text-align: right; font-family: var(--font-mono);">@standing.Player.EffectiveRating(tournament.SeedingPrecedence)</td>
+								<td style="text-align: center; color: var(--text-secondary); font-family: var(--font-mono);">@standing.GamesPlayed</td>
+								<td style="text-align: right; font-weight: 800; color: var(--brand-gold); font-family: var(--font-mono); font-size: 14px;">
+									@standing.Points.ToString("0.0")
+								</td>
+								@foreach (var tb in tiebreaksToShow)
+								{
+									<td style="text-align: right; font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary);">
+										@standing.FormatTiebreak(tb)
+									</td>
+								}
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		}
+	</div>
+}
+
+@code {
+	[Parameter, EditorRequired] public WorkbenchState State { get; set; } = default!;
+
+	private static string GetCellColor(string res) => res switch
+	{
+		"1" => "var(--brand-gold)",
+		"½" => "var(--accent-blue-hover)",
+		"0" => "var(--text-secondary)",
+		_ => "var(--text-muted)"
+	};
+}

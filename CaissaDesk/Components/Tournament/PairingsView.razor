@@ -1,0 +1,590 @@
+@namespace CaissaDesk.Components.Tournament
+@using Caissa.Shared.Models
+@using CaissaDesk.Core.Arbiter
+@using CaissaDesk.Core.PairingEngine
+@using CaissaDesk.Localization
+@inject IRoundGenerationService RoundGeneration
+@inject IPairingEngineRegistry EngineRegistry
+@inject IArbiterService ArbiterService
+@inject ILocalizationService Loc
+
+@if (State.Tournament is { } tournament)
+{
+	bool isPairing = State.Pairing.IsBusy;
+	<div style="display: flex; flex-direction: column; gap: 16px;">
+		<div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+			<div>
+				<h3 style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin: 0;">@Loc["Pairings_Title"]</h3>
+				<div style="font-size: 12px; color: var(--text-secondary);">@Loc["Pairings_ClickToEnter"]</div>
+			</div>
+
+			<div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+				<span class="badge badge-gray" style="font-size: 11px;">
+					@Loc["Pairings_Engine", GetActiveEngineName(tournament)]
+				</span>
+
+				<button class="@(State.ArbiterMode ? "btn-primary" : "btn-secondary")" @onclick="() => State.ArbiterMode = !State.ArbiterMode" title="@Loc["Pairings_ArbiterMode"]">
+					<AppIcon Name="edit" Size="13" />
+					<span>@(State.ArbiterMode ? Loc["Pairings_ArbiterModeOn"] : Loc["Pairings_ArbiterMode"])</span>
+				</button>
+
+				@if (State.ArbiterMode && tournament.Rounds.Count > 0)
+				{
+					<button class="btn-secondary" @onclick="OpenAddManualPairingModal" title="@Loc["Pairings_ManualBoard"]">
+						<AppIcon Name="plus" Size="13" />
+						<span>@Loc["Pairings_ManualBoard"]</span>
+					</button>
+				}
+
+				@if (tournament.Rounds.Count == 0)
+				{
+					<button class="btn-primary" @onclick="GeneratePairingsAsync" disabled="@(tournament.Players.Count < 2 || isPairing)">
+						<AppIcon Name="pairings" Size="14" />
+						<span>@(isPairing ? Loc["Pairings_Generating"] : Loc["Pairings_Generate"])</span>
+					</button>
+				}
+				else
+				{
+					@if (tournament.System == TournamentSystem.SwissDutch && tournament.Rounds.Count < tournament.TotalRounds)
+					{
+						var latestRound = tournament.Rounds.OrderBy(r => r.RoundNumber).LastOrDefault();
+						int unplayedCount = latestRound?.Pairings.Count(p => p.Result == MatchResult.NotPlayed) ?? 0;
+						bool isPending = latestRound != null && unplayedCount > 0;
+
+						<button class="@(isPending ? "btn-secondary" : "btn-primary")"
+								@onclick="GenerateNextRoundAsync"
+								disabled="@isPairing"
+								title="@(isPending ? $"Round {latestRound?.RoundNumber} has {unplayedCount} match(es) in progress. Click to view pending games." : $"Generate Swiss pairings for Round {tournament.Rounds.Count + 1}")">
+							@if (isPending)
+							{
+								<span style="color: var(--brand-gold);"><AppIcon Name="warning" Size="13" /></span>
+							}
+							else
+							{
+								<AppIcon Name="plus" Size="13" />
+							}
+							<span>@(isPairing ? Loc["Pairings_Generating"] : Loc["Pairings_PairRound", tournament.Rounds.Count + 1])</span>
+							@if (isPending)
+							{
+								<span class="badge badge-gray" style="font-size: 10px; margin-left: 2px;">@Loc["Pairings_Pending", unplayedCount]</span>
+							}
+						</button>
+					}
+					@if (!HasAnyResultsEntered(tournament))
+					{
+						<button class="btn-secondary" @onclick="RequestRegeneratePairings" disabled="@isPairing" title="@Loc["Pairings_ResetRegenerate"]">
+							<AppIcon Name="refresh" Size="13" />
+							<span>@Loc["Pairings_ResetRegenerate"]</span>
+						</button>
+					}
+					else
+					{
+						int currentRoundNumber = GetCurrentRoundNumber(tournament);
+						<button class="btn-secondary" @onclick="() => RequestResetRound(currentRoundNumber)" disabled="@isPairing" title="@Loc["Pairings_ResetRound", currentRoundNumber]">
+							<AppIcon Name="refresh" Size="13" />
+							<span>@Loc["Pairings_ResetRound", currentRoundNumber]</span>
+						</button>
+						@if (State.ArbiterMode && tournament.System == TournamentSystem.SwissDutch && tournament.Rounds.Count > 1)
+						{
+							<button class="btn-secondary" style="color: var(--accent-danger);" @onclick="() => RequestDeleteRound(currentRoundNumber)" disabled="@isPairing" title="@Loc["Pairings_DeleteRound", currentRoundNumber]">
+								<AppIcon Name="trash" Size="13" />
+								<span>@Loc["Pairings_DeleteRound", currentRoundNumber]</span>
+							</button>
+						}
+					}
+				}
+			</div>
+		</div>
+
+		@if (!string.IsNullOrEmpty(State.PairingErrorMessage))
+		{
+			<div class="panel-card" style="background: rgba(218, 54, 51, 0.15); border: 1px solid var(--accent-danger-hover); padding: 10px 14px; display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+				<div style="display: flex; align-items: center; gap: 8px; color: #f87171; font-size: 13px;">
+					<AppIcon Name="warning" Size="16" />
+					<span>@State.PairingErrorMessage</span>
+				</div>
+				<button class="modal-close-btn" style="color: #f87171; width: 24px; height: 24px;" @onclick="() => State.PairingErrorMessage = null" type="button" title="@Loc["Common_Dismiss"]">
+					<AppIcon Name="x" Size="13" />
+				</button>
+			</div>
+		}
+
+		@if (!string.IsNullOrEmpty(State.PairingWarningMessage))
+		{
+			<div class="panel-card" style="background: rgba(210, 153, 34, 0.15); border: 1px solid var(--accent-warning); padding: 10px 14px; display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+				<div style="display: flex; align-items: center; gap: 8px; color: var(--accent-warning); font-size: 13px;">
+					<AppIcon Name="warning" Size="16" />
+					<span>@State.PairingWarningMessage</span>
+				</div>
+				<button class="modal-close-btn" style="color: var(--accent-warning); width: 24px; height: 24px;" @onclick="() => State.PairingWarningMessage = null" type="button" title="@Loc["Common_Dismiss"]">
+					<AppIcon Name="x" Size="13" />
+				</button>
+			</div>
+		}
+
+		@if (tournament.Rounds.Count == 0)
+		{
+			<div class="panel-card" style="text-align: center; padding: 48px 24px;">
+				<div style="width: 48px; height: 48px; border-radius: 10px; background: rgba(31, 111, 235, 0.12); color: var(--accent-blue-hover); display: flex; align-items: center; justify-content: center; margin: 0 auto 14px;">
+					<AppIcon Name="pairings" Size="26" />
+				</div>
+				<h4 style="font-size: 16px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px;">@Loc["Pairings_EmptyTitle"]</h4>
+				<p style="color: var(--text-secondary); font-size: 13px; max-width: 460px; margin: 0 auto 16px;">
+					@(tournament.System == TournamentSystem.RoundRobin
+						? Loc["Pairings_EmptyRR"]
+						: Loc["Pairings_EmptySwiss"])
+				</p>
+				<button class="btn-primary" @onclick="GeneratePairingsAsync" disabled="@(tournament.Players.Count < 2 || isPairing)">
+					<AppIcon Name="pairings" Size="14" />
+					<span>@(isPairing ? Loc["Pairings_Generating"] : Loc["Pairings_GenerateNow"])</span>
+				</button>
+			</div>
+		}
+		else
+		{
+			<!-- Round Selector Bar -->
+			<div style="display: flex; align-items: center; gap: 6px; overflow-x: auto; padding-bottom: 4px;">
+				@foreach (var round in tournament.Rounds.OrderBy(r => r.RoundNumber))
+				{
+					bool isActiveRound = round.RoundNumber == State.ActiveRoundNumber;
+					int completedMatches = round.Pairings.Count(p => p.Result != MatchResult.NotPlayed);
+					<button class="@(isActiveRound ? "workspace-tab tab-active" : "workspace-tab")"
+							style="font-size: 13px; height: 32px;"
+							@onclick="() => State.ActiveRoundNumber = round.RoundNumber">
+						<span>@Loc["Pairings_RoundNum", round.RoundNumber]</span>
+						<span class="badge @(completedMatches == round.Pairings.Count ? "badge-green" : "badge-gray")" style="font-size: 10px; padding: 0 4px;">
+							@completedMatches/@round.Pairings.Count
+						</span>
+					</button>
+				}
+			</div>
+
+			<!-- Pairings Board Table for Active Round -->
+			var activeRound = tournament.Rounds.FirstOrDefault(r => r.RoundNumber == State.ActiveRoundNumber);
+			if (activeRound != null)
+			{
+				<div class="data-table-container">
+					<table class="data-table">
+						<thead>
+							<tr>
+								<th style="width: 65px; text-align: center;">@Loc["Common_Board"]</th>
+								<th style="text-align: right; width: 36%;">@Loc["Pairings_WhitePlayer"]</th>
+								<th style="width: 130px; text-align: center;">@Loc["Common_Result"]</th>
+								<th style="width: 36%;">@Loc["Pairings_BlackPlayer"]</th>
+								<th>@Loc["Pairings_Remarks"]</th>
+								@if (State.ArbiterMode)
+								{
+									<th style="width: 100px; text-align: center;">@Loc["Common_Arbiter"]</th>
+								}
+							</tr>
+						</thead>
+						<tbody>
+							@foreach (var pairing in activeRound.Pairings.OrderBy(p => p.BoardNumber))
+							{
+								var white = tournament.GetPlayer(pairing.WhitePlayerId);
+								var black = tournament.GetPlayer(pairing.BlackPlayerId);
+
+								<tr>
+									<td style="text-align: center; font-weight: 700; color: var(--text-secondary); font-family: var(--font-mono);">
+										<span>@pairing.BoardNumber</span>
+										@if (pairing.IsManualOverride)
+										{
+											<span class="badge badge-gold" style="font-size: 9px; padding: 1px 3px; margin-left: 3px;" title="Manual Arbiter Override">M</span>
+										}
+									</td>
+
+									<!-- White Player Cell -->
+									<td style="text-align: right;">
+										@if (white != null)
+										{
+											<div style="display: inline-flex; align-items: center; gap: 8px;">
+												@if (!string.IsNullOrEmpty(white.Title))
+												{
+													<span class="badge badge-gold">@white.Title</span>
+												}
+												<span style="font-weight: 600;">@white.FullName</span>
+												<span style="font-size: 12px; color: var(--text-secondary); font-family: var(--font-mono);">
+													(@(white.FideRating > 0 ? white.FideRating.ToString() : "-"))
+												</span>
+												<span style="color: #ffffff; font-size: 14px;" title="White">♔</span>
+											</div>
+										}
+										else
+										{
+											<span style="color: var(--text-muted); font-style: italic;">BYE</span>
+										}
+									</td>
+
+									<!-- Result Button Cell -->
+									<td style="text-align: center;">
+										<button class="@GetMatchResultBadgeClass(pairing.Result)"
+												style="cursor: pointer; min-width: 80px; justify-content: center;"
+												title="Click to enter or change score"
+												@onclick="() => OpenResultDialog(pairing)">
+											<span style="font-size: 13px; font-weight: 700; font-family: var(--font-mono);">
+												@pairing.Result.ToDisplayString()
+											</span>
+										</button>
+									</td>
+
+									<!-- Black Player Cell -->
+									<td>
+										@if (black != null)
+										{
+											<div style="display: inline-flex; align-items: center; gap: 8px;">
+												<span style="color: #64748b; font-size: 14px;" title="Black">♚</span>
+												<span style="font-weight: 600;">@black.FullName</span>
+												@if (!string.IsNullOrEmpty(black.Title))
+												{
+													<span class="badge badge-gold">@black.Title</span>
+												}
+												<span style="font-size: 12px; color: var(--text-secondary); font-family: var(--font-mono);">
+													(@(black.FideRating > 0 ? black.FideRating.ToString() : "-"))
+												</span>
+											</div>
+										}
+										else
+										{
+											<span style="color: var(--text-muted); font-style: italic;">BYE</span>
+										}
+									</td>
+
+									<!-- Remarks -->
+									<td style="font-size: 11px; color: var(--text-muted);">
+										@(pairing.Remarks ?? "")
+									</td>
+
+									@if (State.ArbiterMode)
+									{
+										<td style="text-align: center; white-space: nowrap;">
+											@if (!pairing.IsBye)
+											{
+												<button class="btn-secondary" style="padding: 2px 5px; font-size: 11px; margin-right: 3px;" title="@Loc["Pairings_SwapColors"]" @onclick="() => SwapColorsAsync(activeRound, pairing.BoardNumber)">
+													<AppIcon Name="swap" Size="11" />
+												</button>
+											}
+											<button class="btn-secondary" style="padding: 2px 5px; font-size: 11px; margin-right: 3px;" title="@Loc["Pairings_EditBoard"]" @onclick="() => OpenEditPairingModal(pairing)">
+												<AppIcon Name="edit" Size="11" />
+											</button>
+											<button class="btn-danger" style="padding: 2px 5px; font-size: 11px;" title="@Loc["Pairings_DeleteBoard"]" @onclick="() => RequestDeletePairing(activeRound, pairing)">
+												<AppIcon Name="trash" Size="11" />
+											</button>
+										</td>
+									}
+								</tr>
+							}
+						</tbody>
+					</table>
+				</div>
+			}
+		}
+	</div>
+
+	<!-- Modal: Board Result Entry Dialog -->
+	<ResultEntryDialog IsOpen="_showResultDialog"
+					   Pairing="_selectedPairing"
+					   WhitePlayer="tournament.GetPlayer(_selectedPairing?.WhitePlayerId)"
+					   BlackPlayer="tournament.GetPlayer(_selectedPairing?.BlackPlayerId)"
+					   OnClose="() => _showResultDialog = false"
+					   OnSave="HandleResultSaveAsync" />
+
+	<!-- Modal: Arbiter Manual Board Pairing -->
+	<ManualPairingModal IsOpen="_showManualPairingModal"
+						Tournament="tournament"
+						Round="tournament.Rounds.FirstOrDefault(r => r.RoundNumber == State.ActiveRoundNumber)"
+						Pairing="_editingPairing"
+						OnClose="() => _showManualPairingModal = false"
+						OnSaved="HandleManualPairingSaved" />
+
+	<!-- Modal: Games Still in Progress Warning -->
+	@if (_showUnfinishedGamesModal)
+	{
+		<div class="modal-overlay" @onclick="() => _showUnfinishedGamesModal = false">
+			<div class="modal-content" style="max-width: 620px;" @onclick:stopPropagation="true">
+				<div class="modal-header">
+					<div class="modal-title" style="color: #f87171; display: flex; align-items: center; gap: 8px;">
+						<AppIcon Name="warning" Size="20" />
+						<span>@Loc["Warning_CannotPairTitle", tournament.Rounds.Count + 1]</span>
+					</div>
+					<button class="modal-close-btn" @onclick="() => _showUnfinishedGamesModal = false" type="button" title="@Loc["Common_Close"]">
+						<AppIcon Name="x" Size="15" />
+					</button>
+				</div>
+
+				<div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
+					<div style="font-size: 13.5px; color: var(--text-primary); line-height: 1.5;">
+						@Loc["Warning_CannotPairDesc", _unfinishedRoundNumber, _unfinishedPairings.Count]
+					</div>
+
+					<div class="data-table-container" style="max-height: 240px; overflow-y: auto;">
+						<table class="data-table">
+							<thead>
+								<tr>
+									<th style="width: 50px; text-align: center;">@Loc["Common_Board"]</th>
+									<th style="text-align: right; width: 38%;">@Loc["Common_White"]</th>
+									<th style="width: 60px; text-align: center;">@Loc["Common_Score"]</th>
+									<th style="width: 38%;">@Loc["Common_Black"]</th>
+									<th style="width: 75px; text-align: center;">@Loc["Common_Actions"]</th>
+								</tr>
+							</thead>
+							<tbody>
+								@foreach (var p in _unfinishedPairings)
+								{
+									var white = tournament.GetPlayer(p.WhitePlayerId);
+									var black = tournament.GetPlayer(p.BlackPlayerId);
+									<tr>
+										<td style="text-align: center; font-weight: 700; font-family: var(--font-mono); color: var(--text-secondary);">
+											@p.BoardNumber
+										</td>
+										<td style="text-align: right; font-weight: 600;">
+											@(white?.FullName ?? "BYE")
+										</td>
+										<td style="text-align: center; font-weight: 700; color: var(--text-muted); font-family: var(--font-mono);">
+											vs
+										</td>
+										<td style="font-weight: 600;">
+											@(black?.FullName ?? "BYE")
+										</td>
+										<td style="text-align: center;">
+											<button class="btn-primary" style="padding: 3px 8px; font-size: 11px;" @onclick="() => OpenResultFromWarningModal(p)">
+												<span>@Loc["Warning_Enter"]</span>
+											</button>
+										</td>
+									</tr>
+								}
+							</tbody>
+						</table>
+					</div>
+
+					<div style="font-size: 12px; color: var(--text-secondary);">
+						@Loc["Warning_EnterInstruction"]
+					</div>
+				</div>
+
+				<div class="modal-footer" style="justify-content: space-between;">
+					<button class="btn-secondary" @onclick="GoToActiveRoundAndClose">
+						<span>@Loc["Warning_GoToBoardTable", _unfinishedRoundNumber]</span>
+					</button>
+					<button class="btn-secondary" @onclick="() => _showUnfinishedGamesModal = false">
+						<span>@Loc["Common_Dismiss"]</span>
+					</button>
+				</div>
+			</div>
+		</div>
+	}
+}
+
+@code {
+	[Parameter, EditorRequired] public WorkbenchState State { get; set; } = default!;
+
+	private bool _showResultDialog;
+	private Pairing? _selectedPairing;
+	private bool _showManualPairingModal;
+	private Pairing? _editingPairing;
+	private bool _showUnfinishedGamesModal;
+	private int _unfinishedRoundNumber = 1;
+	private IReadOnlyList<Pairing> _unfinishedPairings = [];
+
+	private string GetActiveEngineName(Tournament tournament)
+	{
+		if (tournament.System == TournamentSystem.RoundRobin) return "Berger Tables";
+		return EngineRegistry.GetEngine(tournament.PairingEngineId).DisplayName;
+	}
+
+	private static bool HasAnyResultsEntered(Tournament tournament) =>
+		tournament.Rounds.Any(r => r.Pairings.Any(p => p.Result != MatchResult.NotPlayed));
+
+	private int GetCurrentRoundNumber(Tournament tournament)
+	{
+		if (tournament.Rounds.Count == 0) return 1;
+		return tournament.System == TournamentSystem.RoundRobin ? State.ActiveRoundNumber : tournament.Rounds.Count;
+	}
+
+	private static string GetMatchResultBadgeClass(MatchResult result) => result switch
+	{
+		MatchResult.NotPlayed => "btn-secondary",
+		MatchResult.Draw => "badge badge-blue",
+		MatchResult.WhiteWin or MatchResult.BlackWin => "badge badge-gold",
+		MatchResult.WhiteForfeit or MatchResult.BlackForfeit or MatchResult.DoubleForfeit => "badge badge-gray",
+		_ => "badge badge-gray"
+	};
+
+	// ---------------------------------------------------------------- round generation
+
+	/// <summary>
+	/// Runs one round-generation operation: messages are cleared when it starts (unless a pairing is already
+	/// running), then replaced by the outcome. The outcome is written to the shared state even when this view
+	/// was closed meanwhile, so the workbench shows it on return.
+	/// </summary>
+	private async Task RunAsync(Func<Tournament, Task<RoundGenerationOutcome>> operation)
+	{
+		var tournament = State.Tournament;
+		if (tournament == null || State.Pairing.IsBusy) return;
+
+		State.PairingErrorMessage = null;
+		State.PairingWarningMessage = null;
+
+		var running = operation(tournament);
+		if (!running.IsCompleted)
+		{
+			// Started from the confirm dialog the automatic re-render only covers that dialog: show the busy state everywhere
+			State.NotifyChanged();
+		}
+
+		var outcome = await running;
+		if (!outcome.UpdatesMessages) return;
+
+		State.PairingErrorMessage = outcome.ErrorMessage;
+		State.PairingWarningMessage = outcome.Warning;
+
+		if (outcome.Status == RoundGenerationStatus.Applied && outcome.ActiveRoundNumber is int round)
+		{
+			State.ActiveRoundNumber = round;
+		}
+		else if (outcome.Status == RoundGenerationStatus.BlockedByUnfinishedGames)
+		{
+			_unfinishedRoundNumber = outcome.UnfinishedRoundNumber;
+			_unfinishedPairings = outcome.UnfinishedPairings;
+			_showUnfinishedGamesModal = true;
+		}
+
+		State.NotifyChanged();
+	}
+
+	private Task GeneratePairingsAsync() =>
+		RunAsync(t => RoundGeneration.GenerateInitialAsync(State.Pairing, t, State.SaveAsync));
+
+	private Task GenerateNextRoundAsync() =>
+		RunAsync(t => RoundGeneration.GenerateNextRoundAsync(State.Pairing, t, State.SaveAsync));
+
+	private void RequestRegeneratePairings()
+	{
+		State.Confirm.Request(
+			Loc["Confirm_RegeneratePairingsTitle"],
+			Loc["Confirm_RegeneratePairingsMsg"],
+			// Pairs against an empty history and only replaces the rounds on success
+			GeneratePairingsAsync,
+			details: Loc["Confirm_CannotUndo"],
+			confirmText: Loc["Pairings_ResetRegenerate"],
+			icon: "refresh");
+	}
+
+	private void RequestResetRound(int roundNumber)
+	{
+		State.Confirm.Request(
+			Loc["Confirm_ResetRoundTitle", roundNumber],
+			Loc["Confirm_ResetRoundMsg", roundNumber],
+			() => RunAsync(t => RoundGeneration.ResetRoundAsync(State.Pairing, t, roundNumber, State.SaveAsync)),
+			details: Loc["Confirm_CannotUndo"],
+			confirmText: Loc["Pairings_ResetRound", roundNumber],
+			icon: "refresh");
+	}
+
+	private void RequestDeleteRound(int roundNumber)
+	{
+		State.Confirm.Request(
+			Loc["Confirm_DeleteRoundTitle", roundNumber],
+			Loc["Confirm_DeleteRoundMsg", roundNumber],
+			() => RunAsync(t => RoundGeneration.DeleteRoundAsync(State.Pairing, t, roundNumber, State.SaveAsync)),
+			details: Loc["Confirm_CannotUndo"],
+			confirmText: Loc["Pairings_DeleteRound", roundNumber],
+			icon: "trash");
+	}
+
+	private void OpenResultFromWarningModal(Pairing pairing)
+	{
+		_showUnfinishedGamesModal = false;
+		State.ActiveRoundNumber = _unfinishedRoundNumber;
+		OpenResultDialog(pairing);
+	}
+
+	private void GoToActiveRoundAndClose()
+	{
+		State.ActiveRoundNumber = _unfinishedRoundNumber;
+		_showUnfinishedGamesModal = false;
+	}
+
+	// ---------------------------------------------------------------- results and arbiter edits
+
+	private void OpenResultDialog(Pairing pairing)
+	{
+		_selectedPairing = pairing;
+		_showResultDialog = true;
+	}
+
+	private async Task HandleResultSaveAsync(ResultEntry entry)
+	{
+		var tournament = State.Tournament;
+		if (tournament == null) return;
+		State.PairingErrorMessage = null;
+		State.PairingWarningMessage = null;
+
+		var undo = entry.ApplyWithUndo();
+		if (await State.SaveAsync(tournament))
+		{
+			_showResultDialog = false;
+		}
+		else
+		{
+			// Keep the dialog open with the arbiter's selection and leave the board as it was persisted
+			undo();
+		}
+	}
+
+	private void RequestDeletePairing(Round round, Pairing pairing)
+	{
+		var tournament = State.Tournament;
+		var white = tournament?.GetPlayer(pairing.WhitePlayerId);
+		var black = tournament?.GetPlayer(pairing.BlackPlayerId);
+		State.Confirm.Request(
+			Loc["Confirm_DeletePairingTitle"],
+			Loc["Confirm_DeletePairingMsg",
+				pairing.BoardNumber,
+				white?.FullName ?? Loc["Pairings_Bye"],
+				black?.FullName ?? Loc["Pairings_Bye"]],
+			() => DeletePairingAsync(round, pairing.Id),
+			details: Loc["Confirm_CannotUndo"],
+			confirmText: Loc["Common_Delete"],
+			icon: "trash");
+	}
+
+	private async Task DeletePairingAsync(Round round, string pairingId)
+	{
+		var tournament = State.Tournament;
+		if (tournament == null) return;
+		if (ArbiterService.DeletePairing(round, pairingId))
+		{
+			await State.SaveAsync(tournament);
+		}
+	}
+
+	private async Task SwapColorsAsync(Round round, int boardNumber)
+	{
+		var tournament = State.Tournament;
+		if (tournament == null) return;
+		if (ArbiterService.SwapBoardColors(round, boardNumber))
+		{
+			await State.SaveAsync(tournament);
+		}
+	}
+
+	private void OpenAddManualPairingModal()
+	{
+		_editingPairing = null;
+		_showManualPairingModal = true;
+	}
+
+	private void OpenEditPairingModal(Pairing pairing)
+	{
+		_editingPairing = pairing;
+		_showManualPairingModal = true;
+	}
+
+	private async Task HandleManualPairingSaved()
+	{
+		var tournament = State.Tournament;
+		if (tournament == null) return;
+		_showManualPairingModal = false;
+		await State.SaveAsync(tournament);
+	}
+}

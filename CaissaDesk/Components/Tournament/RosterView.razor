@@ -1,0 +1,275 @@
+@namespace CaissaDesk.Components.Tournament
+@using Caissa.Shared.Models
+@using CaissaDesk.Core.Roster
+@using CaissaDesk.Data
+@using CaissaDesk.Localization
+@inject IRosterService Roster
+@inject IPlayerLookupService PlayerLookup
+@inject ILocalizationService Loc
+@inject ILogger<RosterView> Logger
+
+@if (State.Tournament is { } tournament)
+{
+	<div style="display: flex; flex-direction: column; gap: 16px;">
+		<div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+			<div>
+				<h3 style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin: 0;">@Loc["Roster_Title"]</h3>
+				<div style="font-size: 12px; color: var(--text-secondary);">@Loc["Roster_Count", tournament.Players.Count]</div>
+			</div>
+
+			<div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+				<button class="btn-secondary" @onclick="SyncAllPlayersFromFideAsync" disabled="@(State.IsSyncingAllFide || tournament.Players.Count == 0)" title="@Loc["Roster_SyncFideTooltip"]">
+					<AppIcon Name="refresh" Size="13" />
+					<span>@(State.IsSyncingAllFide ? Loc["Roster_SyncingFideProgress", State.SyncProgressCurrent, State.SyncProgressTotal] : Loc["Roster_SyncFideBtn"])</span>
+				</button>
+				<button class="btn-secondary" @onclick="() => _showAttendanceModal = true" title="@Loc["Roster_AttendanceByes"]">
+					<AppIcon Name="checklist" Size="13" />
+					<span>@Loc["Roster_AttendanceByes"]</span>
+				</button>
+				<button class="btn-secondary" @onclick="ReseedPlayersAsync" title="@Loc["Roster_Reseed"]">
+					<AppIcon Name="refresh" Size="13" />
+					<span>@Loc["Roster_Reseed"]</span>
+				</button>
+				<button class="btn-primary" @onclick="OpenAddPlayerModal">
+					<AppIcon Name="plus" Size="14" />
+					<span>@Loc["Roster_RegisterPlayer"]</span>
+				</button>
+			</div>
+		</div>
+
+		@if (!string.IsNullOrEmpty(State.SyncResultMessage))
+		{
+			<div class="panel-card" style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: rgba(76, 175, 80, 0.1); border: 1px solid rgba(76, 175, 80, 0.3); border-radius: 6px; font-size: 13px; color: var(--accent-success);">
+				<div style="display: flex; align-items: center; gap: 8px;">
+					<AppIcon Name="check" Size="14" />
+					<span>@State.SyncResultMessage</span>
+				</div>
+				<button class="modal-close-btn" @onclick="() => State.SyncResultMessage = null" style="font-size: 12px; color: var(--text-secondary);">
+					<AppIcon Name="x" Size="12" />
+				</button>
+			</div>
+		}
+
+		@if (tournament.Players.Count == 0)
+		{
+			<div class="panel-card" style="text-align: center; padding: 40px 20px;">
+				<div style="color: var(--brand-gold); margin-bottom: 8px;"><AppIcon Name="users" Size="32" /></div>
+				<div style="font-weight: 600; font-size: 15px; color: var(--text-primary); margin-bottom: 4px;">@Loc["Roster_EmptyTitle"]</div>
+				<div style="color: var(--text-secondary); font-size: 12px; margin-bottom: 16px;">@Loc["Roster_EmptyDesc"]</div>
+				<button class="btn-primary" @onclick="OpenAddPlayerModal">
+					<AppIcon Name="plus" Size="13" />
+					<span>@Loc["Roster_AddFirstPlayer"]</span>
+				</button>
+			</div>
+		}
+		else
+		{
+			<div class="data-table-container">
+				<table class="data-table">
+					<thead>
+						<tr>
+							<th style="width: 45px; text-align: center;">#</th>
+							<th style="width: 60px;">@Loc["Common_Title"]</th>
+							<th>@Loc["Common_Name"]</th>
+							<th style="width: 60px; text-align: center;">Fed</th>
+							<th>@Loc["Common_Club"]</th>
+							<th style="width: 80px; text-align: right;">@Loc["Roster_FideElo"]</th>
+							<th style="width: 80px; text-align: right;">@Loc["Roster_NatElo"]</th>
+							<th style="width: 65px; text-align: center;">@Loc["Common_Born"]</th>
+							<th style="width: 85px; text-align: center;">@Loc["Common_Status"]</th>
+							<th style="width: 85px; text-align: center;">@Loc["Common_Actions"]</th>
+						</tr>
+					</thead>
+					<tbody>
+						@foreach (var player in tournament.Players.OrderBy(p => p.StartRank))
+						{
+							<tr>
+								<td style="text-align: center; font-weight: 700; color: var(--text-secondary); font-family: var(--font-mono);">
+									@player.StartRank
+								</td>
+								<td>
+									@if (!string.IsNullOrEmpty(player.Title))
+									{
+										<span class="badge badge-gold">@player.Title</span>
+									}
+								</td>
+								<td style="font-weight: 600;">
+									<div>@player.FullName</div>
+									@if (!string.IsNullOrEmpty(player.FideId))
+									{
+										<div style="font-size: 10px; font-family: var(--font-mono); color: var(--text-secondary); font-weight: normal;">
+											FIDE: @player.FideId
+										</div>
+									}
+								</td>
+								<td style="text-align: center; font-family: var(--font-mono); font-size: 11px;">
+									<span class="badge badge-gray">@player.Federation</span>
+								</td>
+								<td style="color: var(--text-secondary);">
+									@(string.IsNullOrEmpty(player.Club) ? "-" : player.Club)
+								</td>
+								<td style="text-align: right; font-family: var(--font-mono); font-weight: 600;">
+									@(player.FideRating > 0 ? player.FideRating.ToString() : "-")
+								</td>
+								<td style="text-align: right; font-family: var(--font-mono); color: var(--text-secondary);">
+									@(player.NationalRating > 0 ? player.NationalRating.ToString() : "-")
+								</td>
+								<td style="text-align: center; color: var(--text-secondary); font-family: var(--font-mono); font-size: 12px;">
+									@(player.BirthYear.HasValue ? player.BirthYear.Value.ToString() : "-")
+								</td>
+								<td style="text-align: center;">
+									<span class="@(player.Status == PlayerStatus.Active ? "badge badge-green" : "badge badge-gray")">
+										@player.Status
+									</span>
+								</td>
+								<td style="text-align: center; white-space: nowrap;">
+									<button class="btn-secondary" style="padding: 3px 6px; font-size: 11px; margin-right: 4px;" title="@Loc["Common_Edit"]" @onclick="() => OpenEditPlayerModal(player)">
+										<AppIcon Name="edit" Size="11" />
+									</button>
+									<button class="btn-danger" style="padding: 3px 6px; font-size: 11px;" title="@Loc["Common_Delete"]" @onclick="() => RequestRemovePlayer(player.Id, player.FullName)">
+										<AppIcon Name="trash" Size="11" />
+									</button>
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		}
+	</div>
+
+	<PlayerFormModal IsOpen="_showPlayerForm"
+					 Player="_editingPlayer"
+					 Tournament="tournament"
+					 OnClose="ClosePlayerForm"
+					 OnSave="HandlePlayerFormSaved" />
+
+	<!-- Modal: Attendance, Byes & Player Status -->
+	<AttendanceModal IsOpen="_showAttendanceModal"
+					 Tournament="tournament"
+					 OnClose="() => _showAttendanceModal = false"
+					 OnSaved="HandleAttendanceSaved" />
+}
+
+@code {
+	[Parameter, EditorRequired] public WorkbenchState State { get; set; } = default!;
+
+	private bool _showPlayerForm;
+	private Player? _editingPlayer;
+	private bool _showAttendanceModal;
+
+	private void OpenAddPlayerModal()
+	{
+		_editingPlayer = null;
+		_showPlayerForm = true;
+	}
+
+	private void OpenEditPlayerModal(Player player)
+	{
+		_editingPlayer = player;
+		_showPlayerForm = true;
+	}
+
+	private void ClosePlayerForm()
+	{
+		_showPlayerForm = false;
+		_editingPlayer = null;
+	}
+
+	private async Task HandlePlayerFormSaved(PlayerFormModel form)
+	{
+		var tournament = State.Tournament;
+		if (tournament == null || !form.HasName) return;
+
+		if (_editingPlayer != null)
+		{
+			form.ApplyTo(_editingPlayer);
+			if (await State.SaveAsync(tournament)) ClosePlayerForm();
+			return;
+		}
+
+		var player = Roster.AddPlayer(tournament, form);
+		if (await State.SaveAsync(tournament))
+		{
+			ClosePlayerForm();
+		}
+		else
+		{
+			// Keep the form open with the entered values; the unsaved player must not linger in the roster
+			tournament.Players.Remove(player);
+		}
+	}
+
+	private void RequestRemovePlayer(string playerId, string playerName)
+	{
+		State.Confirm.Request(
+			Loc["Confirm_DeletePlayerTitle"],
+			Loc["Confirm_DeletePlayerMsg", playerName],
+			() => RemovePlayerAsync(playerId),
+			details: Loc["Confirm_CannotUndo"],
+			confirmText: Loc["Common_Delete"],
+			icon: "trash");
+	}
+
+	private async Task RemovePlayerAsync(string playerId)
+	{
+		var tournament = State.Tournament;
+		if (tournament == null) return;
+		Roster.RemovePlayer(tournament, playerId);
+		await State.SaveAsync(tournament);
+	}
+
+	private async Task ReseedPlayersAsync()
+	{
+		var tournament = State.Tournament;
+		if (tournament == null || !Roster.Reseed(tournament)) return;
+		await State.SaveAsync(tournament);
+	}
+
+	private async Task HandleAttendanceSaved()
+	{
+		if (State.Tournament is { } tournament)
+		{
+			await State.SaveAsync(tournament);
+		}
+	}
+
+	private async Task SyncAllPlayersFromFideAsync()
+	{
+		var tournament = State.Tournament;
+		if (tournament == null || tournament.Players.Count == 0 || State.IsSyncingAllFide) return;
+
+		State.IsSyncingAllFide = true;
+		State.SyncProgressCurrent = 0;
+		State.SyncProgressTotal = tournament.Players.Count;
+		State.SyncResultMessage = null;
+
+		try
+		{
+			int updatedCount = await PlayerLookup.SyncPlayersAsync(
+				tournament.Players,
+				tournament.TimeControl,
+				(current, total) =>
+				{
+					State.SyncProgressCurrent = current;
+					State.SyncProgressTotal = total;
+					State.NotifyChanged();
+				});
+
+			if (await State.SaveAsync(tournament))
+			{
+				State.SyncResultMessage = Loc["Roster_SyncSuccess", updatedCount, tournament.Players.Count];
+			}
+		}
+		catch (Exception ex)
+		{
+			Logger.LogError(ex, "Bulk FIDE sync of {Tournament} failed.", tournament.Name);
+			State.SyncResultMessage = $"Sync failed: {ex.Message}";
+		}
+		finally
+		{
+			State.IsSyncingAllFide = false;
+			State.NotifyChanged();
+		}
+	}
+}

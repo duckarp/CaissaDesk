@@ -1,0 +1,579 @@
+@namespace CaissaDesk.Components.Tournament
+@using Caissa.Shared.Models
+@using Caissa.Shared.Tiebreak
+@using CaissaDesk.Core
+@using CaissaDesk.Core.Notifications
+@using CaissaDesk.Core.PairingEngine
+@using CaissaDesk.Data
+@using CaissaDesk.Localization
+@inject IPairingEngineRegistry EngineRegistry
+@inject IEngineInstallerService EngineInstaller
+@inject ITournamentRepository TournamentRepo
+@inject IFileExportService FileExport
+@inject INotificationService Notifications
+@inject ILocalizationService Loc
+@inject ILogger<TournamentSettingsView> Logger
+
+@if (State.Tournament is { } tournament)
+{
+	<!-- SETTINGS VIEW -->
+	<div style="max-width: 1720px; width: 100%; display: flex; flex-direction: column; gap: 18px;">
+		<div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+			<h3 style="font-size: 18px; font-weight: 700; color: var(--text-primary); margin: 0;">@Loc["Settings_Config"]</h3>
+			<button class="btn-primary" @onclick="SaveSettingsAsync">
+				<AppIcon Name="save" Size="14" />
+				<span>@Loc["Common_SaveChanges"]</span>
+			</button>
+		</div>
+
+		@if (!string.IsNullOrEmpty(State.SettingsErrorMessage))
+		{
+			<div style="background-color: rgba(218, 54, 51, 0.12); border: 1px solid var(--accent-danger); border-radius: 6px; padding: 10px 14px; color: var(--accent-danger); font-size: 13px; display: flex; align-items: center; gap: 8px;">
+				<AppIcon Name="alert" Size="16" />
+				<span>@State.SettingsErrorMessage</span>
+			</div>
+		}
+		@if (!string.IsNullOrEmpty(State.SettingsSuccessMessage))
+		{
+			<div style="background-color: rgba(35, 134, 54, 0.12); border: 1px solid var(--accent-primary); border-radius: 6px; padding: 10px 14px; color: var(--accent-primary); font-size: 13px; display: flex; align-items: center; gap: 8px;">
+				<AppIcon Name="check" Size="16" />
+				<span>@State.SettingsSuccessMessage</span>
+			</div>
+		}
+
+		<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(480px, 1fr)); gap: 20px; align-items: start;">
+			<!-- Left Column: Lifecycle & General Info -->
+			<div style="display: flex; flex-direction: column; gap: 18px;">
+				<!-- Tournament Lifecycle & Status Card -->
+				<div class="panel-card" style="display: flex; flex-direction: column; gap: 14px;">
+					<div style="display: flex; align-items: center; justify-content: space-between;">
+						<div>
+							<div class="panel-title" style="margin-bottom: 2px;">@Loc["Workbench_LifecycleTitle"]</div>
+							<div style="font-size: 12px; color: var(--text-secondary);">@Loc["Workbench_LifecycleDesc"]</div>
+						</div>
+						<span class="badge @(tournament.IsFinished ? "badge-gray" : "badge-green")" style="font-size: 12px; padding: 4px 10px;">
+							@(tournament.IsFinished ? Loc["Workbench_StatusFinished"] : Loc["Workbench_StatusActive"])
+						</span>
+					</div>
+
+					<div style="display: flex; align-items: center; justify-content: space-between; border-top: 1px solid var(--border-subtle); padding-top: 12px; margin-top: 2px;">
+						<div style="font-size: 12px; color: var(--text-secondary);">
+							@if (tournament.IsFinished && tournament.FinishedAt.HasValue)
+							{
+								<span>Finished on @tournament.FinishedAt.Value.ToLocalTime().ToString("MMM dd, yyyy HH:mm")</span>
+							}
+							else
+							{
+								<span>@Loc["Workbench_StatusActive"]</span>
+							}
+						</div>
+						@if (tournament.IsFinished)
+						{
+							<button type="button" class="btn-secondary" @onclick="RequestToggleWorkbenchFinished">
+								<AppIcon Name="unarchive" Size="13" />
+								<span>@Loc["Workbench_RestoreActiveBtn"]</span>
+							</button>
+						}
+						else
+						{
+							<button type="button" class="btn-secondary" @onclick="RequestToggleWorkbenchFinished">
+								<AppIcon Name="archive" Size="13" />
+								<span>@Loc["Workbench_MarkFinishedBtn"]</span>
+							</button>
+						}
+					</div>
+				</div>
+
+				<!-- General Tournament Information Card -->
+				<div class="panel-card" style="display: flex; flex-direction: column; gap: 14px;">
+					<div class="panel-title">@Loc["Settings_General"]</div>
+
+					<div class="form-group">
+						<label class="form-label">@Loc["Tournament_Name"]</label>
+						<input type="text" class="form-input" @bind="State.Details.Name" />
+					</div>
+
+					<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+						<div class="form-group">
+							<label class="form-label">@Loc["Tournament_TotalRounds"]</label>
+							<input type="number"
+								   class="form-input"
+								   style="@(State.Details.TotalRounds < tournament.MinAllowedRounds ? "border-color: var(--accent-danger);" : "")"
+								   @bind="State.Details.TotalRounds"
+								   min="@tournament.MinAllowedRounds"
+								   max="50" />
+							<div style="font-size: 11px; color: @(State.Details.TotalRounds < tournament.MinAllowedRounds ? "var(--accent-danger)" : "var(--text-secondary)"); margin-top: 4px;">
+								@Loc["Tournament_MinRoundsNotice", tournament.MinAllowedRounds, tournament.FinishedRoundsCount]
+							</div>
+						</div>
+						<div class="form-group">
+							<label class="form-label">@Loc["Tournament_Venue"]</label>
+							<input type="text" class="form-input" @bind="State.Details.Venue" placeholder="e.g. Chess Hall" />
+						</div>
+					</div>
+
+					<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+						<div class="form-group">
+							<label class="form-label">@Loc["Tournament_ChiefArbiter"]</label>
+							<input type="text" class="form-input" @bind="State.Details.ChiefArbiter" placeholder="e.g. IA Tomas K." />
+						</div>
+						<div class="form-group">
+							<label class="form-label">@Loc["Tournament_DeputyArbiter"]</label>
+							<input type="text" class="form-input" @bind="State.Details.DeputyArbiter" placeholder="e.g. FA John D." />
+						</div>
+					</div>
+
+					<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+						<div class="form-group">
+							<label class="form-label">@Loc["Tournament_Organizer"]</label>
+							<input type="text" class="form-input" @bind="State.Details.Organizer" placeholder="e.g. Chess Club" />
+						</div>
+						<div class="form-group">
+							<label class="form-label">@Loc["Tournament_Federation"]</label>
+							<input type="text" class="form-input" @bind="State.Details.Federation" placeholder="e.g. SVK" maxlength="3" />
+						</div>
+					</div>
+
+					<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+						<div class="form-group">
+							<label class="form-label">@Loc["Tournament_TimeControl"]</label>
+							<select class="form-select" @bind="State.Details.TimeControl">
+								<option value="@TimeControlCategory.Rapid">@Loc["TimeControl_Rapid"]</option>
+								<option value="@TimeControlCategory.Blitz">@Loc["TimeControl_Blitz"]</option>
+								<option value="@TimeControlCategory.Standard">@Loc["TimeControl_Standard"]</option>
+							</select>
+						</div>
+						<div class="form-group">
+							<label class="form-label">@Loc["Tournament_TimeControlSpec"]</label>
+							<input type="text" class="form-input" @bind="State.Details.TimeControlDetails" placeholder="e.g. 15m + 5s" />
+						</div>
+					</div>
+
+					<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+						<div class="form-group">
+							<label class="form-label">@Loc["Tournament_StartDate"]</label>
+							<input type="date" class="form-input" value="@State.Details.StartDate.ToString("yyyy-MM-dd")" @onchange="OnStartDateChanged" />
+						</div>
+						<div class="form-group">
+							<label class="form-label">@Loc["Tournament_EndDate"]</label>
+							<input type="date" class="form-input" value="@State.Details.EndDate.ToString("yyyy-MM-dd")" @onchange="OnEndDateChanged" />
+						</div>
+					</div>
+
+					<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+						<div class="form-group">
+							<label class="form-label">@Loc["Tournament_SeedingPrecedence"]</label>
+							<select class="form-select" @bind="State.Details.SeedingPrecedence">
+								<option value="@SeedingPrecedence.FideFirst">@Loc["Tournament_FideFirst"]</option>
+								<option value="@SeedingPrecedence.NationalFirst">@Loc["Tournament_NationalFirst"]</option>
+							</select>
+						</div>
+						<div class="form-group" style="display: flex; align-items: flex-end; padding-bottom: 8px;">
+							<div style="display: flex; align-items: center; gap: 8px;">
+								<input type="checkbox" id="wbFideRated" @bind="State.Details.FideRated" style="cursor: pointer; width: 16px; height: 16px; accent-color: var(--brand-gold);" />
+								<label for="wbFideRated" style="font-size: 13px; color: var(--text-primary); cursor: pointer; user-select: none;">
+									@Loc["Tournament_FideRated"]
+								</label>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Right Column: Engine Provider, Tiebreaks, Data Exchange -->
+			<div style="display: flex; flex-direction: column; gap: 18px;">
+				@if (tournament.System == TournamentSystem.SwissDutch)
+				{
+					<!-- Pairing Engine Provider Card -->
+					<div class="panel-card" style="display: flex; flex-direction: column; gap: 14px;">
+						<div>
+							<div class="panel-title" style="margin-bottom: 2px;">@Loc["Settings_EngineProvider"]</div>
+							<div style="font-size: 12px; color: var(--text-secondary);">@Loc["Settings_EngineDesc"]</div>
+						</div>
+
+						@if (!string.IsNullOrEmpty(State.EngineDownloadMessage))
+						{
+							<div style="font-size: 12px; padding: 8px 12px; border-radius: 6px; background-color: rgba(218, 54, 51, 0.12); color: var(--accent-danger); margin-bottom: 8px;">
+								@State.EngineDownloadMessage
+							</div>
+						}
+
+						<div style="background-color: var(--bg-surface-elevated); border: 1px solid var(--border-subtle); border-radius: 6px; padding: 10px 12px; font-size: 12px; color: var(--text-secondary); display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px;">
+							<span style="color: var(--brand-gold); margin-top: 1px;"><AppIcon Name="lightbulb" Size="14" /></span>
+							<div>
+								<strong style="color: var(--text-primary);">@Loc["Settings_EngineGuideTitle"]:</strong>
+								<span style="margin-left: 4px;">@Loc["Settings_EngineGuideSubtitle"]</span>
+							</div>
+						</div>
+
+						<div style="display: flex; flex-direction: column; gap: 8px;">
+							@foreach (var engine in EngineRegistry.SwissEngines)
+							{
+								bool isSelected = tournament.PairingEngineId.Equals(engine.Id, StringComparison.OrdinalIgnoreCase);
+								bool isAvailable = engine.IsAvailable;
+								<div class="panel-card"
+									 style="display: flex; align-items: center; justify-content: space-between; padding: 12px; background-color: var(--bg-surface-elevated); cursor: @(isAvailable ? "pointer" : "not-allowed"); opacity: @(isAvailable ? "1" : "0.65"); border-color: @(isSelected ? "var(--brand-gold)" : "var(--border-subtle)");"
+									 title="@(!isAvailable ? Loc["Settings_SelectDisabledTooltip"] : "")"
+									 @onclick="async () => { if (isAvailable) await SelectPairingEngine(engine.Id); }">
+									<div>
+										<div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+											<span style="font-weight: 700; color: var(--text-primary); font-size: 13px;">@engine.DisplayName</span>
+											<span class="badge @(engine.Id == "native_dutch" ? "badge-blue" : engine.Id == "bbp" ? "badge-gold" : "badge-purple")" style="font-size: 10px;">
+												@(engine.Id == "native_dutch" ? Loc["Settings_EngineNativeBadge"] :
+												  engine.Id == "bbp" ? Loc["Settings_EngineBbpBadge"] :
+												  Loc["Settings_EngineJaVaFoBadge"])
+											</span>
+											@if (isSelected)
+											{
+												<span class="badge badge-gold">Active</span>
+											}
+										</div>
+										<div style="font-size: 11px; color: var(--text-secondary); margin-top: 3px;">
+											@(engine.Id == "native_dutch" ? Loc["Settings_EngineNativeAdvise"] :
+											  engine.Id == "bbp" ? Loc["Settings_EngineBbpAdvise"] :
+											  Loc["Settings_EngineJaVaFoAdvise"])
+										</div>
+										@if (!isAvailable)
+										{
+											<div style="font-size: 11px; color: var(--accent-danger); margin-top: 2px;">
+												@Loc["Settings_EngineNotInstalled"]
+											</div>
+										}
+									</div>
+
+									<div style="display: flex; align-items: center; gap: 8px;">
+										@if (isAvailable)
+										{
+											<span class="badge badge-green">@Loc["Settings_EngineStatusReady"]</span>
+										}
+										else
+										{
+											<span class="badge badge-gray" title="Engine executable not detected">@Loc["Settings_EngineStatusMissing"]</span>
+											@if (engine.Id == "bbp" || engine.Id == "javafo")
+											{
+												<button type="button" class="btn-primary" style="font-size: 11px; padding: 3px 8px;"
+														disabled="@State.IsDownloadingEngine"
+														@onclick:stopPropagation="true"
+														@onclick="() => DownloadEngineWorkbenchAsync(engine.Id)">
+													<AppIcon Name="download" Size="11" />
+													<span>@(State.IsDownloadingEngine && State.DownloadingEngineId == engine.Id ? Loc["Settings_Downloading"] : Loc["Settings_DownloadInstallBtn"])</span>
+												</button>
+											}
+										}
+									</div>
+								</div>
+							}
+						</div>
+					</div>
+				}
+
+				<!-- Tiebreak Configuration Card -->
+				<div class="panel-card" style="display: flex; flex-direction: column; gap: 14px;">
+					<div style="display: flex; align-items: center; justify-content: space-between;">
+						<div>
+							<div class="panel-title" style="margin-bottom: 2px;">@Loc["Settings_Tiebreaks"]</div>
+							<div style="font-size: 12px; color: var(--text-secondary);">@Loc["Settings_TiebreakDesc"]</div>
+						</div>
+					</div>
+
+					<!-- Preset Selection Buttons -->
+					<div style="display: flex; flex-wrap: wrap; gap: 8px;">
+						<button type="button" class="btn-secondary" @onclick="() => ApplyTiebreakPreset(TiebreakPreset.FideStandardSwiss)">
+							<span>@Loc["Settings_PresetSwiss"]</span>
+						</button>
+						<button type="button" class="btn-secondary" @onclick="() => ApplyTiebreakPreset(TiebreakPreset.RoundRobin)">
+							<span>@Loc["Settings_PresetRR"]</span>
+						</button>
+						<button type="button" class="btn-secondary" @onclick="() => ApplyTiebreakPreset(TiebreakPreset.FideChampionship)">
+							<span>@Loc["Settings_PresetChampionship"]</span>
+						</button>
+					</div>
+
+					<!-- Active Priority Stack (Interactive list) -->
+					<div style="margin-top: 6px;">
+						<label class="form-label" style="margin-bottom: 8px;">@Loc["Settings_ActivePriority"]</label>
+						@if (tournament.TiebreakOrder.Count == 0)
+						{
+							<div style="padding: 12px; background: rgba(255,255,255,0.02); border: 1px dashed var(--border-color); border-radius: 6px; font-size: 12px; color: var(--text-muted); text-align: center;">
+								@Loc["Tiebreak_Empty"]
+							</div>
+						}
+						else
+						{
+							<div style="display: flex; flex-direction: column; gap: 6px;">
+								@for (int i = 0; i < tournament.TiebreakOrder.Count; i++)
+								{
+									var tb = tournament.TiebreakOrder[i];
+									int idx = i;
+									<div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; background: var(--bg-hover); border: 1px solid var(--border-color); border-radius: 6px; font-size: 13px;">
+										<div style="display: flex; align-items: center; gap: 8px;">
+											<span style="font-family: var(--font-mono); font-weight: 700; color: var(--brand-gold); width: 22px;">@(idx + 1).</span>
+											<span style="font-weight: 600;">@(Loc[$"Tiebreak_{tb}"] != $"Tiebreak_{tb}" ? Loc[$"Tiebreak_{tb}"] : tb.ToFullName())</span>
+											<span class="badge badge-gold" style="font-family: var(--font-mono); font-size: 11px; padding: 1px 6px;">@tb.ToShortName()</span>
+										</div>
+										<div style="display: flex; align-items: center; gap: 4px;">
+											<button type="button" class="btn-icon" style="padding: 3px 6px; font-size: 11px;" title="@Loc["Tiebreak_MoveUp"]" disabled="@(idx == 0)" @onclick="() => MoveTiebreakUp(idx)">
+												▲
+											</button>
+											<button type="button" class="btn-icon" style="padding: 3px 6px; font-size: 11px;" title="@Loc["Tiebreak_MoveDown"]" disabled="@(idx == tournament.TiebreakOrder.Count - 1)" @onclick="() => MoveTiebreakDown(idx)">
+												▼
+											</button>
+											<button type="button" class="btn-icon" style="padding: 3px 6px; font-size: 11px; color: var(--accent-danger);" title="@Loc["Tiebreak_Remove"]" @onclick="() => RemoveTiebreak(idx)">
+												<AppIcon Name="x" Size="12" />
+											</button>
+										</div>
+									</div>
+								}
+							</div>
+						}
+					</div>
+
+					<!-- Add Criterion Section -->
+					@{
+						var availableToAdd = Enum.GetValues<TiebreakType>()
+							.Where(t => !tournament.TiebreakOrder.Contains(t))
+							.ToList();
+					}
+					@if (availableToAdd.Count > 0)
+					{
+						<div style="display: flex; gap: 8px; align-items: center; margin-top: 4px;">
+							<select class="form-select" style="flex: 1; font-size: 13px;" @bind="_selectedTiebreakToAdd">
+								<option value="">-- @Loc["Tiebreak_SelectToAdd"] --</option>
+								@foreach (var avail in availableToAdd)
+								{
+									<option value="@avail">
+										@(Loc[$"Tiebreak_{avail}"] != $"Tiebreak_{avail}" ? Loc[$"Tiebreak_{avail}"] : avail.ToFullName()) (@avail.ToShortName())
+									</option>
+								}
+							</select>
+							<button type="button" class="btn-secondary" style="white-space: nowrap;" disabled="@(!_selectedTiebreakToAdd.HasValue)" @onclick="AddSelectedTiebreak">
+								<AppIcon Name="plus" Size="14" />
+								<span>@Loc["Tiebreak_Add"]</span>
+							</button>
+						</div>
+					}
+				</div>
+
+				<!-- Data Exchange Card -->
+				<div class="panel-card" style="display: flex; flex-direction: column; gap: 14px;">
+					<div class="panel-title">@Loc["Settings_DataExchange"]</div>
+					<div style="font-size: 12px; color: var(--text-secondary);">
+						@Loc["Settings_DataExchangeDesc"]
+					</div>
+
+					<div style="display: flex; flex-wrap: wrap; gap: 10px;">
+						<button type="button" class="btn-secondary" @onclick="DownloadTrfAsync">
+							<AppIcon Name="download" Size="14" />
+							<span>@Loc["Settings_ExportTrf"]</span>
+						</button>
+						<button type="button" class="btn-secondary" @onclick="DownloadCdeskAsync">
+							<AppIcon Name="download" Size="14" />
+							<span>@Loc["Settings_ExportCdesk"]</span>
+						</button>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px;">
+			<button class="btn-primary" @onclick="SaveSettingsAsync">
+				<AppIcon Name="save" Size="14" />
+				<span>@Loc["Common_SaveChanges"]</span>
+			</button>
+		</div>
+	</div>
+}
+
+@code {
+	[Parameter, EditorRequired] public WorkbenchState State { get; set; } = default!;
+
+	private TiebreakType? _selectedTiebreakToAdd;
+
+	private void OnStartDateChanged(ChangeEventArgs e)
+	{
+		if (State.Tournament != null && DateTime.TryParse(e.Value?.ToString(), out var dt))
+		{
+			State.Details.StartDate = dt;
+		}
+	}
+
+	private void OnEndDateChanged(ChangeEventArgs e)
+	{
+		if (State.Tournament != null && DateTime.TryParse(e.Value?.ToString(), out var dt))
+		{
+			State.Details.EndDate = dt;
+		}
+	}
+
+	private async Task SaveSettingsAsync()
+	{
+		var tournament = State.Tournament;
+		if (tournament == null) return;
+		State.SettingsErrorMessage = null;
+		State.SettingsSuccessMessage = null;
+
+		switch (State.Details.TryApplyTo(tournament))
+		{
+			case TournamentDetailsValidation.NameRequired:
+				State.SettingsErrorMessage = Loc["Tournament_Name"] + " is required.";
+				return;
+			case TournamentDetailsValidation.TooFewRounds:
+				State.SettingsErrorMessage = Loc["Tournament_MinRoundsError", tournament.MinAllowedRounds];
+				return;
+		}
+
+		State.DiscardDetailsDraft();
+		if (await State.SaveAsync(tournament))
+		{
+			State.SettingsSuccessMessage = Loc["Tournament_DetailsSaved"];
+		}
+	}
+
+	private void RequestToggleWorkbenchFinished()
+	{
+		var tournament = State.Tournament;
+		if (tournament == null) return;
+		bool willFinish = !tournament.IsFinished;
+		State.Confirm.Request(
+			willFinish ? Loc["Confirm_ArchiveTournamentTitle"] : Loc["Confirm_UnarchiveTournamentTitle"],
+			willFinish ? Loc["Confirm_ArchiveTournamentMsg", tournament.Name] : Loc["Confirm_UnarchiveTournamentMsg", tournament.Name],
+			ToggleWorkbenchFinishedAsync,
+			confirmText: willFinish ? Loc["Workbench_MarkFinishedBtn"] : Loc["Workbench_RestoreActiveBtn"],
+			icon: willFinish ? "archive" : "unarchive",
+			isDestructive: false);
+	}
+
+	private async Task ToggleWorkbenchFinishedAsync()
+	{
+		var tournament = State.Tournament;
+		if (tournament == null) return;
+		var (wasFinished, finishedAt) = (tournament.IsFinished, tournament.FinishedAt);
+		tournament.IsFinished = !tournament.IsFinished;
+		tournament.FinishedAt = tournament.IsFinished ? DateTime.UtcNow : null;
+		if (!await State.SaveAsync(tournament))
+		{
+			tournament.IsFinished = wasFinished;
+			tournament.FinishedAt = finishedAt;
+		}
+	}
+
+	// ---------------------------------------------------------------- pairing engine
+
+	private async Task SelectPairingEngine(string engineId)
+	{
+		var tournament = State.Tournament;
+		if (tournament == null) return;
+		// GetEngine never reports unavailability (it falls back to native), so resolve explicitly
+		if (EngineRegistry.ResolveEngine(engineId).IsFallback) return;
+		tournament.PairingEngineId = engineId;
+		await State.SaveAsync(tournament);
+	}
+
+	private async Task DownloadEngineWorkbenchAsync(string engineId)
+	{
+		State.IsDownloadingEngine = true;
+		State.DownloadingEngineId = engineId;
+		State.EngineDownloadMessage = Loc["Settings_Downloading"];
+		State.NotifyChanged();
+
+		try
+		{
+			// Same install flow as the settings control center (EngineInstallerExtensions)
+			var result = await EngineInstaller.TryInstallEngineAsync(engineId, Logger);
+			if (result.Success)
+			{
+				State.EngineDownloadMessage = null;
+				await SelectPairingEngine(engineId);
+			}
+			else
+			{
+				State.EngineDownloadMessage = result.ErrorMessage;
+			}
+		}
+		finally
+		{
+			State.IsDownloadingEngine = false;
+			State.DownloadingEngineId = null;
+			State.NotifyChanged();
+		}
+	}
+
+	// ---------------------------------------------------------------- tie-breaks
+
+	private async Task ApplyTiebreakPreset(TiebreakPreset preset)
+	{
+		var tournament = State.Tournament;
+		if (tournament == null) return;
+		tournament.TiebreakOrder = preset.GetDefaultList();
+		await State.SaveAsync(tournament);
+	}
+
+	private async Task MoveTiebreakUp(int index)
+	{
+		var tournament = State.Tournament;
+		if (tournament == null || index <= 0 || index >= tournament.TiebreakOrder.Count) return;
+		(tournament.TiebreakOrder[index], tournament.TiebreakOrder[index - 1]) = (tournament.TiebreakOrder[index - 1], tournament.TiebreakOrder[index]);
+		await State.SaveAsync(tournament);
+	}
+
+	private async Task MoveTiebreakDown(int index)
+	{
+		var tournament = State.Tournament;
+		if (tournament == null || index < 0 || index >= tournament.TiebreakOrder.Count - 1) return;
+		(tournament.TiebreakOrder[index], tournament.TiebreakOrder[index + 1]) = (tournament.TiebreakOrder[index + 1], tournament.TiebreakOrder[index]);
+		await State.SaveAsync(tournament);
+	}
+
+	private async Task RemoveTiebreak(int index)
+	{
+		var tournament = State.Tournament;
+		if (tournament == null || index < 0 || index >= tournament.TiebreakOrder.Count) return;
+		tournament.TiebreakOrder.RemoveAt(index);
+		await State.SaveAsync(tournament);
+	}
+
+	private async Task AddSelectedTiebreak()
+	{
+		var tournament = State.Tournament;
+		if (tournament == null || !_selectedTiebreakToAdd.HasValue) return;
+		if (!tournament.TiebreakOrder.Contains(_selectedTiebreakToAdd.Value))
+		{
+			tournament.TiebreakOrder.Add(_selectedTiebreakToAdd.Value);
+			await State.SaveAsync(tournament);
+		}
+		_selectedTiebreakToAdd = null;
+	}
+
+	// ---------------------------------------------------------------- data exchange
+
+	private async Task DownloadTrfAsync()
+	{
+		var tournament = State.Tournament;
+		if (tournament == null) return;
+		try
+		{
+			await FileExport.SaveTrfAsync(tournament, Loc);
+		}
+		catch (Exception ex)
+		{
+			Logger.LogError(ex, "TRF export of {Tournament} failed.", tournament.Name);
+			Notifications.ShowError(Loc["Toast_ActionFailed", ex.Message]);
+		}
+	}
+
+	private async Task DownloadCdeskAsync()
+	{
+		var tournament = State.Tournament;
+		if (tournament == null) return;
+		try
+		{
+			string json = await TournamentRepo.ExportJsonAsync(tournament.Id);
+			await FileExport.SaveCdeskAsync(tournament.Name, json, Loc);
+		}
+		catch (Exception ex)
+		{
+			Logger.LogError(ex, ".cdesk export of {Tournament} failed.", tournament.Name);
+			Notifications.ShowError(Loc["Toast_ActionFailed", ex.Message]);
+		}
+	}
+}

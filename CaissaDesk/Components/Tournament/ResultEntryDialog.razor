@@ -150,10 +150,17 @@
 	[Parameter] public Player? WhitePlayer { get; set; }
 	[Parameter] public Player? BlackPlayer { get; set; }
 	[Parameter] public EventCallback OnClose { get; set; }
-	[Parameter] public EventCallback<Pairing> OnResultSaved { get; set; }
+
+	/// <summary>
+	/// The arbiter confirmed a result. The dialog never touches <see cref="Pairing"/>: the parent applies the
+	/// entry, persists it and closes the dialog (by clearing <see cref="IsOpen"/>) only when saving succeeded.
+	/// </summary>
+	[Parameter] public EventCallback<ResultEntry> OnSave { get; set; }
 
 	private MatchResult _selectedResult = MatchResult.NotPlayed;
 	private string _remarks = "";
+	private bool _wasOpen;
+	private Pairing? _loadedPairing;
 
 	protected override void OnInitialized()
 	{
@@ -162,11 +169,18 @@
 
 	protected override void OnParametersSet()
 	{
-		if (Pairing != null)
+		// Only (re)load the form when the dialog opens or switches to another board; ordinary parent
+		// re-renders must not discard the arbiter's unsaved selection.
+		bool opened = IsOpen && !_wasOpen;
+		bool otherBoard = IsOpen && !ReferenceEquals(Pairing, _loadedPairing);
+		if ((opened || otherBoard) && Pairing != null)
 		{
 			_selectedResult = Pairing.Result;
 			_remarks = Pairing.Remarks ?? "";
 		}
+
+		_wasOpen = IsOpen;
+		_loadedPairing = IsOpen ? Pairing : null;
 	}
 
 	public void Dispose()
@@ -197,13 +211,13 @@
 
 	private async Task SaveResult()
 	{
-		if (Pairing != null)
+		if (Pairing == null)
 		{
-			Pairing.Result = _selectedResult;
-			Pairing.Remarks = string.IsNullOrWhiteSpace(_remarks) ? null : _remarks.Trim();
-			await OnResultSaved.InvokeAsync(Pairing);
+			await Close();
+			return;
 		}
-		await Close();
+
+		await OnSave.InvokeAsync(new ResultEntry(Pairing, _selectedResult, string.IsNullOrWhiteSpace(_remarks) ? null : _remarks.Trim()));
 	}
 
 	private async Task Close()
