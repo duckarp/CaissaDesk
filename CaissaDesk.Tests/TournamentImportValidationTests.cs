@@ -120,26 +120,26 @@ public class TournamentImportValidationTests
 
     public static IEnumerable<object[]> InvalidMutations()
     {
-        yield return [ "null players", (Action<JsonObject>)(n => n["Players"] = null), "player list" ];
-        yield return [ "null rounds", (Action<JsonObject>)(n => n["Rounds"] = null), "round list" ];
-        yield return [ "blank name", (Action<JsonObject>)(n => n["Name"] = " "), "no name" ];
-        yield return [ "null player entry", (Action<JsonObject>)(n => n["Players"]!.AsArray().Add(null)), "Player entry #4" ];
-        yield return [ "empty player id", (Action<JsonObject>)(n => n["Players"]![0]!["Id"] = ""), "has no ID" ];
-        yield return [ "duplicate player id", (Action<JsonObject>)(n => n["Players"]![1]!["Id"] = n["Players"]![0]!["Id"]!.GetValue<string>()), "Duplicate player ID" ];
-        yield return [ "unknown white", (Action<JsonObject>)(n => n["Rounds"]![0]!["Pairings"]![0]!["WhitePlayerId"] = "ghost"), "unknown white player" ];
-        yield return [ "unknown black", (Action<JsonObject>)(n => n["Rounds"]![0]!["Pairings"]![0]!["BlackPlayerId"] = "ghost"), "unknown black player" ];
+        yield return ["null players", (Action<JsonObject>)(n => n["Players"] = null), "player list"];
+        yield return ["null rounds", (Action<JsonObject>)(n => n["Rounds"] = null), "round list"];
+        yield return ["blank name", (Action<JsonObject>)(n => n["Name"] = " "), "no name"];
+        yield return ["null player entry", (Action<JsonObject>)(n => n["Players"]!.AsArray().Add(null)), "Player entry #4"];
+        yield return ["empty player id", (Action<JsonObject>)(n => n["Players"]![0]!["Id"] = ""), "has no ID"];
+        yield return ["duplicate player id", (Action<JsonObject>)(n => n["Players"]![1]!["Id"] = n["Players"]![0]!["Id"]!.GetValue<string>()), "Duplicate player ID"];
+        yield return ["unknown white", (Action<JsonObject>)(n => n["Rounds"]![0]!["Pairings"]![0]!["WhitePlayerId"] = "ghost"), "unknown white player"];
+        yield return ["unknown black", (Action<JsonObject>)(n => n["Rounds"]![0]!["Pairings"]![0]!["BlackPlayerId"] = "ghost"), "unknown black player"];
         yield return [ "pairing without players", (Action<JsonObject>)(n =>
             {
                 var p = n["Rounds"]![0]!["Pairings"]![1]!;
                 p["WhitePlayerId"] = null;
                 p["BlackPlayerId"] = null;
             }), "no players" ];
-        yield return [ "null pairings", (Action<JsonObject>)(n => n["Rounds"]![0]!["Pairings"] = null), "no pairing list" ];
-        yield return [ "zero round number", (Action<JsonObject>)(n => n["Rounds"]![0]!["RoundNumber"] = 0), "must be positive" ];
-        yield return [ "negative round number", (Action<JsonObject>)(n => n["Rounds"]![0]!["RoundNumber"] = -2), "must be positive" ];
-        yield return [ "duplicate round", (Action<JsonObject>)(n => n["Rounds"]!.AsArray().Add(n["Rounds"]![0]!.DeepClone())), "more than once" ];
-        yield return [ "negative total rounds", (Action<JsonObject>)(n => n["TotalRounds"] = -1), "total round count" ];
-        yield return [ "absurd total rounds", (Action<JsonObject>)(n => n["TotalRounds"] = 100000), "total round count" ];
+        yield return ["null pairings", (Action<JsonObject>)(n => n["Rounds"]![0]!["Pairings"] = null), "no pairing list"];
+        yield return ["zero round number", (Action<JsonObject>)(n => n["Rounds"]![0]!["RoundNumber"] = 0), "must be positive"];
+        yield return ["negative round number", (Action<JsonObject>)(n => n["Rounds"]![0]!["RoundNumber"] = -2), "must be positive"];
+        yield return ["duplicate round", (Action<JsonObject>)(n => n["Rounds"]!.AsArray().Add(n["Rounds"]![0]!.DeepClone())), "more than once"];
+        yield return ["negative total rounds", (Action<JsonObject>)(n => n["TotalRounds"] = -1), "total round count"];
+        yield return ["absurd total rounds", (Action<JsonObject>)(n => n["TotalRounds"] = 100000), "total round count"];
         yield return [ "too many pairings", (Action<JsonObject>)(n =>
             {
                 var pairings = n["Rounds"]![0]!["Pairings"]!.AsArray();

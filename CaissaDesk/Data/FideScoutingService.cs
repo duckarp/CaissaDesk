@@ -140,8 +140,8 @@ public class FideScoutingService : IFideScoutingService
             if (countryMatch.Groups[1].Success)
             {
                 string flagRel = countryMatch.Groups[1].Value.Trim();
-                card.FlagUrl = flagRel.StartsWith("http", StringComparison.OrdinalIgnoreCase) 
-                    ? flagRel 
+                card.FlagUrl = flagRel.StartsWith("http", StringComparison.OrdinalIgnoreCase)
+                    ? flagRel
                     : $"https://ratings.fide.com{flagRel}";
 
                 string? codeFromFlag = FideCountryHelper.TryExtractFromFlagUrl(card.FlagUrl);

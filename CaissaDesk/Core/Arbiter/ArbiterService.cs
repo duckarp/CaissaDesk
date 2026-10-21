@@ -32,13 +32,13 @@ public class ArbiterService : IArbiterService
         if (player == null) return;
 
         player.Status = PlayerStatus.Withdrawn;
-        
+
         // Remove pending advance byes for uncompleted future rounds since player is now withdrawn
         int latestRoundWithPairings = tournament.Rounds.Count;
         var roundsToRemove = player.ByeRequests.Keys
             .Where(r => r > latestRoundWithPairings)
             .ToList();
-            
+
         foreach (var r in roundsToRemove)
         {
             player.ByeRequests.Remove(r);

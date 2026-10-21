@@ -9,7 +9,7 @@ public interface IArbiterService
     void WithdrawPlayer(Tournament tournament, string playerId, string? reason = null);
     void ReactivatePlayer(Tournament tournament, string playerId);
     void AddLatePlayer(Tournament tournament, Player player, ByeType pastRoundsByeType = ByeType.HalfPoint);
-    
+
     bool SwapBoardColors(Round round, int boardNumber);
     bool SwapPlayersAcrossBoards(Round round, int board1, bool isWhite1, int board2, bool isWhite2);
     Pairing AddManualPairing(Round round, string whitePlayerId, string? blackPlayerId, MatchResult result = MatchResult.NotPlayed, string? remarks = null);

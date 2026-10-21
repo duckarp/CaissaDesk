@@ -71,9 +71,6 @@ jobs:
   format:
     name: Code format check
     runs-on: ubuntu-latest
-    # Non-blocking until the existing whitespace drift is cleaned up
-    # (run `dotnet format CaissaDesk.slnx` locally), then remove continue-on-error.
-    continue-on-error: true
 
     steps:
       - name: Checkout repository
