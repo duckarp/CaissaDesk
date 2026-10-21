@@ -4,20 +4,63 @@
 @using CaissaDesk.Components.Dashboard
 @using Caissa.Shared.Models
 @using CaissaDesk.Localization
+@using CaissaDesk.Core.Updates
 @inject WorkspaceState Workspace
 @inject ILocalizationService Loc
+@inject IUpdateService Updates
+@inject INotificationService Notifications
 @implements IDisposable
 
 <header class="app-header">
-	<button type="button" class="app-brand" @onclick="Workspace.SelectDashboard" title="@Loc["App_Title"]" aria-label="@Loc["App_BrandLabel", AppVersion]">
-		<img src="images/icon.svg" alt="" class="brand-logo-icon" />
-		<span class="brand-title" aria-hidden="true">
-			<strong class="brand-caissa">CAISSA</strong><span class="brand-desk">DESK</span>
-		</span>
-		<span class="brand-badge" title="@Loc["App_VersionTooltip"]" aria-hidden="true">
-			<span>v@(AppVersion)</span>
-		</span>
-	</button>
+	<div class="app-brand-group">
+		<button type="button" class="app-brand" @onclick="Workspace.SelectDashboard" title="@Loc["App_Title"]" aria-label="@Loc["App_BrandLabel", AppVersion]">
+			<img src="images/icon.svg" alt="" class="brand-logo-icon" />
+			<span class="brand-title" aria-hidden="true">
+				<strong class="brand-caissa">CAISSA</strong><span class="brand-desk">DESK</span>
+			</span>
+		</button>
+
+		@* Separate button (no nested interactive content): click forces an update check *@
+		<button type="button"
+				class="brand-badge brand-badge-btn @BadgeStateClass"
+				title="@Loc["App_VersionTooltip"]"
+				aria-label="@Loc["Update_BadgeLabel", AppVersion]"
+				aria-busy="@(Updates.IsChecking ? "true" : "false")"
+				@onclick="CheckNowAsync">
+			@if (Updates.IsChecking)
+			{
+				<span class="brand-badge-spinner" aria-hidden="true"></span>
+				<span>@Loc["Update_Checking"]</span>
+			}
+			else if (_feedback == BadgeFeedback.UpToDate)
+			{
+				<AppIcon Name="check" Size="11" />
+				<span>@Loc["Update_UpToDateShort"]</span>
+			}
+			else if (_feedback == BadgeFeedback.Failed)
+			{
+				<AppIcon Name="alert" Size="11" />
+				<span>@Loc["Update_CheckFailedShort"]</span>
+			}
+			else
+			{
+				<span>v@(AppVersion)</span>
+			}
+		</button>
+
+		@if (Updates.LastResult is { IsUpdateAvailable: true } available)
+		{
+			<button type="button"
+					class="header-update-pill"
+					title="@Loc["Update_PillTooltip", available.Release!.Version.ToString()]"
+					@onclick="OpenUpdateDialog">
+				<AppIcon Name="download" Size="13" />
+				<span>@Loc["Update_Pill", available.Release!.Version.ToString()]</span>
+			</button>
+		}
+
+		<span class="sr-only" role="status">@_liveMessage</span>
+	</div>
 
 	<div class="header-actions">
 		<button type="button" class="btn-secondary" title="@Loc["Nav_Settings"]" @onclick="() => Workspace.CreateSettingsTab()">
@@ -61,6 +104,10 @@
 	</div>
 </nav>
 
+<UpdateDialog IsOpen="_showUpdateDialog"
+			  Update="Updates.LastResult"
+			  OnClose="() => _showUpdateDialog = false" />
+
 <CreateTournamentModal IsOpen="_showCreateModal"
 					   OnClose="() => _showCreateModal = false"
 					   OnCreated="HandleTournamentCreated" />
@@ -68,28 +115,89 @@
 @code {
 	private bool _showCreateModal = false;
 
-	// Product version from the assembly informational version (set via <Version> in
-	// Directory.Build.props or -p:Version=... in the release workflow), without the "+commit" suffix.
-	private static readonly string AppVersion = GetAppVersion();
+	private enum BadgeFeedback { None, UpToDate, Failed }
 
-	private static string GetAppVersion()
-	{
-		var assembly = typeof(WorkspaceTabs).Assembly;
-		var informational = System.Reflection.CustomAttributeExtensions
-			.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(assembly)?.InformationalVersion;
-		if (!string.IsNullOrWhiteSpace(informational))
-		{
-			var plus = informational.IndexOf('+');
-			return plus >= 0 ? informational[..plus] : informational;
-		}
-		return assembly.GetName().Version?.ToString(3) ?? "0.0.0";
-	}
+	private static readonly string AppVersion = CaissaDesk.Core.AppVersion.Current;
+	private static readonly TimeSpan FeedbackDuration = TimeSpan.FromSeconds(4);
+
+	private bool _showUpdateDialog;
+	private BadgeFeedback _feedback;
+	private string _liveMessage = "";
+	private CancellationTokenSource? _feedbackCts;
+	private readonly CancellationTokenSource _disposeCts = new();
+
+	private string BadgeStateClass => Updates.IsChecking ? "is-checking"
+		: _feedback == BadgeFeedback.UpToDate ? "is-uptodate"
+		: _feedback == BadgeFeedback.Failed ? "is-failed"
+		: "";
 
 	protected override void OnInitialized()
 	{
 		Workspace.OnChange += StateHasChanged;
 		Workspace.OnRequestCreateTournament += HandleRequestCreateTournament;
+		Workspace.OnRequestUpdateDialog += HandleRequestUpdateDialog;
 		Loc.OnLanguageChanged += StateHasChanged;
+		Updates.StateChanged += HandleUpdateStateChanged;
+	}
+
+	// Raised from the background check thread
+	private void HandleUpdateStateChanged() => _ = InvokeAsync(StateHasChanged);
+
+	private void HandleRequestUpdateDialog()
+	{
+		if (Updates.LastResult is { IsUpdateAvailable: true })
+		{
+			_showUpdateDialog = true;
+			StateHasChanged();
+		}
+	}
+
+	private void OpenUpdateDialog() => _showUpdateDialog = true;
+
+	private async Task CheckNowAsync()
+	{
+		if (Updates.IsChecking) return;
+
+		_feedbackCts?.Cancel();
+		_feedback = BadgeFeedback.None;
+		_liveMessage = Loc["Update_Checking"];
+
+		UpdateCheckResult result;
+		try
+		{
+			result = await Updates.CheckForUpdatesAsync(_disposeCts.Token);
+		}
+		catch (OperationCanceledException)
+		{
+			return;
+		}
+
+		_liveMessage = Loc.StatusText(result);
+		if (result.IsUpdateAvailable)
+		{
+			_showUpdateDialog = true;
+			return;
+		}
+
+		bool ok = result.Status is UpdateCheckStatus.UpToDate or UpdateCheckStatus.NoReleases;
+		_feedback = ok ? BadgeFeedback.UpToDate : BadgeFeedback.Failed;
+		if (!ok)
+		{
+			Notifications.ShowError(Loc.StatusText(result));
+		}
+
+		_feedbackCts?.Dispose();
+		_feedbackCts = new CancellationTokenSource();
+		var token = _feedbackCts.Token;
+		try
+		{
+			await Task.Delay(FeedbackDuration, token);
+			_feedback = BadgeFeedback.None;
+		}
+		catch (OperationCanceledException)
+		{
+			// a newer check replaced the feedback
+		}
 	}
 
 	private void OpenCreateTournamentModal()
@@ -113,6 +221,12 @@
 	{
 		Workspace.OnChange -= StateHasChanged;
 		Workspace.OnRequestCreateTournament -= HandleRequestCreateTournament;
+		Workspace.OnRequestUpdateDialog -= HandleRequestUpdateDialog;
 		Loc.OnLanguageChanged -= StateHasChanged;
+		Updates.StateChanged -= HandleUpdateStateChanged;
+		_disposeCts.Cancel();
+		_disposeCts.Dispose();
+		_feedbackCts?.Cancel();
+		_feedbackCts?.Dispose();
 	}
 }

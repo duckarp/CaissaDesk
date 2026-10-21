@@ -1,0 +1,334 @@
+@namespace CaissaDesk.Components.Layout
+@using CaissaDesk.Core.Updates
+@using CaissaDesk.Localization
+@inject IUpdateService Updates
+@inject ILocalizationService Loc
+@inject IExternalLinkService ExternalLinks
+@inject INotificationService Notifications
+@inject ILogger<UpdateDialog> Logger
+@implements IDisposable
+
+@* Stays mounted in the header so a finished download survives closing the dialog ("Later"). *@
+@if (IsOpen && Update?.Release is { } release)
+{
+	<ModalDialog LabelledBy="@_titleId" OnCancel="CloseAsync" CloseOnEscape="@(!IsBusy)" CloseOnOverlayClick="@(!IsBusy)" Class="update-dialog">
+		<div class="modal-header">
+			<div class="modal-title" id="@_titleId">
+				<span class="update-dialog-icon" aria-hidden="true"><AppIcon Name="download" Size="18" /></span>
+				<span>@Loc["Update_DialogTitle", release.Version.ToString()]</span>
+			</div>
+			<button type="button" class="modal-close-btn" @onclick="CloseAsync" disabled="@IsBusy" title="@Loc["Common_Close"]" aria-label="@Loc["Common_Close"]">
+				<AppIcon Name="x" Size="15" />
+			</button>
+		</div>
+
+		<div class="modal-body update-dialog-body">
+			<div class="update-version-row">
+				<span class="update-version-label">@Loc["Update_Current"]</span>
+				<span class="version-badge version-badge-current">v@(Update.CurrentVersion)</span>
+				<span class="update-version-arrow" aria-hidden="true">&rarr;</span>
+				<span class="update-version-label">@Loc["Update_Latest"]</span>
+				<span class="version-badge version-badge-latest">v@(release.Version)</span>
+				@if (release.IsPrerelease || release.Version.IsPreRelease)
+				{
+					<span class="badge badge-purple">@Loc["Update_Prerelease"]</span>
+				}
+			</div>
+
+			<div class="update-meta">
+				@if (!string.Equals(release.Title, release.TagName, StringComparison.Ordinal))
+				{
+					<span class="update-meta-title">@release.Title</span>
+				}
+				@if (release.PublishedAt is { } published)
+				{
+					<span>@Loc["Update_Published", published.ToLocalTime().ToString("d", Loc.Culture())]</span>
+				}
+				@if (Update.Asset is { Size: > 0 } asset)
+				{
+					<span>@Loc["Update_Size", UpdateLocalization.FormatBytes(asset.Size, Loc.Culture())]</span>
+				}
+			</div>
+
+			<div class="update-notes-scroll" tabindex="0" aria-label="@Loc["Update_Changes"]">
+				@if (!string.IsNullOrWhiteSpace(Update.AuthorNotes))
+				{
+					<h4 class="update-section-title">@Loc["Update_AuthorNotes"]</h4>
+					<div class="update-author-notes">@Update.AuthorNotes</div>
+				}
+
+				@if (Update.Changelog.Count > 0)
+				{
+					<h4 class="update-section-title">@Loc["Update_Changes"]</h4>
+					@foreach (var group in Update.Changelog)
+					{
+						<div class="changelog-group">
+							<div class="changelog-group-title">
+								<span class="changelog-badge changelog-badge-@group.Category.ToString().ToLowerInvariant()">@Loc.CategoryLabel(group.Category)</span>
+							</div>
+							<ul class="changelog-list">
+								@foreach (var entry in group.Entries)
+								{
+									<li>
+										@if (!string.IsNullOrEmpty(entry.Scope))
+										{
+											<strong class="changelog-scope">@entry.Scope:</strong>
+										}
+										<span>@entry.Description</span>
+									</li>
+								}
+							</ul>
+						</div>
+					}
+				}
+
+				@if (string.IsNullOrWhiteSpace(Update.AuthorNotes) && Update.Changelog.Count == 0)
+				{
+					<p class="update-empty">@Loc["Update_NoNotes"]</p>
+				}
+
+				@if (!string.IsNullOrEmpty(Update.CompareUrl))
+				{
+					<button type="button" class="update-link-btn" @onclick="() => OpenLink(Update.CompareUrl)">
+						<AppIcon Name="globe" Size="13" />
+						<span>@Loc["Update_ViewComparison"]</span>
+					</button>
+				}
+			</div>
+
+			@if (!Update.CanInstall)
+			{
+				<div class="update-callout update-callout-info" role="note">
+					<AppIcon Name="info" Size="16" />
+					<span>@Loc.BlockerText(Update.InstallBlocker)</span>
+				</div>
+			}
+
+			@if (_isDownloading || _isVerifying)
+			{
+				<div class="update-progress">
+					<div class="update-progress-header">
+						<span>@(_isVerifying ? Loc["Update_Verifying"] : Loc["Update_Downloading"])</span>
+						<span>@ProgressText</span>
+					</div>
+					<div class="update-progress-track"
+						 role="progressbar"
+						 aria-label="@Loc["Update_ProgressLabel"]"
+						 aria-valuemin="0"
+						 aria-valuemax="100"
+						 aria-valuenow="@(_progress.Percent?.ToString())">
+						<div class="update-progress-fill" style="width: @(_progress.Percent ?? 0)%"></div>
+					</div>
+				</div>
+			}
+
+			@if (_staged != null && !_isRestarting)
+			{
+				<div class="update-callout update-callout-success" role="status">
+					<AppIcon Name="check" Size="16" />
+					<span>@Loc["Update_Ready", _staged.Version]</span>
+				</div>
+			}
+
+			@if (_isRestarting)
+			{
+				<div class="update-callout update-callout-success" role="status">
+					<AppIcon Name="refresh" Size="16" />
+					<span>@Loc["Update_Restarting"]</span>
+				</div>
+			}
+
+			@if (!string.IsNullOrEmpty(_errorMessage))
+			{
+				<div class="update-callout update-callout-error" role="alert">
+					<AppIcon Name="alert" Size="16" />
+					<span>@_errorMessage</span>
+				</div>
+			}
+		</div>
+
+		<div class="modal-footer">
+			@if (_isDownloading)
+			{
+				<button type="button" class="btn-secondary" @onclick="CancelDownload">@Loc["Common_Cancel"]</button>
+			}
+			else
+			{
+				<button type="button" class="btn-secondary" @onclick="CloseAsync" disabled="@IsBusy" data-autofocus>@Loc["Update_Later"]</button>
+			}
+
+			@if (_staged != null)
+			{
+				<button type="button" class="btn-primary" @onclick="ApplyAsync" disabled="@_isRestarting">
+					<AppIcon Name="refresh" Size="14" />
+					<span>@Loc["Update_RestartNow"]</span>
+				</button>
+			}
+			else if (Update.CanInstall)
+			{
+				<button type="button" class="btn-primary" @onclick="DownloadAsync" disabled="@IsBusy">
+					<AppIcon Name="download" Size="14" />
+					<span>@Loc["Update_Download"]</span>
+				</button>
+			}
+			else if (!string.IsNullOrEmpty(Update.ReleasePageUrl))
+			{
+				<button type="button" class="btn-primary" @onclick="() => OpenLink(Update.ReleasePageUrl)">
+					<AppIcon Name="globe" Size="14" />
+					<span>@Loc["Update_OpenReleasePage"]</span>
+				</button>
+			}
+		</div>
+	</ModalDialog>
+}
+
+@code {
+	private readonly string _titleId = DomIds.Next("update-title");
+
+	[Parameter] public bool IsOpen { get; set; }
+	[Parameter] public UpdateCheckResult? Update { get; set; }
+	[Parameter] public EventCallback OnClose { get; set; }
+
+	private bool _isDownloading;
+	private bool _isVerifying;
+	private bool _isRestarting;
+	private UpdateDownloadProgress _progress;
+	private StagedUpdate? _staged;
+	private string? _errorMessage;
+	private CancellationTokenSource? _downloadCts;
+	private string? _stagedForTag;
+
+	private bool IsBusy => _isDownloading || _isVerifying || _isRestarting;
+
+	private string ProgressText
+	{
+		get
+		{
+			var culture = Loc.Culture();
+			string received = UpdateLocalization.FormatBytes(_progress.BytesReceived, culture);
+			return _progress.TotalBytes is > 0
+				? Loc["Update_DownloadProgress", received, UpdateLocalization.FormatBytes(_progress.TotalBytes.Value, culture)]
+				: received;
+		}
+	}
+
+	protected override void OnInitialized()
+	{
+		Loc.OnLanguageChanged += HandleLanguageChanged;
+	}
+
+	protected override void OnParametersSet()
+	{
+		// A newer release replaces a previously staged one
+		if (_staged != null && Update?.Release?.TagName != _stagedForTag)
+		{
+			_staged = null;
+		}
+		if (!IsOpen && !IsBusy)
+		{
+			_errorMessage = null;
+		}
+	}
+
+	private async Task DownloadAsync()
+	{
+		if (Update == null || IsBusy) return;
+
+		_errorMessage = null;
+		_isDownloading = true;
+		_progress = new UpdateDownloadProgress(0, Update.Asset?.Size > 0 ? Update.Asset.Size : null);
+		_downloadCts?.Dispose();
+		_downloadCts = new CancellationTokenSource();
+		var token = _downloadCts.Token;
+
+		var progress = new Progress<UpdateDownloadProgress>(p =>
+		{
+			_progress = p;
+			if (p.TotalBytes is > 0 && p.BytesReceived >= p.TotalBytes)
+			{
+				_isDownloading = false;
+				_isVerifying = true;
+			}
+			_ = InvokeAsync(StateHasChanged);
+		});
+
+		try
+		{
+			_staged = await Updates.DownloadAsync(Update, progress, token);
+			_stagedForTag = Update.Release?.TagName;
+		}
+		catch (OperationCanceledException) when (token.IsCancellationRequested)
+		{
+			_errorMessage = Loc["Update_Error_Cancelled"];
+		}
+		catch (UpdateException ex)
+		{
+			Logger.LogWarning(ex, "Update download failed ({Failure}).", ex.Failure);
+			_errorMessage = Loc.FailureText(ex.Failure);
+		}
+		catch (Exception ex)
+		{
+			Logger.LogWarning(ex, "Update download failed.");
+			_errorMessage = Loc["Update_Error_DownloadFailed"];
+		}
+		finally
+		{
+			_isDownloading = false;
+			_isVerifying = false;
+		}
+	}
+
+	private void CancelDownload()
+	{
+		_downloadCts?.Cancel();
+	}
+
+	private async Task ApplyAsync()
+	{
+		if (_staged == null || _isRestarting) return;
+
+		_errorMessage = null;
+		_isRestarting = true;
+		StateHasChanged();
+		try
+		{
+			await Updates.ApplyAndRestartAsync(_staged);
+		}
+		catch (UpdateException ex)
+		{
+			Logger.LogWarning(ex, "Applying the update failed ({Failure}).", ex.Failure);
+			_errorMessage = Loc.FailureText(ex.Failure);
+			_isRestarting = false;
+		}
+		catch (Exception ex)
+		{
+			Logger.LogWarning(ex, "Applying the update failed.");
+			_errorMessage = Loc["Update_Error_ApplyFailed"];
+			_isRestarting = false;
+		}
+	}
+
+	private void OpenLink(string? url)
+	{
+		if (!ExternalLinks.TryOpen(url))
+		{
+			Notifications.ShowError(Loc["Toast_OpenLinkFailed", url ?? ""]);
+		}
+	}
+
+	private async Task CloseAsync()
+	{
+		if (IsBusy) return;
+		_errorMessage = null;
+		await OnClose.InvokeAsync();
+	}
+
+	private void HandleLanguageChanged() => _ = InvokeAsync(StateHasChanged);
+
+	public void Dispose()
+	{
+		Loc.OnLanguageChanged -= HandleLanguageChanged;
+		_downloadCts?.Cancel();
+		_downloadCts?.Dispose();
+	}
+}

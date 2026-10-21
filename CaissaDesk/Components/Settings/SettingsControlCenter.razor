@@ -7,6 +7,7 @@
 @using CaissaDesk.Data
 @using CaissaDesk.Localization
 @using System.Runtime.InteropServices
+@using CaissaDesk.Core.Updates
 @inject ILocalizationService Loc
 @inject IAppSettingsService AppSettings
 @inject IPairingEngineRegistry EngineRegistry
@@ -14,6 +15,8 @@
 @inject ICaissaResultsSyncService CaissaResultsSync
 @inject IExternalLinkService ExternalLinks
 @inject INotificationService Notifications
+@inject IUpdateService Updates
+@inject WorkspaceState Workspace
 @inject ILogger<SettingsControlCenter> Logger
 @implements IDisposable
 
@@ -60,6 +63,14 @@
 					<div class="nav-item-content">
 						<span class="nav-item-title">@Loc["Settings_Nav_Sync"]</span>
 						<span class="nav-item-desc">@Loc["Settings_Nav_Sync_Desc"]</span>
+					</div>
+				</button>
+
+				<button type="button" class="@GetNavClass("updates")" aria-current="@(_activeCategory == "updates" ? "page" : null)" @onclick='() => SetCategory("updates")'>
+					<span class="nav-item-icon nav-icon-updates"><AppIcon Name="download" Size="18" /></span>
+					<div class="nav-item-content">
+						<span class="nav-item-title">@Loc["Settings_Nav_Updates"]</span>
+						<span class="nav-item-desc">@Loc["Settings_Nav_Updates_Desc"]</span>
 					</div>
 				</button>
 
@@ -665,6 +676,103 @@
 					</div>
 				</div>
 			}
+			else if (_activeCategory == "updates")
+			{
+				<!-- SECTION: APPLICATION UPDATES -->
+				<div class="control-section-card">
+					<div class="card-section-header">
+						<h3 class="card-section-title">
+							<span class="nav-item-icon nav-icon-updates" style="width: 28px; height: 28px;"><AppIcon Name="download" Size="16" /></span>
+							<span>@Loc["Settings_UpdatesTitle"]</span>
+						</h3>
+						<p class="card-section-desc">@Loc["Settings_UpdatesDesc"]</p>
+					</div>
+
+					<div class="update-settings-grid">
+						<div class="update-info-card">
+							<div class="update-info-label">@Loc["Settings_AboutInstalledVersion"]</div>
+							<div class="update-info-value">
+								<span class="version-badge version-badge-current">v@(Updates.CurrentVersion)</span>
+								<span class="version-os-badge">@RuntimeInformation.OSArchitecture</span>
+							</div>
+						</div>
+
+						<div class="update-info-card">
+							<div class="update-info-label">@Loc["Settings_UpdatesStatus"]</div>
+							<div class="update-info-value" role="status">
+								@if (Updates.IsChecking)
+								{
+									<span class="update-status-checking">@Loc["Update_Checking"]</span>
+								}
+								else
+								{
+									<span class="@UpdateStatusClass(Updates.LastResult)">@Loc.StatusText(Updates.LastResult)</span>
+								}
+							</div>
+							<div class="update-last-checked">
+								<span>@Loc["Settings_UpdatesLastChecked"]:</span>
+								<span>@(AppSettings.Settings.UpdateLastCheckedAt is { } checkedAt ? checkedAt.ToLocalTime().ToString("g", Loc.Culture()) : Loc["Update_Status_Never"])</span>
+							</div>
+						</div>
+					</div>
+
+					@if (!string.IsNullOrEmpty(_updatesSuccessMessage))
+					{
+						<div role="status" class="update-callout update-callout-success">
+							<AppIcon Name="check" Size="16" />
+							<span>@_updatesSuccessMessage</span>
+						</div>
+					}
+					@if (!string.IsNullOrEmpty(_updatesErrorMessage))
+					{
+						<div role="alert" class="update-callout update-callout-error">
+							<AppIcon Name="alert" Size="16" />
+							<span>@_updatesErrorMessage</span>
+						</div>
+					}
+
+					<div class="panel-card update-settings-form">
+						<div class="form-group">
+							<label class="form-label" for="@($"{_uid}-upd-repo")">@Loc["Settings_UpdatesRepository"]</label>
+							<input id="@($"{_uid}-upd-repo")" type="text" class="form-input" spellcheck="false"
+								   aria-describedby="@($"{_uid}-upd-repo-help")"
+								   @bind="_updateRepository" placeholder="@ReleaseParser.DefaultRepository" />
+							<span id="@($"{_uid}-upd-repo-help")" class="update-field-help">@Loc["Settings_UpdatesRepositoryHelp", ReleaseParser.DefaultRepository]</span>
+						</div>
+
+						<div class="update-checkbox-row">
+							<input type="checkbox" id="@($"{_uid}-upd-startup")" @bind="_updateCheckOnStartup" />
+							<label for="@($"{_uid}-upd-startup")">@Loc["Settings_UpdatesCheckOnStartup"]</label>
+						</div>
+						<div class="update-checkbox-row">
+							<input type="checkbox" id="@($"{_uid}-upd-pre")" @bind="_updateIncludePrereleases" />
+							<label for="@($"{_uid}-upd-pre")">@Loc["Settings_UpdatesIncludePrereleases"]</label>
+						</div>
+
+						<div class="update-actions">
+							<button type="button" class="btn-secondary" @onclick="SaveUpdateSettingsAsync">
+								<AppIcon Name="save" Size="14" />
+								<span>@Loc["Settings_UpdatesSave"]</span>
+							</button>
+							<button type="button" class="btn-primary" @onclick="CheckForUpdatesNowAsync" disabled="@Updates.IsChecking" aria-busy="@(Updates.IsChecking ? "true" : "false")">
+								<AppIcon Name="refresh" Size="14" />
+								<span>@(Updates.IsChecking ? Loc["Update_Checking"] : Loc["Settings_UpdatesCheckNow"])</span>
+							</button>
+							@if (Updates.LastResult is { IsUpdateAvailable: true })
+							{
+								<button type="button" class="btn-primary" @onclick="Workspace.RequestUpdateDialog">
+									<AppIcon Name="download" Size="14" />
+									<span>@Loc["Settings_UpdatesViewUpdate"]</span>
+								</button>
+							}
+							<button type="button" class="btn-secondary" @onclick="OpenReleasesPage">
+								<AppIcon Name="globe" Size="14" />
+								<span>@Loc["Settings_UpdatesOpenReleases"]</span>
+							</button>
+						</div>
+					</div>
+				</div>
+			}
 			else if (_activeCategory == "about")
 			{
 				<!-- SECTION: ABOUT CAISSADESK -->
@@ -696,7 +804,7 @@
 						<div class="update-info-card">
 							<div class="update-info-label">@Loc["Settings_AboutInstalledVersion"]</div>
 							<div class="update-info-value">
-								<span class="version-badge version-badge-current">v1.0.0</span>
+								<span class="version-badge version-badge-current">v@(Updates.CurrentVersion)</span>
 								<span class="version-os-badge">@RuntimeInformation.OSDescription</span>
 							</div>
 						</div>
@@ -758,9 +866,17 @@
 	private readonly Dictionary<string, PairingResult> _testResults = new(StringComparer.OrdinalIgnoreCase);
 	private readonly Dictionary<string, long> _testDurations = new(StringComparer.OrdinalIgnoreCase);
 
+	private string _updateRepository = "";
+	private bool _updateCheckOnStartup;
+	private bool _updateIncludePrereleases;
+	private string? _updatesSuccessMessage;
+	private string? _updatesErrorMessage;
+	private readonly CancellationTokenSource _updateCheckCts = new();
+
 	protected override void OnInitialized()
 	{
 		Loc.OnLanguageChanged += StateHasChanged;
+		Updates.StateChanged += HandleUpdateStateChanged;
 		LoadFromSettings();
 	}
 
@@ -768,7 +884,100 @@
 	{
 		_engineTestCts.Cancel();
 		_engineTestCts.Dispose();
+		_updateCheckCts.Cancel();
+		_updateCheckCts.Dispose();
 		Loc.OnLanguageChanged -= StateHasChanged;
+		Updates.StateChanged -= HandleUpdateStateChanged;
+	}
+
+	// Raised from the background check thread
+	private void HandleUpdateStateChanged() => _ = InvokeAsync(StateHasChanged);
+
+	private static string UpdateStatusClass(UpdateCheckResult? result) => result?.Status switch
+	{
+		UpdateCheckStatus.UpdateAvailable => "update-status-available",
+		UpdateCheckStatus.UpToDate => "update-status-uptodate",
+		UpdateCheckStatus.RateLimited or UpdateCheckStatus.Failed or UpdateCheckStatus.InvalidRepository => "update-status-error",
+		_ => ""
+	};
+
+	/// <returns>False (with an error message shown) when the repository is invalid or saving failed.</returns>
+	private async Task<bool> SaveUpdateSettingsCoreAsync()
+	{
+		_updatesSuccessMessage = null;
+		_updatesErrorMessage = null;
+
+		string? repo = string.IsNullOrWhiteSpace(_updateRepository)
+			? ReleaseParser.DefaultRepository
+			: ReleaseParser.NormalizeRepository(_updateRepository);
+		if (repo == null)
+		{
+			_updatesErrorMessage = Loc["Update_Status_InvalidRepository"];
+			return false;
+		}
+
+		bool repoChanged = !string.Equals(repo, AppSettings.Settings.UpdateRepository, StringComparison.OrdinalIgnoreCase);
+		try
+		{
+			await AppSettings.UpdateSettingsAsync(s =>
+			{
+				s.UpdateRepository = repo;
+				s.CheckForUpdatesOnStartup = _updateCheckOnStartup;
+				s.IncludePrereleaseUpdates = _updateIncludePrereleases;
+				if (repoChanged)
+				{
+					// What was learned about another repository's releases no longer applies
+					s.UpdateLastCheckedAt = null;
+					s.UpdateLatestKnownVersion = null;
+				}
+			});
+		}
+		catch (Exception ex)
+		{
+			_updatesErrorMessage = Loc["Settings_SaveFailed", ex.Message];
+			return false;
+		}
+
+		_updateRepository = repo;
+		return true;
+	}
+
+	private async Task SaveUpdateSettingsAsync()
+	{
+		if (await SaveUpdateSettingsCoreAsync())
+		{
+			_updatesSuccessMessage = Loc["Settings_UpdatesSaved"];
+		}
+	}
+
+	private async Task CheckForUpdatesNowAsync()
+	{
+		if (Updates.IsChecking) return;
+		// Check against what the form shows, not what was saved earlier
+		if (!await SaveUpdateSettingsCoreAsync()) return;
+
+		try
+		{
+			var result = await Updates.CheckForUpdatesAsync(_updateCheckCts.Token);
+			if (result.IsUpdateAvailable)
+			{
+				Workspace.RequestUpdateDialog();
+			}
+		}
+		catch (OperationCanceledException)
+		{
+			// settings tab closed
+		}
+	}
+
+	private void OpenReleasesPage()
+	{
+		string repo = ReleaseParser.NormalizeRepository(AppSettings.Settings.UpdateRepository) ?? ReleaseParser.DefaultRepository;
+		string url = ReleaseParser.BuildReleasesListUrl(repo);
+		if (!ExternalLinks.TryOpen(url))
+		{
+			Notifications.ShowError(Loc["Toast_OpenLinkFailed", url]);
+		}
 	}
 
 	private void SetCategory(string category)
@@ -786,6 +995,9 @@
 		_defaultsModel = AppSettings.Settings.Clone();
 		_enginesModel = AppSettings.Settings.Clone();
 		_cloudSyncModel = AppSettings.Settings.Clone();
+		_updateRepository = AppSettings.Settings.UpdateRepository;
+		_updateCheckOnStartup = AppSettings.Settings.CheckForUpdatesOnStartup;
+		_updateIncludePrereleases = AppSettings.Settings.IncludePrereleaseUpdates;
 	}
 
 	private async Task SaveDefaultsAsync()

@@ -89,6 +89,9 @@ public class WorkspaceState
     public event Action? OnChange;
     public event Action? OnRequestCreateTournament;
 
+    /// <summary>Asks the header to show its update dialog (it owns the download state).</summary>
+    public event Action? OnRequestUpdateDialog;
+
     public WorkspaceState()
     {
         var dashboard = new DashboardTab();
@@ -99,6 +102,11 @@ public class WorkspaceState
     public void RequestCreateTournament()
     {
         OnRequestCreateTournament?.Invoke();
+    }
+
+    public void RequestUpdateDialog()
+    {
+        OnRequestUpdateDialog?.Invoke();
     }
 
     public void SelectTab(Guid id)
