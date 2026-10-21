@@ -9,7 +9,6 @@
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20Windows-brightgreen.svg?style=flat-square)](https://github.com/duckarp/CaissaDesk/releases)
 [![Latest Release](https://img.shields.io/github/v/release/duckarp/CaissaDesk?style=flat-square&color=blue)](https://github.com/duckarp/CaissaDesk/releases/latest)
 [![CI Build](https://img.shields.io/github/actions/workflow/status/duckarp/CaissaDesk/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/duckarp/CaissaDesk/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/Tests-86%20Passing-success.svg?style=flat-square)](https://github.com/duckarp/CaissaDesk/actions)
 [![License](https://img.shields.io/badge/License-GPLv3-blue.svg?style=flat-square)](LICENSE)
 
 *Caissalytics' sister desktop workstation: a modern, lightweight, open-source alternative to legacy tournament software. Built with .NET 10, Photino.Blazor native desktop shell, SQLite, and pluggable Swiss pairing engines (including support for the FIDE-endorsed bbpPairings and JaVaFo).*
