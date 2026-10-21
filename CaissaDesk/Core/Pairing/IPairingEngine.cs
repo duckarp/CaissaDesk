@@ -8,6 +8,9 @@ public class PairingResult
     public string? ErrorMessage { get; set; }
     public List<Pairing> Pairings { get; set; } = [];
 
+    /// <summary>Non-fatal notice for the arbiter, e.g. that a fallback engine produced these pairings.</summary>
+    public string? Warning { get; set; }
+
     public static PairingResult Ok(List<Pairing> pairings) => new()
     {
         Success = true,

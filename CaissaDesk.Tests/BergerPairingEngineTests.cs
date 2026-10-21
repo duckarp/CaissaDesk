@@ -1,5 +1,6 @@
 using CaissaDesk.Core.PairingEngine;
 using Caissa.Shared.Models;
+using Caissa.Shared.Tiebreak;
 
 namespace CaissaDesk.Tests;
 
@@ -98,7 +99,9 @@ public class BergerPairingEngineTests
         {
             var bye = r.Pairings.FirstOrDefault(p => p.IsBye);
             Assert.NotNull(bye);
-            Assert.Equal(MatchResult.ByeFull, bye.Result);
+            // Playing the Berger dummy is a free round: no game and no point (not a 1-point bye)
+            Assert.Equal(MatchResult.ByeZero, bye.Result);
+            Assert.Equal((0.0, 0.0), bye.Result.ToPoints());
 
             string? byePlayerId = bye.WhitePlayerId ?? bye.BlackPlayerId;
             Assert.NotNull(byePlayerId);
@@ -107,5 +110,66 @@ public class BergerPairingEngineTests
 
         // All 5 players must have received exactly one bye
         Assert.Equal(5, byePlayers.Count);
+    }
+
+    [Fact]
+    public void Berger_OddPlayers_FreeRoundsDoNotScore()
+    {
+        var engine = new BergerPairingEngine();
+        var tournament = new Tournament
+        {
+            System = TournamentSystem.RoundRobin,
+            TotalRounds = 3,
+            Players =
+            [
+                new Player { Id = "a", StartRank = 1, FullName = "A" },
+                new Player { Id = "b", StartRank = 2, FullName = "B" },
+                new Player { Id = "c", StartRank = 3, FullName = "C" }
+            ]
+        };
+
+        tournament.Rounds = engine.GenerateAllRounds(tournament);
+        foreach (var p in tournament.Rounds.SelectMany(r => r.Pairings).Where(p => !p.IsBye))
+        {
+            p.Result = MatchResult.Draw;
+        }
+
+        // Every player drew both games and sat out once: 1 point each, not 2
+        var standings = new TiebreakService().CalculateStandings(tournament);
+        Assert.All(standings, s => Assert.Equal(1.0, s.Points));
+        Assert.All(standings, s => Assert.Equal(0, s.Wins));
+    }
+
+    [Fact]
+    public void Berger_StartRankGaps_StillPairsEveryPlayerByPosition()
+    {
+        var engine = new BergerPairingEngine();
+        var tournament = new Tournament
+        {
+            System = TournamentSystem.RoundRobin,
+            Players =
+            [
+                new Player { Id = "a", StartRank = 1, FullName = "A" },
+                new Player { Id = "b", StartRank = 3, FullName = "B" },
+                new Player { Id = "c", StartRank = 4, FullName = "C" },
+                new Player { Id = "d", StartRank = 9, FullName = "D" }
+            ]
+        };
+
+        var rounds = engine.GenerateAllRounds(tournament);
+        Assert.Equal(3, rounds.Count);
+
+        var games = new HashSet<string>();
+        foreach (var r in rounds)
+        {
+            var ids = r.Pairings.SelectMany(p => new[] { p.WhitePlayerId, p.BlackPlayerId }).ToList();
+            Assert.DoesNotContain(null, ids);
+            Assert.Equal(4, ids.Distinct().Count());
+            foreach (var p in r.Pairings)
+            {
+                games.Add(string.Join("-", new[] { p.WhitePlayerId, p.BlackPlayerId }.Order()));
+            }
+        }
+        Assert.Equal(6, games.Count); // everyone meets everyone once
     }
 }

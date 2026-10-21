@@ -164,4 +164,153 @@ public class NativeDutchPairingEngineTests
         Assert.False(result.Success);
         Assert.Contains("still has 1 game(s) with results pending", result.ErrorMessage);
     }
+
+    private static Tournament Players(params int[] ranks) => new()
+    {
+        System = TournamentSystem.SwissDutch,
+        TotalRounds = 9,
+        Players = ranks.Select(r => new Player { Id = $"p{r}", StartRank = r, FullName = $"P{r}" }).ToList()
+    };
+
+    private static void AddRound(Tournament t, int number, params (string? White, string? Black, MatchResult Result)[] games)
+    {
+        t.Rounds.Add(new Round
+        {
+            RoundNumber = number,
+            Pairings = games.Select((g, i) => new Pairing
+            {
+                RoundNumber = number,
+                BoardNumber = i + 1,
+                WhitePlayerId = g.White,
+                BlackPlayerId = g.Black,
+                Result = g.Result
+            }).ToList()
+        });
+    }
+
+    private static bool HasGame(PairingResult result, string a, string b) =>
+        result.Pairings.Any(p => (p.WhitePlayerId == a && p.BlackPlayerId == b) || (p.WhitePlayerId == b && p.BlackPlayerId == a));
+
+    private static string? ByePlayer(PairingResult result) =>
+        result.Pairings.SingleOrDefault(p => p.IsBye && p.Result == MatchResult.ByeFull)?.WhitePlayerId;
+
+    [Fact]
+    public void GamesAgainstWithdrawnPlayers_StillCountForScoreGroups()
+    {
+        var t = Players(1, 2, 3, 4, 5, 6);
+        AddRound(t, 1,
+            ("p1", "p4", MatchResult.WhiteWin),
+            ("p5", "p2", MatchResult.WhiteWin),
+            ("p3", "p6", MatchResult.WhiteWin));
+        t.Players.Single(p => p.Id == "p5").Status = PlayerStatus.Withdrawn;
+        t.Players.Single(p => p.Id == "p6").Status = PlayerStatus.Withdrawn;
+
+        var result = new NativeDutchPairingEngine().GenerateRoundPairings(t, 2);
+
+        // p3's win over the withdrawn p6 counts: the 1-point group is {p1, p3}
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.True(HasGame(result, "p1", "p3"));
+        Assert.True(HasGame(result, "p2", "p4"));
+    }
+
+    [Fact]
+    public void ForfeitedGame_DoesNotBlockARematch()
+    {
+        var t = Players(1, 2);
+        AddRound(t, 1, ("p1", "p2", MatchResult.WhiteForfeit));
+
+        var result = new NativeDutchPairingEngine().GenerateRoundPairings(t, 2);
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.True(HasGame(result, "p1", "p2"));
+    }
+
+    [Fact]
+    public void ForfeitedGame_DoesNotCountForColours()
+    {
+        var t = Players(1, 2, 3, 4);
+        // p1 "had White" twice, but both games were forfeited: no colour history at all
+        AddRound(t, 1, ("p1", "p2", MatchResult.WhiteForfeit), ("p3", "p4", MatchResult.WhiteWin));
+        AddRound(t, 2, ("p1", "p3", MatchResult.WhiteForfeit), ("p4", "p2", MatchResult.Draw));
+
+        var result = new NativeDutchPairingEngine().GenerateRoundPairings(t, 3);
+
+        Assert.True(result.Success, result.ErrorMessage);
+        // p2-p4 and p3-p4 already met over the board, so p1 must meet p4. p1 has no colour history
+        // (forfeits) and gets White; with a real WW history p1 could only have had Black.
+        var p1Game = result.Pairings.Single(p => p.WhitePlayerId == "p1" || p.BlackPlayerId == "p1");
+        Assert.Equal("p1", p1Game.WhitePlayerId);
+        Assert.Equal("p4", p1Game.BlackPlayerId);
+    }
+
+    [Fact]
+    public void PairingBye_GoesToLowestScoreGroup_NotSimplyTheLowestSeed()
+    {
+        var t = Players(1, 2, 3, 4, 5);
+        AddRound(t, 1,
+            ("p1", "p2", MatchResult.Draw),
+            ("p3", "p4", MatchResult.BlackWin),
+            ("p5", null, MatchResult.ByeFull));
+
+        var result = new NativeDutchPairingEngine().GenerateRoundPairings(t, 2);
+
+        // Scores: p4 1, p5 1, p1 ½, p2 ½, p3 0 -> p3 is alone in the lowest score group
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.Equal("p3", ByePlayer(result));
+    }
+
+    [Fact]
+    public void PairingBye_NeverGivenTwice_ForfeitWinCountsAsBye()
+    {
+        var t = Players(1, 2, 3);
+        AddRound(t, 1, ("p1", "p2", MatchResult.Draw), ("p3", null, MatchResult.ByeFull));
+        AddRound(t, 2, ("p3", "p1", MatchResult.BlackForfeit), ("p2", null, MatchResult.ByeFull));
+
+        // p3 and p2 had pairing byes, p1 a forfeit win: nobody may receive the round-3 bye
+        var result = new NativeDutchPairingEngine().GenerateRoundPairings(t, 3);
+
+        Assert.False(result.Success);
+        Assert.Contains("already received", result.ErrorMessage);
+    }
+
+    [Fact]
+    public void PairingBye_SkipsPlayersWhoAlreadyHadOne()
+    {
+        var t = Players(1, 2, 3, 4, 5);
+        AddRound(t, 1,
+            ("p1", "p3", MatchResult.WhiteWin),
+            ("p4", "p2", MatchResult.WhiteWin),
+            ("p5", null, MatchResult.ByeFull));
+        AddRound(t, 2,
+            ("p1", "p5", MatchResult.WhiteWin),
+            ("p2", "p3", MatchResult.Draw),
+            ("p4", null, MatchResult.ByeFull));
+
+        var result = new NativeDutchPairingEngine().GenerateRoundPairings(t, 3);
+
+        // Scores: p1 2, p4 2, p5 1, p2 ½, p3 ½. Lowest group {p2, p3}; p3 is the lower ranked
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.Equal("p3", ByePlayer(result));
+        Assert.NotEqual("p5", ByePlayer(result));
+        Assert.NotEqual("p4", ByePlayer(result));
+    }
+
+    [Fact]
+    public void RequestedFullPointBye_IsRecordedAsRequested()
+    {
+        var t = Players(1, 2, 3);
+        t.Players[2].ByeRequests[1] = ByeType.FullPoint;
+
+        var result = new NativeDutchPairingEngine().GenerateRoundPairings(t, 1);
+
+        Assert.True(result.Success, result.ErrorMessage);
+        var bye = result.Pairings.Single(p => p.WhitePlayerId == "p3");
+        Assert.Equal(MatchResult.ByeFullRequested, bye.Result);
+    }
+
+    [Fact]
+    public void DisplayName_DoesNotClaimFullDutchCompliance()
+    {
+        Assert.Contains("simplified", new NativeDutchPairingEngine().DisplayName, StringComparison.OrdinalIgnoreCase);
+    }
 }
