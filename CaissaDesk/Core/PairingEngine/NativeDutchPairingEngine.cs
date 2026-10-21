@@ -2,11 +2,20 @@ using Caissa.Shared.Models;
 
 namespace CaissaDesk.Core.PairingEngine;
 
+/// <summary>
+/// Built-in Swiss engine. It is a simplified Dutch system: score-ordered backtracking that honours the
+/// absolute criteria (no rematches, colour limits, one pairing-allocated bye per player) but does not
+/// implement the full C.04.3 bracket/floater/transposition optimisation. Use bbpPairings or JaVaFo for
+/// FIDE-rated events.
+/// </summary>
 public class NativeDutchPairingEngine : IPairingEngine
 {
     public string Id => "native_dutch";
-    public string DisplayName => "Native C# FIDE Dutch Swiss Engine";
+    public string DisplayName => "Native C# Swiss (simplified Dutch)";
     public bool IsAvailable => true;
+
+    /// <summary>Upper bound on backtracking steps before giving up (guards against exponential blow-up).</summary>
+    public int MaxSearchNodes { get; set; } = 2_000_000;
 
     private sealed class PlayerHistory
     {
@@ -14,6 +23,7 @@ public class NativeDutchPairingEngine : IPairingEngine
         public double Points { get; set; }
         public HashSet<string> OpponentIds { get; set; } = [];
         public List<char> Colors { get; set; } = []; // 'W' or 'B'
+        /// <summary>Had a pairing-allocated bye or a forfeit win (C.04.1.d): not eligible for another bye.</summary>
         public bool ReceivedBye { get; set; }
 
         public int ColorBalance => Colors.Count(c => c == 'W') - Colors.Count(c => c == 'B');
@@ -88,20 +98,14 @@ public class NativeDutchPairingEngine : IPairingEngine
         {
             if (p.ByeRequests.TryGetValue(roundNumber, out var byeType) && byeType != ByeType.None)
             {
-                var matchResult = byeType switch
-                {
-                    ByeType.HalfPoint => MatchResult.ByeHalf,
-                    ByeType.ZeroPoint => MatchResult.ByeZero,
-                    ByeType.FullPoint => MatchResult.ByeFull,
-                    _ => MatchResult.ByeZero
-                };
+                var matchResult = byeType.ToMatchResult();
 
-                var remarks = byeType switch
+                var remarks = matchResult switch
                 {
-                    ByeType.HalfPoint => "½-Point Bye (Requested)",
-                    ByeType.ZeroPoint => "0-Point Bye (Requested)",
-                    ByeType.FullPoint => "1-Point Bye (Requested)",
-                    _ => "Bye"
+                    MatchResult.ByeHalf => "½-Point Bye (Requested)",
+                    MatchResult.ByeFullRequested => "1-Point Bye (Requested)",
+                    MatchResult.ByeFull => "1-Point Bye",
+                    _ => "0-Point Bye (Requested)"
                 };
 
                 requestedByePairings.Add(new Pairing
@@ -126,12 +130,22 @@ public class NativeDutchPairingEngine : IPairingEngine
         }
 
         List<Pairing> pairings;
+        bool isFirstRound = roundNumber == 1 || tournament.Rounds.Count == 0;
 
         if (playersToPair.Count < 2)
         {
             pairings = new List<Pairing>();
             if (playersToPair.Count == 1)
             {
+                if (!isFirstRound)
+                {
+                    var single = BuildHistories(tournament).First(h => h.Player.Id == playersToPair[0].Id);
+                    if (single.ReceivedBye)
+                    {
+                        return PairingResult.Fail($"Cannot pair Round {roundNumber}: {single.Player.FullName} is the only player to pair and has already received a pairing-allocated bye (or a forfeit win).");
+                    }
+                }
+
                 // Single remaining player gets a full 1-point pairing bye
                 pairings.Add(new Pairing
                 {
@@ -148,7 +162,7 @@ public class NativeDutchPairingEngine : IPairingEngine
         else
         {
             // Pair playersToPair
-            if (roundNumber == 1 || tournament.Rounds.Count == 0)
+            if (isFirstRound)
             {
                 var r1Result = GenerateRound1(playersToPair);
                 if (!r1Result.Success) return r1Result;
@@ -156,7 +170,9 @@ public class NativeDutchPairingEngine : IPairingEngine
             }
             else
             {
-                var histories = BuildHistories(tournament, playersToPair);
+                // History covers every player so games against withdrawn/absent opponents still count
+                var poolIds = playersToPair.Select(p => p.Id).ToHashSet();
+                var histories = BuildHistories(tournament).Where(h => poolIds.Contains(h.Player.Id)).ToList();
                 var subResult = GenerateSubsequentRound(histories, roundNumber);
                 if (!subResult.Success) return subResult;
                 pairings = subResult.Pairings;
@@ -234,44 +250,63 @@ public class NativeDutchPairingEngine : IPairingEngine
         return PairingResult.Ok(pairings);
     }
 
-    private static PairingResult GenerateSubsequentRound(List<PlayerHistory> histories, int roundNumber)
+    private PairingResult GenerateSubsequentRound(List<PlayerHistory> histories, int roundNumber)
     {
         var pool = new List<PlayerHistory>(histories);
         var pairings = new List<Pairing>();
         int boardNumber = 1;
         Pairing? byePairing = null;
+        var search = new SearchBudget(MaxSearchNodes);
 
-        // 1. If pool has odd number of players, allocate bye to the lowest eligible player
+        List<(PlayerHistory White, PlayerHistory Black)>? matchedPairs;
+
         if (pool.Count % 2 != 0)
         {
-            var byeCandidate = pool
+            // C.04.1.d: the pairing-allocated bye goes to a player who has not yet had one (nor a forfeit win),
+            // taken from the lowest score group possible, lowest-ranked first, such that the rest can be paired.
+            var byeCandidates = pool
                 .Where(h => !h.ReceivedBye)
-                .OrderByDescending(h => h.Player.StartRank) // lowest seed
-                .FirstOrDefault();
+                .OrderBy(h => h.Points)
+                .ThenByDescending(h => h.Player.StartRank)
+                .ToList();
 
-            if (byeCandidate == null)
+            if (byeCandidates.Count == 0)
             {
-                // Fallback to lowest seed if all received byes
-                byeCandidate = pool.OrderByDescending(h => h.Player.StartRank).First();
+                return PairingResult.Fail($"Cannot pair Round {roundNumber}: every player has already received a pairing-allocated bye (or a forfeit win), so no one can receive another. Consider an arbiter manual adjustment.");
             }
 
-            pool.Remove(byeCandidate);
-            byePairing = new Pairing
+            matchedPairs = null;
+            foreach (var candidate in byeCandidates)
             {
-                Id = Guid.NewGuid().ToString("N"),
-                RoundNumber = roundNumber,
-                WhitePlayerId = byeCandidate.Player.Id,
-                BlackPlayerId = null,
-                Result = MatchResult.ByeFull,
-                Remarks = "1-Point Bye"
-            };
+                var rest = pool.Where(h => h != candidate).ToList();
+                matchedPairs = MatchBrackets(rest, search);
+                if (matchedPairs != null)
+                {
+                    pool = rest;
+                    byePairing = new Pairing
+                    {
+                        Id = Guid.NewGuid().ToString("N"),
+                        RoundNumber = roundNumber,
+                        WhitePlayerId = candidate.Player.Id,
+                        BlackPlayerId = null,
+                        Result = MatchResult.ByeFull,
+                        Remarks = "1-Point Bye"
+                    };
+                    break;
+                }
+                if (search.Exhausted) break;
+            }
+        }
+        else
+        {
+            matchedPairs = MatchBrackets(pool, search);
         }
 
-        // 2. Score bracket matching with backtracking
-        var matchedPairs = MatchBrackets(pool);
         if (matchedPairs == null)
         {
-            return PairingResult.Fail($"Could not find valid FIDE Swiss pairings for Round {roundNumber} without rematches. Consider arbiter manual adjustment.");
+            return search.Exhausted
+                ? PairingResult.Fail($"Pairing search for Round {roundNumber} exceeded its step limit without finding a valid pairing. Use bbpPairings/JaVaFo or adjust the pairing manually.")
+                : PairingResult.Fail($"Could not find valid FIDE Swiss pairings for Round {roundNumber} without rematches. Consider arbiter manual adjustment.");
         }
 
         foreach (var (white, black) in matchedPairs)
@@ -296,7 +331,14 @@ public class NativeDutchPairingEngine : IPairingEngine
         return PairingResult.Ok(pairings);
     }
 
-    private static List<(PlayerHistory White, PlayerHistory Black)>? MatchBrackets(List<PlayerHistory> players)
+    private sealed class SearchBudget(int maxNodes)
+    {
+        private int _nodes;
+        public bool Exhausted => _nodes >= maxNodes;
+        public bool TryStep() => ++_nodes <= maxNodes;
+    }
+
+    private static List<(PlayerHistory White, PlayerHistory Black)>? MatchBrackets(List<PlayerHistory> players, SearchBudget search)
     {
         // Sort players by points descending, then starting rank ascending
         var sorted = players
@@ -305,7 +347,7 @@ public class NativeDutchPairingEngine : IPairingEngine
             .ToList();
 
         var matches = new List<(PlayerHistory White, PlayerHistory Black)>();
-        if (BacktrackPair(sorted, matches))
+        if (BacktrackPair(sorted, matches, search))
         {
             return matches;
         }
@@ -313,9 +355,10 @@ public class NativeDutchPairingEngine : IPairingEngine
         return null;
     }
 
-    private static bool BacktrackPair(List<PlayerHistory> remaining, List<(PlayerHistory White, PlayerHistory Black)> matches)
+    private static bool BacktrackPair(List<PlayerHistory> remaining, List<(PlayerHistory White, PlayerHistory Black)> matches, SearchBudget search)
     {
         if (remaining.Count == 0) return true;
+        if (!search.TryStep()) return false;
 
         var p1 = remaining[0];
 
@@ -370,7 +413,7 @@ public class NativeDutchPairingEngine : IPairingEngine
             nextRemaining.RemoveAt(i);
             nextRemaining.RemoveAt(0);
 
-            if (BacktrackPair(nextRemaining, matches))
+            if (BacktrackPair(nextRemaining, matches, search))
             {
                 return true;
             }
@@ -382,13 +425,13 @@ public class NativeDutchPairingEngine : IPairingEngine
         return false;
     }
 
-    private static List<PlayerHistory> BuildHistories(Tournament tournament, List<Player> activePlayers)
+    private static List<PlayerHistory> BuildHistories(Tournament tournament)
     {
-        var map = activePlayers.ToDictionary(p => p.Id, p => new PlayerHistory { Player = p });
+        var map = tournament.Players.ToDictionary(p => p.Id, p => new PlayerHistory { Player = p });
 
         foreach (var round in tournament.Rounds.OrderBy(r => r.RoundNumber))
         {
-            foreach (var pairing in round.Pairings)
+            foreach (var pairing in round.Pairings.OrderBy(p => p.BoardNumber))
             {
                 if (pairing.Result == MatchResult.NotPlayed) continue;
 
@@ -396,16 +439,33 @@ public class NativeDutchPairingEngine : IPairingEngine
 
                 if (!string.IsNullOrEmpty(pairing.WhitePlayerId) && !string.IsNullOrEmpty(pairing.BlackPlayerId))
                 {
-                    if (map.TryGetValue(pairing.WhitePlayerId, out var wH) &&
-                        map.TryGetValue(pairing.BlackPlayerId, out var bH))
-                    {
-                        wH.Points += wPts;
-                        wH.Colors.Add('W');
-                        wH.OpponentIds.Add(bH.Player.Id);
+                    map.TryGetValue(pairing.WhitePlayerId, out var wH);
+                    map.TryGetValue(pairing.BlackPlayerId, out var bH);
 
-                        bH.Points += bPts;
-                        bH.Colors.Add('B');
-                        bH.OpponentIds.Add(wH.Player.Id);
+                    if (wH != null) wH.Points += wPts;
+                    if (bH != null) bH.Points += bPts;
+
+                    if (pairing.Result.IsPlayedOverBoard())
+                    {
+                        // Only games played over the board give a colour and block a rematch (C.04.1)
+                        if (wH != null)
+                        {
+                            wH.Colors.Add('W');
+                            wH.OpponentIds.Add(pairing.BlackPlayerId);
+                        }
+                        if (bH != null)
+                        {
+                            bH.Colors.Add('B');
+                            bH.OpponentIds.Add(pairing.WhitePlayerId);
+                        }
+                    }
+                    else if (pairing.Result == MatchResult.WhiteForfeit && wH != null)
+                    {
+                        wH.ReceivedBye = true; // a forfeit win counts as a point without playing (C.04.1.d)
+                    }
+                    else if (pairing.Result == MatchResult.BlackForfeit && bH != null)
+                    {
+                        bH.ReceivedBye = true;
                     }
                 }
                 else if (pairing.IsBye)
@@ -413,9 +473,7 @@ public class NativeDutchPairingEngine : IPairingEngine
                     string? byeId = pairing.WhitePlayerId ?? pairing.BlackPlayerId;
                     if (!string.IsNullOrEmpty(byeId) && map.TryGetValue(byeId, out var byeH))
                     {
-                        double byePts = (pairing.Result == MatchResult.ByeFull) ? 1.0 :
-                                        (pairing.Result == MatchResult.ByeHalf) ? 0.5 : 0.0;
-                        byeH.Points += byePts;
+                        byeH.Points += pairing.Result.ByePoints();
                         if (pairing.Result == MatchResult.ByeFull)
                         {
                             byeH.ReceivedBye = true;

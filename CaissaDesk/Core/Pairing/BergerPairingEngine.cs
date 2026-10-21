@@ -8,6 +8,12 @@ public class BergerPairingEngine : IPairingEngine
     public string DisplayName => "Round Robin (FIDE Berger Tables)";
     public bool IsAvailable => true;
 
+    /// <summary>
+    /// With an odd number of players the player drawn against the Berger dummy simply has a free round:
+    /// no game, no points (C.05 Annex 1), so it is recorded as a zero-point unplayed round, not a bye win.
+    /// </summary>
+    public const string FreeRoundRemark = "Free round (no opponent)";
+
     public PairingResult GenerateRoundPairings(Tournament tournament, int roundNumber)
     {
         if (tournament.Players.Count < 2)
@@ -25,7 +31,11 @@ public class BergerPairingEngine : IPairingEngine
             return PairingResult.Fail($"Round number {roundNumber} is out of range. Round Robin with {n} players has {maxRounds} rounds.");
         }
 
-        var seedToPlayer = players.ToDictionary(p => p.StartRank, p => p);
+        // Berger numbers are positions 1..n in starting-rank order, so gaps or duplicates in StartRank
+        // values (e.g. after a withdrawal or late entry) cannot drop or mis-assign a player.
+        var seedToPlayer = players
+            .Select((p, index) => (Seed: index + 1, Player: p))
+            .ToDictionary(x => x.Seed, x => x.Player);
 
         // Generate theoretical (whiteSeed, blackSeed) pairs for roundNumber
         var seedPairs = GenerateFideBergerRound(m, roundNumber);
@@ -80,8 +90,8 @@ public class BergerPairingEngine : IPairingEngine
                     BoardNumber = boardNumber++,
                     WhitePlayerId = null,
                     BlackPlayerId = blackPlayer?.Id,
-                    Result = MatchResult.ByeFull,
-                    Remarks = "Bye"
+                    Result = MatchResult.ByeZero,
+                    Remarks = FreeRoundRemark
                 });
             }
             else
@@ -95,8 +105,8 @@ public class BergerPairingEngine : IPairingEngine
                     BoardNumber = boardNumber++,
                     WhitePlayerId = whitePlayer?.Id,
                     BlackPlayerId = null,
-                    Result = MatchResult.ByeFull,
-                    Remarks = "Bye"
+                    Result = MatchResult.ByeZero,
+                    Remarks = FreeRoundRemark
                 });
             }
         }

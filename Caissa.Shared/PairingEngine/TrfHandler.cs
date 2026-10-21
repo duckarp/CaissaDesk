@@ -6,11 +6,17 @@ namespace Caissa.Shared.PairingEngine;
 
 public static class TrfHandler
 {
+    public static string GenerateTrf(Tournament tournament) => GenerateTrf(tournament, pairingRound: null);
+
     /// <summary>
-    /// Generates compliant FIDE TRF (Tournament Report File) 132-column text.
-    /// Used by FIDE rating servers and external pairing engines (JaVaFo & bbpPairings).
+    /// Generates compliant FIDE TRF (Tournament Report File, TRF-16) 132-column text.
+    /// Used by FIDE rating servers and external pairing engines (JaVaFo &amp; bbpPairings).
     /// </summary>
-    public static string GenerateTrf(Tournament tournament)
+    /// <param name="pairingRound">
+    /// When set, the round about to be paired: players who must not be paired in it (withdrawn, paused,
+    /// or with an advance bye request) get a pre-filled entry for that round so external engines skip them.
+    /// </param>
+    public static string GenerateTrf(Tournament tournament, int? pairingRound)
     {
         var sb = new StringBuilder();
 
@@ -30,14 +36,15 @@ public static class TrfHandler
         if (!string.IsNullOrEmpty(tournament.DeputyArbiter))
             sb.AppendLine($"112 {tournament.DeputyArbiter}");
         sb.AppendLine($"122 {tournament.TimeControlDetails}");
-        sb.AppendLine($"XXR {Math.Max(1, tournament.TotalRounds)}");
+        sb.AppendLine($"XXR {Math.Max(Math.Max(1, tournament.TotalRounds), pairingRound ?? 0)}");
         sb.AppendLine("XXC white1");
 
-        // 2. Pre-calculate points and ranks for players
+        // 2. Pre-calculate points and per-round entries for players
         var sortedPlayers = tournament.Players.OrderBy(p => p.StartRank).ToList();
 
-        // Build mapping: playerId -> list of round entries (opponentStartRank, color, resultChar)
-        var playerRounds = new Dictionary<string, List<(int OpponentRank, char Color, char ResultChar)>>();
+        // playerId -> (round number -> entry). Rounds are indexed by number so that a round in which a
+        // player has no entry still occupies its own column (padded below) instead of shifting later rounds.
+        var playerRounds = new Dictionary<string, Dictionary<int, TrfRoundEntry>>();
         var playerPoints = new Dictionary<string, double>();
 
         foreach (var p in tournament.Players)
@@ -46,9 +53,12 @@ public static class TrfHandler
             playerPoints[p.Id] = 0.0;
         }
 
-        var completedRounds = tournament.Rounds.OrderBy(r => r.RoundNumber).ToList();
+        var rounds = tournament.Rounds
+            .Where(r => pairingRound == null || r.RoundNumber < pairingRound)
+            .OrderBy(r => r.RoundNumber)
+            .ToList();
 
-        foreach (var round in completedRounds)
+        foreach (var round in rounds)
         {
             foreach (var pairing in round.Pairings)
             {
@@ -70,8 +80,8 @@ public static class TrfHandler
                         char wRes = GetTrfResultChar(pairing.Result, isWhite: true);
                         char bRes = GetTrfResultChar(pairing.Result, isWhite: false);
 
-                        playerRounds[white.Id].Add((black.StartRank, 'w', wRes));
-                        playerRounds[black.Id].Add((white.StartRank, 'b', bRes));
+                        playerRounds[white.Id][round.RoundNumber] = new(black.StartRank, 'w', wRes);
+                        playerRounds[black.Id][round.RoundNumber] = new(white.StartRank, 'b', bRes);
                     }
                 }
                 // Bye
@@ -80,13 +90,40 @@ public static class TrfHandler
                     string? byePlayerId = pairing.WhitePlayerId ?? pairing.BlackPlayerId;
                     if (!string.IsNullOrEmpty(byePlayerId) && playerPoints.ContainsKey(byePlayerId))
                     {
-                        double pts = (pairing.Result == MatchResult.ByeFull) ? 1.0 :
-                                     (pairing.Result == MatchResult.ByeHalf) ? 0.5 : 0.0;
-                        playerPoints[byePlayerId] += pts;
-
-                        char byeChar = (pts == 1.0) ? '1' : (pts == 0.5) ? 'H' : 'Z';
-                        playerRounds[byePlayerId].Add((0, '-', byeChar));
+                        playerPoints[byePlayerId] += pairing.Result.ByePoints();
+                        playerRounds[byePlayerId][round.RoundNumber] = new(0, '-', GetTrfResultChar(pairing.Result, isWhite: true));
                     }
+                }
+            }
+        }
+
+        // Players not on any board of a round that took place were absent: unpaired, zero points.
+        foreach (var round in rounds.Where(r => r.Pairings.Any(pp => pp.Result != MatchResult.NotPlayed)))
+        {
+            foreach (var p in tournament.Players)
+            {
+                bool onBoard = round.Pairings.Any(pp => pp.WhitePlayerId == p.Id || pp.BlackPlayerId == p.Id);
+                if (!onBoard)
+                {
+                    playerRounds[p.Id][round.RoundNumber] = new(0, '-', 'Z');
+                }
+            }
+        }
+
+        // Round being paired: tell the engine who must not be paired.
+        if (pairingRound is int nextRound)
+        {
+            foreach (var p in tournament.Players)
+            {
+                if (p.Status != PlayerStatus.Active)
+                {
+                    playerRounds[p.Id][nextRound] = new(0, '-', 'Z');
+                }
+                else if (p.ByeRequests.TryGetValue(nextRound, out var byeType) && byeType != ByeType.None)
+                {
+                    var byeResult = byeType.ToMatchResult();
+                    playerPoints[p.Id] += byeResult.ByePoints();
+                    playerRounds[p.Id][nextRound] = new(0, '-', GetTrfResultChar(byeResult, isWhite: true));
                 }
             }
         }
@@ -159,16 +196,25 @@ public static class TrfHandler
             line.Append(rank.ToString().PadLeft(4));
             line.Append("  ");
 
-            // Round results (Column 92 onward, 10 chars per round)
-            var rounds = playerRounds.GetValueOrDefault(p.Id, []);
-            foreach (var (oppRank, color, resChar) in rounds)
+            // Round results (Column 92 onward, 10 chars per round, indexed by round number)
+            var entries = playerRounds.GetValueOrDefault(p.Id, []);
+            int maxRound = entries.Count > 0 ? entries.Keys.Max() : 0;
+            for (int r = 1; r <= maxRound; r++)
             {
-                // Format: "  12 w 1  "
-                string oppStr = oppRank > 0 ? oppRank.ToString().PadLeft(4) : "   0";
-                line.Append($"{oppStr} {color} {resChar}  ");
+                if (entries.TryGetValue(r, out var e))
+                {
+                    // Format: "  12 w 1  " / "0000 - U  "
+                    string oppStr = e.OpponentRank > 0 ? e.OpponentRank.ToString().PadLeft(4) : "0000";
+                    line.Append($"{oppStr} {e.Color} {e.ResultChar}  ");
+                }
+                else
+                {
+                    // Not yet played / unknown: keep the column so later rounds stay aligned
+                    line.Append(new string(' ', 10));
+                }
             }
 
-            sb.AppendLine(line.ToString());
+            sb.AppendLine(line.ToString().TrimEnd());
         }
 
         return sb.ToString();
@@ -184,10 +230,13 @@ public static class TrfHandler
             MatchResult.WhiteForfeit => isWhite ? '+' : '-',
             MatchResult.BlackForfeit => isWhite ? '-' : '+',
             MatchResult.DoubleForfeit => '-',
-            MatchResult.ByeFull => '1',
+            MatchResult.ByeFull => 'U',          // pairing-allocated bye
+            MatchResult.ByeFullRequested => 'F', // requested full-point bye
             MatchResult.ByeHalf => 'H',
             MatchResult.ByeZero => 'Z',
             _ => ' '
         };
     }
+
+    private readonly record struct TrfRoundEntry(int OpponentRank, char Color, char ResultChar);
 }

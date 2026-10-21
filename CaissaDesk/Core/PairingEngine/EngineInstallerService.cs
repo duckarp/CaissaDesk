@@ -150,7 +150,8 @@ public class EngineInstallerService : IEngineInstallerService
             settings.CustomBbpPath = targetFilePath;
             await _appSettings.SaveSettingsAsync(settings);
 
-            _engineRegistry.ReloadEngines(bbpPath: targetFilePath);
+            // Pass every saved path: reloading only one would reset the other engines to auto-detection
+            _engineRegistry.ReloadEngines(settings.CustomBbpPath, settings.CustomJavaPath, settings.CustomJavafoJarPath);
 
             progress?.Report(new EngineInstallProgress { Message = "bbpPairings installed and ready!", Percent = 100 });
             return EngineInstallResult.Ok(targetFilePath);
@@ -190,7 +191,7 @@ public class EngineInstallerService : IEngineInstallerService
             settings.CustomJavafoJarPath = targetFilePath;
             await _appSettings.SaveSettingsAsync(settings);
 
-            _engineRegistry.ReloadEngines(javafoJarPath: targetFilePath);
+            _engineRegistry.ReloadEngines(settings.CustomBbpPath, settings.CustomJavaPath, settings.CustomJavafoJarPath);
 
             // Check if Java runtime is available
             var javafoEngine = _engineRegistry.AllEngines.OfType<JaVaFoPairingEngine>().FirstOrDefault();

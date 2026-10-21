@@ -56,7 +56,8 @@ public class ArbiterService : IArbiterService
     public void AddLatePlayer(Tournament tournament, Player player, ByeType pastRoundsByeType = ByeType.HalfPoint)
     {
         // 1. Assign next seed
-        int nextSeed = tournament.Players.Count + 1;
+        // Max + 1, not Count + 1: ranks may have gaps (deleted players) and Count + 1 could collide
+        int nextSeed = tournament.Players.Count > 0 ? tournament.Players.Max(p => p.StartRank) + 1 : 1;
         player.StartRank = nextSeed;
         player.Status = PlayerStatus.Active;
         tournament.Players.Add(player);
@@ -64,13 +65,7 @@ public class ArbiterService : IArbiterService
         // 2. If rounds have already taken place, allocate missed rounds byes
         if (pastRoundsByeType != ByeType.None && tournament.Rounds.Count > 0)
         {
-            var byeResult = pastRoundsByeType switch
-            {
-                ByeType.HalfPoint => MatchResult.ByeHalf,
-                ByeType.ZeroPoint => MatchResult.ByeZero,
-                ByeType.FullPoint => MatchResult.ByeFull,
-                _ => MatchResult.ByeZero
-            };
+            var byeResult = pastRoundsByeType.ToMatchResult();
 
             string byeRemarks = pastRoundsByeType switch
             {
@@ -109,6 +104,8 @@ public class ArbiterService : IArbiterService
         if (pairing == null || pairing.IsBye) return false;
 
         (pairing.WhitePlayerId, pairing.BlackPlayerId) = (pairing.BlackPlayerId, pairing.WhitePlayerId);
+        // An entered result follows the players, not the colours: 1-0 for the old White becomes 0-1
+        pairing.Result = pairing.Result.WithColorsSwapped();
         pairing.IsManualOverride = true;
         return true;
     }
@@ -121,6 +118,11 @@ public class ArbiterService : IArbiterService
 
         string? player1 = isWhite1 ? p1.WhitePlayerId : p1.BlackPlayerId;
         string? player2 = isWhite2 ? p2.WhitePlayerId : p2.BlackPlayerId;
+
+        // Swapping with an empty slot would turn a bye board into a two-player board (still scored as a bye)
+        // and leave a one-player game behind; only swap actual players.
+        if (string.IsNullOrEmpty(player1) || string.IsNullOrEmpty(player2)) return false;
+        if (ReferenceEquals(p1, p2) && isWhite1 == isWhite2) return false;
 
         if (isWhite1) p1.WhitePlayerId = player2;
         else p1.BlackPlayerId = player2;

@@ -170,4 +170,79 @@ public class ArbiterServiceTests
         Assert.DoesNotContain(result.Pairings, p => p.WhitePlayerId == "p4" || p.BlackPlayerId == "p4");
         Assert.Equal(2, result.Pairings.Count);
     }
+
+    [Fact]
+    public void SwapBoardColors_FlipsAnEnteredResult()
+    {
+        var service = new ArbiterService();
+        var round = new Round
+        {
+            RoundNumber = 1,
+            Pairings =
+            [
+                new Pairing { BoardNumber = 1, WhitePlayerId = "p1", BlackPlayerId = "p2", Result = MatchResult.WhiteWin },
+                new Pairing { BoardNumber = 2, WhitePlayerId = "p3", BlackPlayerId = "p4", Result = MatchResult.BlackForfeit }
+            ]
+        };
+
+        Assert.True(service.SwapBoardColors(round, 1));
+        Assert.True(service.SwapBoardColors(round, 2));
+
+        // p1 still won, now as Black; p4 still won by forfeit, now as White
+        Assert.Equal(MatchResult.BlackWin, round.Pairings[0].Result);
+        Assert.Equal(MatchResult.WhiteForfeit, round.Pairings[1].Result);
+    }
+
+    [Fact]
+    public void SwapPlayersAcrossBoards_RefusesToMoveIntoEmptyByeSlot()
+    {
+        var service = new ArbiterService();
+        var round = new Round
+        {
+            RoundNumber = 1,
+            Pairings =
+            [
+                new Pairing { BoardNumber = 1, WhitePlayerId = "p1", BlackPlayerId = "p2" },
+                new Pairing { BoardNumber = 2, WhitePlayerId = "p3", BlackPlayerId = null, Result = MatchResult.ByeFull }
+            ]
+        };
+
+        bool ok = service.SwapPlayersAcrossBoards(round, 1, true, 2, false);
+
+        Assert.False(ok);
+        Assert.Equal("p1", round.Pairings[0].WhitePlayerId);
+        Assert.Null(round.Pairings[1].BlackPlayerId);
+    }
+
+    [Fact]
+    public void AddLatePlayer_WithStartRankGaps_UsesMaxPlusOne()
+    {
+        var service = new ArbiterService();
+        var t = CreateTestTournament();
+        t.Players.RemoveAt(1); // ranks now 1, 3, 4
+
+        var late = new Player { Id = "late", FullName = "Late" };
+        service.AddLatePlayer(t, late, ByeType.None);
+
+        Assert.Equal(5, late.StartRank);
+        Assert.Equal(t.Players.Count, t.Players.Select(p => p.StartRank).Distinct().Count());
+    }
+
+    [Fact]
+    public void AddLatePlayer_FullPointByes_AreRecordedAsRequestedNotPairingByes()
+    {
+        var service = new ArbiterService();
+        var t = CreateTestTournament();
+        t.Rounds.Add(new Round
+        {
+            RoundNumber = 1,
+            Pairings = [new Pairing { BoardNumber = 1, WhitePlayerId = "p1", BlackPlayerId = "p2", Result = MatchResult.Draw }]
+        });
+
+        var late = new Player { Id = "late", FullName = "Late" };
+        service.AddLatePlayer(t, late, ByeType.FullPoint);
+
+        var bye = t.Rounds[0].Pairings.Single(p => p.WhitePlayerId == "late");
+        Assert.Equal(MatchResult.ByeFullRequested, bye.Result);
+    }
 }

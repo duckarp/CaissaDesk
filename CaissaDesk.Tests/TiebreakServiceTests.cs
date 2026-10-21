@@ -393,4 +393,222 @@ public class TiebreakServiceTests
         Assert.Equal("2154", standing.FormatTiebreak(TiebreakType.Aroc));
         Assert.Equal("2.5", standing.FormatTiebreak(TiebreakType.Koya));
     }
+
+    // ---- C.07 (2023) helpers ----
+
+    private static Tournament Swiss(params (string Id, int Rank)[] players) => new()
+    {
+        System = TournamentSystem.SwissDutch,
+        TotalRounds = 5,
+        Players = players.Select(p => new Player { Id = p.Id, StartRank = p.Rank, FullName = p.Id }).ToList()
+    };
+
+    private static void Round(Tournament t, int number, params (string? White, string? Black, MatchResult Result)[] games) =>
+        t.Rounds.Add(new Round
+        {
+            RoundNumber = number,
+            Pairings = games.Select((g, i) => new Pairing
+            {
+                RoundNumber = number,
+                BoardNumber = i + 1,
+                WhitePlayerId = g.White,
+                BlackPlayerId = g.Black,
+                Result = g.Result
+            }).ToList()
+        });
+
+    private static PlayerStanding Of(List<PlayerStanding> standings, string id) => standings.Single(s => s.PlayerId == id);
+
+    [Fact]
+    public void DirectEncounter_ThreeWayCycle_IsConsistent_AndFallsThroughToNextCriterion()
+    {
+        var service = new TiebreakService();
+        // A, B, C, D all finish on 3 points. Mini-tournament: A beat B, C and D; B beat C, C beat D, D beat B.
+        var tournament = new Tournament
+        {
+            Players =
+            [
+                new Player { Id = "A", StartRank = 4, FullName = "A" },
+                new Player { Id = "B", StartRank = 3, FullName = "B" },
+                new Player { Id = "C", StartRank = 2, FullName = "C" },
+                new Player { Id = "D", StartRank = 1, FullName = "D" },
+                new Player { Id = "X", StartRank = 5, FullName = "X" }
+            ],
+            Rounds =
+            [
+                new Round
+                {
+                    RoundNumber = 1,
+                    Pairings =
+                    [
+                        new Pairing { WhitePlayerId = "A", BlackPlayerId = "B", Result = MatchResult.WhiteWin },
+                        new Pairing { WhitePlayerId = "A", BlackPlayerId = "C", Result = MatchResult.WhiteWin },
+                        new Pairing { WhitePlayerId = "A", BlackPlayerId = "D", Result = MatchResult.WhiteWin },
+                        new Pairing { WhitePlayerId = "B", BlackPlayerId = "C", Result = MatchResult.WhiteWin },
+                        new Pairing { WhitePlayerId = "C", BlackPlayerId = "D", Result = MatchResult.WhiteWin },
+                        new Pairing { WhitePlayerId = "D", BlackPlayerId = "B", Result = MatchResult.WhiteWin },
+                        new Pairing { WhitePlayerId = "B", BlackPlayerId = "X", Result = MatchResult.WhiteWin },
+                        new Pairing { WhitePlayerId = "B", BlackPlayerId = "X", Result = MatchResult.WhiteWin },
+                        new Pairing { WhitePlayerId = "C", BlackPlayerId = "X", Result = MatchResult.WhiteWin },
+                        new Pairing { WhitePlayerId = "C", BlackPlayerId = "X", Result = MatchResult.WhiteWin },
+                        new Pairing { WhitePlayerId = "D", BlackPlayerId = "X", Result = MatchResult.WhiteWin },
+                        new Pairing { WhitePlayerId = "D", BlackPlayerId = "X", Result = MatchResult.WhiteWin }
+                    ]
+                }
+            ]
+        };
+
+        var standings = service.CalculateStandings(tournament, [TiebreakType.DirectEncounter]);
+
+        // A wins the mini-tournament (3 points). B, C, D are re-evaluated among themselves (6.2): 1 point
+        // each, still tied, so the next criterion (here: starting rank) decides: D, C, B.
+        Assert.Equal(["A", "D", "C", "B", "X"], standings.Select(s => s.PlayerId).ToArray());
+    }
+
+    [Fact]
+    public void DirectEncounter_NotAllMet_RanksGuaranteedLeaderFirst()
+    {
+        var service = new TiebreakService();
+        var t = Swiss(("A", 3), ("B", 1), ("C", 2), ("X", 4), ("Y", 5));
+        // A, B and C end on 2 points. A beat B and C; B and C never met.
+        Round(t, 1, ("A", "B", MatchResult.WhiteWin), ("C", "X", MatchResult.WhiteWin), ("Y", null, MatchResult.ByeZero));
+        Round(t, 2, ("C", "A", MatchResult.BlackWin), ("B", "X", MatchResult.WhiteWin), ("Y", null, MatchResult.ByeZero));
+        Round(t, 3, ("B", "Y", MatchResult.WhiteWin), ("C", "Y", MatchResult.WhiteWin), ("A", "X", MatchResult.BlackWin));
+
+        var standings = service.CalculateStandings(t, [TiebreakType.DirectEncounter]);
+
+        Assert.Equal("A", standings[0].PlayerId); // 2 DE points; B and C at most 1 even if they had met (6.3)
+        Assert.Equal("B", standings[1].PlayerId); // B vs C undecided by DE -> starting rank
+        Assert.Equal("C", standings[2].PlayerId);
+    }
+
+    [Fact]
+    public void DirectEncounter_IgnoresForfeitsInSwiss()
+    {
+        var service = new TiebreakService();
+        var t = Swiss(("A", 2), ("B", 1));
+        Round(t, 1, ("A", "B", MatchResult.WhiteForfeit));
+        Round(t, 2, ("B", "A", MatchResult.WhiteForfeit));
+
+        var standings = service.CalculateStandings(t, [TiebreakType.DirectEncounter]);
+
+        Assert.Equal("B", standings[0].PlayerId); // no over-the-board encounter: starting rank decides
+        Assert.Equal(0.0, Of(standings, "A").TiebreakValues[TiebreakType.DirectEncounter]);
+    }
+
+    [Fact]
+    public void Buchholz_PairingAllocatedBye_CountsAsDummyOpponentWithOwnScore()
+    {
+        var service = new TiebreakService();
+        var t = Swiss(("P", 1), ("X", 2), ("Y", 3), ("Z", 4));
+        Round(t, 1, ("P", null, MatchResult.ByeFull), ("X", "Y", MatchResult.WhiteWin));   // Z absent
+        Round(t, 2, ("P", "X", MatchResult.WhiteWin), ("Y", "Z", MatchResult.Draw));
+        Round(t, 3, ("Y", "P", MatchResult.Draw), ("X", "Z", MatchResult.WhiteWin));
+
+        var standings = service.CalculateStandings(t);
+        var p = Of(standings, "P");
+
+        // P: 1 (PAB) + 1 + ½ = 2.5. X = 2, Y = 1.
+        // BH = dummy(2.5) + X(2) + Y(1) = 5.5 (C.07 16.4)
+        Assert.Equal(2.5, p.Points);
+        Assert.Equal(5.5, p.TiebreakValues[TiebreakType.Buchholz]);
+        // SB = 1×2.5 (PAB vs dummy) + 1×2 + ½×1 = 5.0
+        Assert.Equal(5.0, p.TiebreakValues[TiebreakType.SonnebornBerger]);
+        // WIN counts the PAB (7.1), BPG counts only over-the-board Black games (7.3)
+        Assert.Equal(2, p.Wins);
+        Assert.Equal(1, p.BlackGames);
+    }
+
+    [Fact]
+    public void Buchholz_ForfeitWin_UsesDummy_AndForfeitOpponentIsNotInAroOrBlackGames()
+    {
+        var service = new TiebreakService();
+        var t = Swiss(("P", 1), ("F", 2), ("X", 3), ("Y", 4));
+        t.Players.Single(p => p.Id == "F").FideRating = 1000;
+        t.Players.Single(p => p.Id == "X").FideRating = 2000;
+        t.Players.Single(p => p.Id == "Y").FideRating = 2200;
+
+        Round(t, 1, ("F", "P", MatchResult.BlackForfeit), ("X", "Y", MatchResult.Draw));
+        Round(t, 2, ("X", "P", MatchResult.Draw), ("Y", "F", MatchResult.WhiteWin));
+        Round(t, 3, ("P", "Y", MatchResult.Draw), ("F", "X", MatchResult.BlackWin));
+
+        var standings = service.CalculateStandings(t, [TiebreakType.Buchholz, TiebreakType.Aroc, TiebreakType.MostBlack]);
+        var p = Of(standings, "P");
+
+        // P = 1 (forfeit win) + ½ + ½ = 2. X = 2, Y = 2, F = 0.
+        // BH = dummy(2) + X(2) + Y(2) = 6, the forfeiting F does not contribute
+        Assert.Equal(6.0, p.TiebreakValues[TiebreakType.Buchholz]);
+        // ARO over the board only: (2000 + 2200) / 2
+        Assert.Equal(2100.0, p.TiebreakValues[TiebreakType.Aroc]);
+        // Black over the board: only round 2 (the forfeit as Black does not count)
+        Assert.Equal(1.0, p.TiebreakValues[TiebreakType.MostBlack]);
+    }
+
+    [Fact]
+    public void Buchholz_OpponentsTrailingRequestedByes_CountAsDraws()
+    {
+        var service = new TiebreakService();
+        var t = Swiss(("P", 1), ("Q", 2), ("R", 3), ("S", 4));
+        Round(t, 1, ("P", "Q", MatchResult.WhiteWin), ("R", "S", MatchResult.WhiteWin));
+        // Q requests a zero-point bye in round 2 and does not play again (withdraws: absent in round 3)
+        Round(t, 2, ("P", "R", MatchResult.Draw), ("Q", null, MatchResult.ByeZero), ("S", null, MatchResult.ByeFull));
+        Round(t, 3, ("S", "P", MatchResult.Draw), ("R", null, MatchResult.ByeFull));
+
+        var standings = service.CalculateStandings(t);
+        var p = Of(standings, "P");
+
+        // Q scored 0, but its two trailing unplayed rounds (16.2.5) count as draws for P's Buchholz: 1.0
+        // R = 1 + ½ + 1 = 2.5, S = 0 + 1 + ½ = 1.5  ->  BH(P) = 1 + 2.5 + 1.5 = 5
+        Assert.Equal(0.0, Of(standings, "Q").Points);
+        Assert.Equal(5.0, p.TiebreakValues[TiebreakType.Buchholz]);
+    }
+
+    [Fact]
+    public void Buchholz_RequestedByeFollowedByPlay_KeepsAwardedResult()
+    {
+        var service = new TiebreakService();
+        var t = Swiss(("P", 1), ("Q", 2), ("R", 3), ("S", 4));
+        Round(t, 1, ("Q", null, MatchResult.ByeHalf), ("P", "R", MatchResult.WhiteWin), ("S", null, MatchResult.ByeFull));
+        Round(t, 2, ("P", "Q", MatchResult.WhiteWin), ("R", "S", MatchResult.Draw));
+
+        var standings = service.CalculateStandings(t);
+
+        // Q: ½ (requested bye, later played: 16.2.3, awarded) + 0 = ½; R = ½
+        Assert.Equal(1.0, Of(standings, "P").TiebreakValues[TiebreakType.Buchholz]);
+    }
+
+    [Fact]
+    public void BuchholzCut1_CutsVoluntaryUnplayedRoundFirst()
+    {
+        var service = new TiebreakService();
+        var t = Swiss(("P", 1), ("W", 2), ("X", 3), ("Y", 4), ("Z", 5));
+        // P takes a ½-point bye in round 1, then wins two games
+        Round(t, 1, ("P", null, MatchResult.ByeHalf), ("W", "X", MatchResult.WhiteWin), ("Y", "Z", MatchResult.WhiteWin));
+        Round(t, 2, ("P", "X", MatchResult.WhiteWin), ("W", "Y", MatchResult.WhiteWin), ("Z", null, MatchResult.ByeFull));
+        Round(t, 3, ("Z", "P", MatchResult.BlackWin), ("W", null, MatchResult.ByeFull), ("X", "Y", MatchResult.Draw));
+
+        var standings = service.CalculateStandings(t);
+        var p = Of(standings, "P");
+
+        // P = 2.5. Contributions: bye -> dummy 2.5 (voluntary), X = ½, Z = 1.
+        Assert.Equal(4.0, p.TiebreakValues[TiebreakType.Buchholz]);
+        // 16.5: the voluntary unplayed round (2.5) is cut, not the least significant value (½)
+        Assert.Equal(1.5, p.TiebreakValues[TiebreakType.BuchholzCut1]);
+    }
+
+    [Fact]
+    public void Standings_AreDeterministic_RegardlessOfPlayerOrder()
+    {
+        var service = new TiebreakService();
+        var t = Swiss(("A", 1), ("B", 2), ("C", 3), ("D", 4));
+        Round(t, 1, ("A", "B", MatchResult.WhiteWin), ("C", "D", MatchResult.WhiteWin));
+        Round(t, 2, ("B", "C", MatchResult.WhiteWin), ("D", "A", MatchResult.WhiteWin));
+        Round(t, 3, ("C", "A", MatchResult.WhiteWin), ("B", "D", MatchResult.WhiteWin));
+
+        var first = service.CalculateStandings(t).Select(s => s.PlayerId).ToList();
+        t.Players.Reverse();
+        var second = service.CalculateStandings(t).Select(s => s.PlayerId).ToList();
+
+        Assert.Equal(first, second);
+    }
 }

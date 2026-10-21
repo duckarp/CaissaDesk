@@ -113,11 +113,147 @@ public class TrfHandlerTests
 
         string trf = TrfHandler.GenerateTrf(tournament);
 
-        // Player 3 got 1-point bye in round 1 -> "   0 - 1"
-        Assert.Contains("   0 - 1", trf);
+        // TRF-16: a pairing-allocated bye is 'U' with opponent "0000" (bbpPairings rejects "   0 - 1")
+        Assert.Contains("0000 - U", trf);
+        Assert.DoesNotContain("   0 - 1", trf);
 
-        // Player 2 got ½-point bye in round 2 -> "   0 - H"
-        Assert.Contains("   0 - H", trf);
+        // Player 2 got ½-point bye in round 2 -> "0000 - H"
+        Assert.Contains("0000 - H", trf);
+    }
+
+    private static Tournament ThreeRoundTournament()
+    {
+        var t = new Tournament
+        {
+            Name = "Column Test",
+            System = TournamentSystem.SwissDutch,
+            TotalRounds = 5,
+            Players =
+            [
+                new Player { Id = "p1", StartRank = 1, FullName = "One" },
+                new Player { Id = "p2", StartRank = 2, FullName = "Two" },
+                new Player { Id = "p3", StartRank = 3, FullName = "Three" },
+                new Player { Id = "p4", StartRank = 4, FullName = "Four" }
+            ]
+        };
+        return t;
+    }
+
+    private static string PlayerLine(string trf, int startRank) =>
+        trf.Split('\n').Select(l => l.TrimEnd('\r')).Single(l => l.StartsWith("001 " + startRank.ToString().PadLeft(4)));
+
+    /// <summary>Round r occupies columns 92+10(r-1) .. 99+10(r-1) (1-based) of a TRF-16 001 line.</summary>
+    private static string RoundColumn(string line, int round)
+    {
+        int start = 91 + 10 * (round - 1);
+        return line.Length >= start + 8 ? line.Substring(start, 8) : line.Length > start ? line[start..] : "";
+    }
+
+    [Fact]
+    public void GenerateTrf_RequestedFullBye_IsWrittenAsF_AndPairingByeAsU()
+    {
+        var t = ThreeRoundTournament();
+        t.Rounds.Add(new Round
+        {
+            RoundNumber = 1,
+            Pairings =
+            [
+                new Pairing { BoardNumber = 1, WhitePlayerId = "p1", BlackPlayerId = "p2", Result = MatchResult.Draw },
+                new Pairing { BoardNumber = 2, WhitePlayerId = "p3", Result = MatchResult.ByeFull },
+                new Pairing { BoardNumber = 3, WhitePlayerId = "p4", Result = MatchResult.ByeFullRequested }
+            ]
+        });
+
+        string trf = TrfHandler.GenerateTrf(t);
+
+        Assert.Equal("0000 - U", RoundColumn(PlayerLine(trf, 3), 1));
+        Assert.Equal("0000 - F", RoundColumn(PlayerLine(trf, 4), 1));
+        Assert.Contains(" 1.0", PlayerLine(trf, 4)); // requested full bye still scores a point
+    }
+
+    [Fact]
+    public void GenerateTrf_SkippedRound_KeepsLaterResultsInTheirOwnColumn()
+    {
+        var t = ThreeRoundTournament();
+        t.Rounds.Add(new Round
+        {
+            RoundNumber = 1,
+            Pairings =
+            [
+                new Pairing { BoardNumber = 1, WhitePlayerId = "p1", BlackPlayerId = "p2", Result = MatchResult.WhiteWin },
+                new Pairing { BoardNumber = 2, WhitePlayerId = "p3", BlackPlayerId = "p4", Result = MatchResult.Draw }
+            ]
+        });
+        // Round 2: p4 is not on any board (absent)
+        t.Rounds.Add(new Round
+        {
+            RoundNumber = 2,
+            Pairings =
+            [
+                new Pairing { BoardNumber = 1, WhitePlayerId = "p2", BlackPlayerId = "p1", Result = MatchResult.Draw },
+                new Pairing { BoardNumber = 2, WhitePlayerId = "p3", Result = MatchResult.ByeFull }
+            ]
+        });
+        t.Rounds.Add(new Round
+        {
+            RoundNumber = 3,
+            Pairings =
+            [
+                new Pairing { BoardNumber = 1, WhitePlayerId = "p4", BlackPlayerId = "p1", Result = MatchResult.BlackWin },
+                new Pairing { BoardNumber = 2, WhitePlayerId = "p2", BlackPlayerId = "p3", Result = MatchResult.WhiteForfeit }
+            ]
+        });
+
+        string trf = TrfHandler.GenerateTrf(t);
+        var p4 = PlayerLine(trf, 4);
+
+        Assert.Equal("   3 b =", RoundColumn(p4, 1));
+        Assert.Equal("0000 - Z", RoundColumn(p4, 2)); // absence keeps its column
+        Assert.Equal("   1 w 0", RoundColumn(p4, 3));
+
+        var p3 = PlayerLine(trf, 3);
+        Assert.Equal("   2 b -", RoundColumn(p3, 3)); // forfeit loss
+        Assert.Equal("   3 w +", RoundColumn(PlayerLine(trf, 2), 3));
+    }
+
+    [Fact]
+    public void GenerateTrf_ForPairingRound_MarksWithdrawnAndRequestedByePlayers()
+    {
+        var t = ThreeRoundTournament();
+        t.Rounds.Add(new Round
+        {
+            RoundNumber = 1,
+            Pairings =
+            [
+                new Pairing { BoardNumber = 1, WhitePlayerId = "p1", BlackPlayerId = "p3", Result = MatchResult.WhiteWin },
+                new Pairing { BoardNumber = 2, WhitePlayerId = "p4", BlackPlayerId = "p2", Result = MatchResult.Draw }
+            ]
+        });
+        t.Players[1].ByeRequests[2] = ByeType.HalfPoint;  // p2 requests ½ bye in round 2
+        t.Players[2].Status = PlayerStatus.Withdrawn;      // p3 withdrew
+        t.Players[3].ByeRequests[2] = ByeType.ZeroPoint;  // p4 requests 0 bye
+
+        string trf = TrfHandler.GenerateTrf(t, pairingRound: 2);
+
+        Assert.Equal("0000 - H", RoundColumn(PlayerLine(trf, 2), 2));
+        Assert.Equal("0000 - Z", RoundColumn(PlayerLine(trf, 3), 2));
+        Assert.Equal("0000 - Z", RoundColumn(PlayerLine(trf, 4), 2));
+        Assert.Equal("", RoundColumn(PlayerLine(trf, 1), 2).Trim()); // p1 is to be paired
+    }
+
+    [Fact]
+    public void GenerateTrf_ForPairingRound_IgnoresAlreadyCreatedPairingsOfThatRound()
+    {
+        var t = ThreeRoundTournament();
+        t.Rounds.Add(new Round
+        {
+            RoundNumber = 1,
+            Pairings = [new Pairing { BoardNumber = 1, WhitePlayerId = "p1", BlackPlayerId = "p2", Result = MatchResult.WhiteWin }]
+        });
+
+        string trf = TrfHandler.GenerateTrf(t, pairingRound: 1);
+
+        Assert.Equal("", RoundColumn(PlayerLine(trf, 1), 1).Trim());
     }
 
     [Fact]
