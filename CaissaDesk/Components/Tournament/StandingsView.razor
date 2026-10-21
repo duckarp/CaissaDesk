@@ -17,10 +17,10 @@
 			@if (tournament.System == TournamentSystem.RoundRobin)
 			{
 				<div style="display: flex; align-items: center; background-color: var(--bg-surface-elevated); padding: 3px; border-radius: 6px; border: 1px solid var(--border-subtle);">
-					<button class="@(!State.ShowCrossTable ? "workspace-tab tab-active" : "workspace-tab")" @onclick="() => State.ShowCrossTable = false">
+					<button type="button" class="@(!State.ShowCrossTable ? "workspace-tab tab-active" : "workspace-tab")" aria-pressed="@(!State.ShowCrossTable ? "true" : "false")" @onclick="() => State.ShowCrossTable = false">
 						@Loc["Standings_Leaderboard"]
 					</button>
-					<button class="@(State.ShowCrossTable ? "workspace-tab tab-active" : "workspace-tab")" @onclick="() => State.ShowCrossTable = true">
+					<button type="button" class="@(State.ShowCrossTable ? "workspace-tab tab-active" : "workspace-tab")" aria-pressed="@(State.ShowCrossTable ? "true" : "false")" @onclick="() => State.ShowCrossTable = true">
 						@Loc["Standings_CrossTable"]
 					</button>
 				</div>
@@ -92,13 +92,13 @@
 							<th style="width: 50px; text-align: center;">@Loc["Common_Seed"]</th>
 							<th style="width: 60px;">@Loc["Common_Title"]</th>
 							<th>@Loc["Common_Name"]</th>
-							<th style="width: 65px; text-align: center;">Fed</th>
+							<th style="width: 65px; text-align: center;">@Loc["Print_ColFed"]</th>
 							<th style="width: 75px; text-align: right;">@Loc["Common_Rating"]</th>
 							<th style="width: 65px; text-align: center;">@Loc["Common_Games"]</th>
 							<th style="width: 75px; text-align: right;">@Loc["Common_Points"]</th>
 							@foreach (var tb in tiebreaksToShow)
 							{
-								<th style="width: 75px; text-align: right;" title="@(Loc[$"Tiebreak_{tb}"] != $"Tiebreak_{tb}" ? Loc[$"Tiebreak_{tb}"] : tb.ToFullName())">@tb.ToShortName()</th>
+								<th style="width: 75px; text-align: right;" title="@Loc.TiebreakLabel(tb)">@tb.ToShortName()</th>
 							}
 						</tr>
 					</thead>

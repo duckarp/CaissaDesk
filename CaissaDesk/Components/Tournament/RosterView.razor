@@ -39,12 +39,12 @@
 
 		@if (!string.IsNullOrEmpty(State.SyncResultMessage))
 		{
-			<div class="panel-card" style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: rgba(76, 175, 80, 0.1); border: 1px solid rgba(76, 175, 80, 0.3); border-radius: 6px; font-size: 13px; color: var(--accent-success);">
+			<div class="panel-card" role="status" style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: rgba(76, 175, 80, 0.1); border: 1px solid rgba(76, 175, 80, 0.3); border-radius: 6px; font-size: 13px; color: var(--accent-success);">
 				<div style="display: flex; align-items: center; gap: 8px;">
 					<AppIcon Name="check" Size="14" />
 					<span>@State.SyncResultMessage</span>
 				</div>
-				<button class="modal-close-btn" @onclick="() => State.SyncResultMessage = null" style="font-size: 12px; color: var(--text-secondary);">
+				<button type="button" class="modal-close-btn" @onclick="() => State.SyncResultMessage = null" style="font-size: 12px; color: var(--text-secondary);" title="@Loc["Common_Dismiss"]" aria-label="@Loc["Common_Dismiss"]">
 					<AppIcon Name="x" Size="12" />
 				</button>
 			</div>
@@ -71,7 +71,7 @@
 							<th style="width: 45px; text-align: center;">#</th>
 							<th style="width: 60px;">@Loc["Common_Title"]</th>
 							<th>@Loc["Common_Name"]</th>
-							<th style="width: 60px; text-align: center;">Fed</th>
+							<th style="width: 60px; text-align: center;">@Loc["Print_ColFed"]</th>
 							<th>@Loc["Common_Club"]</th>
 							<th style="width: 80px; text-align: right;">@Loc["Roster_FideElo"]</th>
 							<th style="width: 80px; text-align: right;">@Loc["Roster_NatElo"]</th>
@@ -119,14 +119,14 @@
 								</td>
 								<td style="text-align: center;">
 									<span class="@(player.Status == PlayerStatus.Active ? "badge badge-green" : "badge badge-gray")">
-										@player.Status
+										@Loc.PlayerStatusLabel(player.Status)
 									</span>
 								</td>
 								<td style="text-align: center; white-space: nowrap;">
-									<button class="btn-secondary" style="padding: 3px 6px; font-size: 11px; margin-right: 4px;" title="@Loc["Common_Edit"]" @onclick="() => OpenEditPlayerModal(player)">
+									<button class="btn-secondary" style="padding: 3px 6px; font-size: 11px; margin-right: 4px;" title="@Loc["Common_Edit"]" aria-label="@Loc["Roster_EditPlayerLabel", player.FullName]" @onclick="() => OpenEditPlayerModal(player)">
 										<AppIcon Name="edit" Size="11" />
 									</button>
-									<button class="btn-danger" style="padding: 3px 6px; font-size: 11px;" title="@Loc["Common_Delete"]" @onclick="() => RequestRemovePlayer(player.Id, player.FullName)">
+									<button class="btn-danger" style="padding: 3px 6px; font-size: 11px;" title="@Loc["Common_Delete"]" aria-label="@Loc["Roster_RemovePlayerLabel", player.FullName]" @onclick="() => RequestRemovePlayer(player.Id, player.FullName)">
 										<AppIcon Name="trash" Size="11" />
 									</button>
 								</td>
@@ -264,7 +264,8 @@
 		catch (Exception ex)
 		{
 			Logger.LogError(ex, "Bulk FIDE sync of {Tournament} failed.", tournament.Name);
-			State.SyncResultMessage = $"Sync failed: {ex.Message}";
+			State.SyncResultMessage = Loc["Roster_SyncFailed", ex.Message];
+
 		}
 		finally
 		{

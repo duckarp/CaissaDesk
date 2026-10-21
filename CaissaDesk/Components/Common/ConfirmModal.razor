@@ -4,56 +4,56 @@
 
 @if (IsOpen)
 {
-	<div class="modal-overlay" @onclick="HandleCancel">
-		<div class="modal-content" style="max-width: 460px; box-shadow: var(--shadow-lg);" @onclick:stopPropagation="true">
-			<div class="modal-header">
-				<div class="modal-title" style="display: flex; align-items: center; gap: 8px;">
-					@if (IsDestructive)
-					{
-						<span style="color: var(--accent-danger); display: flex; align-items: center;">
-							<AppIcon Name="@(HeaderIcon ?? "trash")" Size="18" />
-						</span>
-					}
-					else
-					{
-						<span style="color: var(--brand-gold); display: flex; align-items: center;">
-							<AppIcon Name="@(HeaderIcon ?? "archive")" Size="18" />
-						</span>
-					}
-					<span>@Title</span>
-				</div>
-				<button class="modal-close-btn" @onclick="HandleCancel" type="button" title="@Loc["Common_Close"]">
-					<AppIcon Name="x" Size="15" />
-				</button>
-			</div>
-
-			<div class="modal-body" style="padding: 20px 24px;">
-				<div style="font-size: 14px; line-height: 1.5; color: var(--text-primary); margin-bottom: 8px; font-weight: 500;">
-					@Message
-				</div>
-				@if (!string.IsNullOrEmpty(Details))
+	<ModalDialog LabelledBy="@_titleId" OnCancel="HandleCancel" Style="max-width: 460px; box-shadow: var(--shadow-lg);">
+		<div class="modal-header">
+			<div class="modal-title" id="@_titleId" style="display: flex; align-items: center; gap: 8px;">
+				@if (IsDestructive)
 				{
-					<div style="font-size: 12px; color: var(--text-secondary); line-height: 1.4; display: flex; align-items: center; gap: 6px;">
-						<AppIcon Name="alert" Size="13" />
-						<span>@Details</span>
-					</div>
+					<span style="color: var(--accent-danger); display: flex; align-items: center;">
+						<AppIcon Name="@(HeaderIcon ?? "trash")" Size="18" />
+					</span>
 				}
+				else
+				{
+					<span style="color: var(--brand-gold); display: flex; align-items: center;">
+						<AppIcon Name="@(HeaderIcon ?? "archive")" Size="18" />
+					</span>
+				}
+				<span>@Title</span>
 			</div>
-
-			<div class="modal-footer" style="padding: 14px 24px; gap: 10px; justify-content: flex-end; display: flex;">
-				<button type="button" class="btn-secondary" @onclick="HandleCancel">
-					@(CancelText ?? Loc["Common_Cancel"])
-				</button>
-				<button type="button" class="@(IsDestructive ? "btn-danger" : "btn-primary")" @onclick="HandleConfirm">
-					<AppIcon Name="@(ConfirmIcon ?? (IsDestructive ? "trash" : "check"))" Size="13" />
-					<span>@(ConfirmText ?? (IsDestructive ? Loc["Common_Delete"] : Loc["Common_Confirm"]))</span>
-				</button>
-			</div>
+			<button class="modal-close-btn" @onclick="HandleCancel" type="button" title="@Loc["Common_Close"]" aria-label="@Loc["Common_Close"]">
+				<AppIcon Name="x" Size="15" />
+			</button>
 		</div>
-	</div>
+
+		<div class="modal-body" style="padding: 20px 24px;">
+			<div style="font-size: 14px; line-height: 1.5; color: var(--text-primary); margin-bottom: 8px; font-weight: 500;">
+				@Message
+			</div>
+			@if (!string.IsNullOrEmpty(Details))
+			{
+				<div style="font-size: 12px; color: var(--text-secondary); line-height: 1.4; display: flex; align-items: center; gap: 6px;">
+					<AppIcon Name="alert" Size="13" />
+					<span>@Details</span>
+				</div>
+			}
+		</div>
+
+		<div class="modal-footer" style="padding: 14px 24px; gap: 10px; justify-content: flex-end; display: flex;">
+			<button type="button" class="btn-secondary" @onclick="HandleCancel" data-autofocus>
+				@(CancelText ?? Loc["Common_Cancel"])
+			</button>
+			<button type="button" class="@(IsDestructive ? "btn-danger" : "btn-primary")" @onclick="HandleConfirm">
+				<AppIcon Name="@(ConfirmIcon ?? (IsDestructive ? "trash" : "check"))" Size="13" />
+				<span>@(ConfirmText ?? (IsDestructive ? Loc["Common_Delete"] : Loc["Common_Confirm"]))</span>
+			</button>
+		</div>
+	</ModalDialog>
 }
 
 @code {
+	private readonly string _titleId = DomIds.Next("confirm-title");
+
 	[Parameter] public bool IsOpen { get; set; }
 	[Parameter] public string Title { get; set; } = string.Empty;
 	[Parameter] public string Message { get; set; } = string.Empty;

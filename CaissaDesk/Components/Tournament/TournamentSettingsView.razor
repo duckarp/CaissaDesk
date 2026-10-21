@@ -28,14 +28,14 @@
 
 		@if (!string.IsNullOrEmpty(State.SettingsErrorMessage))
 		{
-			<div style="background-color: rgba(218, 54, 51, 0.12); border: 1px solid var(--accent-danger); border-radius: 6px; padding: 10px 14px; color: var(--accent-danger); font-size: 13px; display: flex; align-items: center; gap: 8px;">
+			<div role="alert" style="background-color: rgba(218, 54, 51, 0.12); border: 1px solid var(--accent-danger); border-radius: 6px; padding: 10px 14px; color: var(--accent-danger); font-size: 13px; display: flex; align-items: center; gap: 8px;">
 				<AppIcon Name="alert" Size="16" />
 				<span>@State.SettingsErrorMessage</span>
 			</div>
 		}
 		@if (!string.IsNullOrEmpty(State.SettingsSuccessMessage))
 		{
-			<div style="background-color: rgba(35, 134, 54, 0.12); border: 1px solid var(--accent-primary); border-radius: 6px; padding: 10px 14px; color: var(--accent-primary); font-size: 13px; display: flex; align-items: center; gap: 8px;">
+			<div role="status" style="background-color: rgba(35, 134, 54, 0.12); border: 1px solid var(--accent-primary); border-radius: 6px; padding: 10px 14px; color: var(--accent-primary); font-size: 13px; display: flex; align-items: center; gap: 8px;">
 				<AppIcon Name="check" Size="16" />
 				<span>@State.SettingsSuccessMessage</span>
 			</div>
@@ -60,7 +60,7 @@
 						<div style="font-size: 12px; color: var(--text-secondary);">
 							@if (tournament.IsFinished && tournament.FinishedAt.HasValue)
 							{
-								<span>Finished on @tournament.FinishedAt.Value.ToLocalTime().ToString("MMM dd, yyyy HH:mm")</span>
+								<span>@Loc["Workbench_FinishedOn", tournament.FinishedAt.Value.ToLocalTime().ToString("d MMM yyyy HH:mm", Loc.Culture())]</span>
 							}
 							else
 							{
@@ -89,14 +89,14 @@
 					<div class="panel-title">@Loc["Settings_General"]</div>
 
 					<div class="form-group">
-						<label class="form-label">@Loc["Tournament_Name"]</label>
-						<input type="text" class="form-input" @bind="State.Details.Name" />
+						<label class="form-label" for="@($"{_uid}-f1")">@Loc["Tournament_Name"]</label>
+						<input id="@($"{_uid}-f1")" type="text" class="form-input" @bind="State.Details.Name" />
 					</div>
 
 					<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
 						<div class="form-group">
-							<label class="form-label">@Loc["Tournament_TotalRounds"]</label>
-							<input type="number"
+							<label class="form-label" for="@($"{_uid}-f2")">@Loc["Tournament_TotalRounds"]</label>
+							<input id="@($"{_uid}-f2")" type="number"
 								   class="form-input"
 								   style="@(State.Details.TotalRounds < tournament.MinAllowedRounds ? "border-color: var(--accent-danger);" : "")"
 								   @bind="State.Details.TotalRounds"
@@ -107,71 +107,71 @@
 							</div>
 						</div>
 						<div class="form-group">
-							<label class="form-label">@Loc["Tournament_Venue"]</label>
-							<input type="text" class="form-input" @bind="State.Details.Venue" placeholder="e.g. Chess Hall" />
+							<label class="form-label" for="@($"{_uid}-f3")">@Loc["Tournament_Venue"]</label>
+							<input id="@($"{_uid}-f3")" type="text" class="form-input" @bind="State.Details.Venue" placeholder="@Loc["Settings_PlaceholderVenue"]" />
 						</div>
 					</div>
 
 					<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
 						<div class="form-group">
-							<label class="form-label">@Loc["Tournament_ChiefArbiter"]</label>
-							<input type="text" class="form-input" @bind="State.Details.ChiefArbiter" placeholder="e.g. IA Tomas K." />
+							<label class="form-label" for="@($"{_uid}-f4")">@Loc["Tournament_ChiefArbiter"]</label>
+							<input id="@($"{_uid}-f4")" type="text" class="form-input" @bind="State.Details.ChiefArbiter" placeholder="@Loc["Settings_PlaceholderChiefArbiter"]" />
 						</div>
 						<div class="form-group">
-							<label class="form-label">@Loc["Tournament_DeputyArbiter"]</label>
-							<input type="text" class="form-input" @bind="State.Details.DeputyArbiter" placeholder="e.g. FA John D." />
-						</div>
-					</div>
-
-					<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-						<div class="form-group">
-							<label class="form-label">@Loc["Tournament_Organizer"]</label>
-							<input type="text" class="form-input" @bind="State.Details.Organizer" placeholder="e.g. Chess Club" />
-						</div>
-						<div class="form-group">
-							<label class="form-label">@Loc["Tournament_Federation"]</label>
-							<input type="text" class="form-input" @bind="State.Details.Federation" placeholder="e.g. SVK" maxlength="3" />
+							<label class="form-label" for="@($"{_uid}-f5")">@Loc["Tournament_DeputyArbiter"]</label>
+							<input id="@($"{_uid}-f5")" type="text" class="form-input" @bind="State.Details.DeputyArbiter" placeholder="@Loc["Settings_PlaceholderDeputyArbiter"]" />
 						</div>
 					</div>
 
 					<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
 						<div class="form-group">
-							<label class="form-label">@Loc["Tournament_TimeControl"]</label>
-							<select class="form-select" @bind="State.Details.TimeControl">
+							<label class="form-label" for="@($"{_uid}-f6")">@Loc["Tournament_Organizer"]</label>
+							<input id="@($"{_uid}-f6")" type="text" class="form-input" @bind="State.Details.Organizer" placeholder="@Loc["Settings_PlaceholderOrganizer"]" />
+						</div>
+						<div class="form-group">
+							<label class="form-label" for="@($"{_uid}-f7")">@Loc["Tournament_Federation"]</label>
+							<input id="@($"{_uid}-f7")" type="text" class="form-input" @bind="State.Details.Federation" placeholder="@Loc["Settings_PlaceholderFederation"]" maxlength="3" />
+						</div>
+					</div>
+
+					<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+						<div class="form-group">
+							<label class="form-label" for="@($"{_uid}-f8")">@Loc["Tournament_TimeControl"]</label>
+							<select id="@($"{_uid}-f8")" class="form-select" @bind="State.Details.TimeControl">
 								<option value="@TimeControlCategory.Rapid">@Loc["TimeControl_Rapid"]</option>
 								<option value="@TimeControlCategory.Blitz">@Loc["TimeControl_Blitz"]</option>
 								<option value="@TimeControlCategory.Standard">@Loc["TimeControl_Standard"]</option>
 							</select>
 						</div>
 						<div class="form-group">
-							<label class="form-label">@Loc["Tournament_TimeControlSpec"]</label>
-							<input type="text" class="form-input" @bind="State.Details.TimeControlDetails" placeholder="e.g. 15m + 5s" />
+							<label class="form-label" for="@($"{_uid}-f9")">@Loc["Tournament_TimeControlSpec"]</label>
+							<input id="@($"{_uid}-f9")" type="text" class="form-input" @bind="State.Details.TimeControlDetails" placeholder="@Loc["Settings_PlaceholderTimeControl"]" />
 						</div>
 					</div>
 
 					<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
 						<div class="form-group">
-							<label class="form-label">@Loc["Tournament_StartDate"]</label>
-							<input type="date" class="form-input" value="@State.Details.StartDate.ToString("yyyy-MM-dd")" @onchange="OnStartDateChanged" />
+							<label class="form-label" for="@($"{_uid}-f10")">@Loc["Tournament_StartDate"]</label>
+							<input id="@($"{_uid}-f10")" type="date" class="form-input" value="@State.Details.StartDate.ToString("yyyy-MM-dd")" @onchange="OnStartDateChanged" />
 						</div>
 						<div class="form-group">
-							<label class="form-label">@Loc["Tournament_EndDate"]</label>
-							<input type="date" class="form-input" value="@State.Details.EndDate.ToString("yyyy-MM-dd")" @onchange="OnEndDateChanged" />
+							<label class="form-label" for="@($"{_uid}-f11")">@Loc["Tournament_EndDate"]</label>
+							<input id="@($"{_uid}-f11")" type="date" class="form-input" value="@State.Details.EndDate.ToString("yyyy-MM-dd")" @onchange="OnEndDateChanged" />
 						</div>
 					</div>
 
 					<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
 						<div class="form-group">
-							<label class="form-label">@Loc["Tournament_SeedingPrecedence"]</label>
-							<select class="form-select" @bind="State.Details.SeedingPrecedence">
+							<label class="form-label" for="@($"{_uid}-f12")">@Loc["Tournament_SeedingPrecedence"]</label>
+							<select id="@($"{_uid}-f12")" class="form-select" @bind="State.Details.SeedingPrecedence">
 								<option value="@SeedingPrecedence.FideFirst">@Loc["Tournament_FideFirst"]</option>
 								<option value="@SeedingPrecedence.NationalFirst">@Loc["Tournament_NationalFirst"]</option>
 							</select>
 						</div>
 						<div class="form-group" style="display: flex; align-items: flex-end; padding-bottom: 8px;">
 							<div style="display: flex; align-items: center; gap: 8px;">
-								<input type="checkbox" id="wbFideRated" @bind="State.Details.FideRated" style="cursor: pointer; width: 16px; height: 16px; accent-color: var(--brand-gold);" />
-								<label for="wbFideRated" style="font-size: 13px; color: var(--text-primary); cursor: pointer; user-select: none;">
+								<input type="checkbox" id="@($"{_uid}-fide-rated")" @bind="State.Details.FideRated" style="cursor: pointer; width: 16px; height: 16px; accent-color: var(--brand-gold);" />
+								<label for="@($"{_uid}-fide-rated")" style="font-size: 13px; color: var(--text-primary); cursor: pointer; user-select: none;">
 									@Loc["Tournament_FideRated"]
 								</label>
 							</div>
@@ -187,13 +187,13 @@
 					<!-- Pairing Engine Provider Card -->
 					<div class="panel-card" style="display: flex; flex-direction: column; gap: 14px;">
 						<div>
-							<div class="panel-title" style="margin-bottom: 2px;">@Loc["Settings_EngineProvider"]</div>
+							<div class="panel-title" id="@($"{_uid}-engine-title")" style="margin-bottom: 2px;">@Loc["Settings_EngineProvider"]</div>
 							<div style="font-size: 12px; color: var(--text-secondary);">@Loc["Settings_EngineDesc"]</div>
 						</div>
 
 						@if (!string.IsNullOrEmpty(State.EngineDownloadMessage))
 						{
-							<div style="font-size: 12px; padding: 8px 12px; border-radius: 6px; background-color: rgba(218, 54, 51, 0.12); color: var(--accent-danger); margin-bottom: 8px;">
+							<div role="alert" style="font-size: 12px; padding: 8px 12px; border-radius: 6px; background-color: rgba(218, 54, 51, 0.12); color: var(--accent-danger); margin-bottom: 8px;">
 								@State.EngineDownloadMessage
 							</div>
 						}
@@ -206,18 +206,29 @@
 							</div>
 						</div>
 
-						<div style="display: flex; flex-direction: column; gap: 8px;">
+						<div role="radiogroup" aria-labelledby="@($"{_uid}-engine-title")" style="display: flex; flex-direction: column; gap: 8px;">
 							@foreach (var engine in EngineRegistry.SwissEngines)
 							{
 								bool isSelected = tournament.PairingEngineId.Equals(engine.Id, StringComparison.OrdinalIgnoreCase);
 								bool isAvailable = engine.IsAvailable;
-								<div class="panel-card"
+								string engineInputId = $"{_uid}-engine-{engine.Id}";
+								<div class="panel-card engine-choice-card"
 									 style="display: flex; align-items: center; justify-content: space-between; padding: 12px; background-color: var(--bg-surface-elevated); cursor: @(isAvailable ? "pointer" : "not-allowed"); opacity: @(isAvailable ? "1" : "0.65"); border-color: @(isSelected ? "var(--brand-gold)" : "var(--border-subtle)");"
 									 title="@(!isAvailable ? Loc["Settings_SelectDisabledTooltip"] : "")"
 									 @onclick="async () => { if (isAvailable) await SelectPairingEngine(engine.Id); }">
+									@* Visually hidden radio: keyboard (Tab, arrow keys) and screen-reader access to the clickable card *@
+									<input type="radio"
+										   class="sr-only"
+										   id="@engineInputId"
+										   name="@($"{_uid}-engine")"
+										   checked="@isSelected"
+										   disabled="@(!isAvailable)"
+										   aria-labelledby="@($"{engineInputId}-name")"
+										   aria-describedby="@($"{engineInputId}-desc")"
+										   @onchange="() => SelectPairingEngine(engine.Id)" />
 									<div>
 										<div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-											<span style="font-weight: 700; color: var(--text-primary); font-size: 13px;">@engine.DisplayName</span>
+											<span id="@($"{engineInputId}-name")" style="font-weight: 700; color: var(--text-primary); font-size: 13px;">@engine.DisplayName</span>
 											<span class="badge @(engine.Id == "native_dutch" ? "badge-blue" : engine.Id == "bbp" ? "badge-gold" : "badge-purple")" style="font-size: 10px;">
 												@(engine.Id == "native_dutch" ? Loc["Settings_EngineNativeBadge"] :
 												  engine.Id == "bbp" ? Loc["Settings_EngineBbpBadge"] :
@@ -225,10 +236,10 @@
 											</span>
 											@if (isSelected)
 											{
-												<span class="badge badge-gold">Active</span>
+												<span class="badge badge-gold">@Loc["Settings_EngineActiveBadge"]</span>
 											}
 										</div>
-										<div style="font-size: 11px; color: var(--text-secondary); margin-top: 3px;">
+										<div id="@($"{engineInputId}-desc")" style="font-size: 11px; color: var(--text-secondary); margin-top: 3px;">
 											@(engine.Id == "native_dutch" ? Loc["Settings_EngineNativeAdvise"] :
 											  engine.Id == "bbp" ? Loc["Settings_EngineBbpAdvise"] :
 											  Loc["Settings_EngineJaVaFoAdvise"])
@@ -248,7 +259,7 @@
 										}
 										else
 										{
-											<span class="badge badge-gray" title="Engine executable not detected">@Loc["Settings_EngineStatusMissing"]</span>
+											<span class="badge badge-gray" title="@Loc["Settings_EngineNotDetectedTooltip"]">@Loc["Settings_EngineStatusMissing"]</span>
 											@if (engine.Id == "bbp" || engine.Id == "javafo")
 											{
 												<button type="button" class="btn-primary" style="font-size: 11px; padding: 3px 8px;"
@@ -291,7 +302,7 @@
 
 					<!-- Active Priority Stack (Interactive list) -->
 					<div style="margin-top: 6px;">
-						<label class="form-label" style="margin-bottom: 8px;">@Loc["Settings_ActivePriority"]</label>
+						<div class="form-label" id="@($"{_uid}-tb-title")" style="margin-bottom: 8px;">@Loc["Settings_ActivePriority"]</div>
 						@if (tournament.TiebreakOrder.Count == 0)
 						{
 							<div style="padding: 12px; background: rgba(255,255,255,0.02); border: 1px dashed var(--border-color); border-radius: 6px; font-size: 12px; color: var(--text-muted); text-align: center;">
@@ -300,31 +311,31 @@
 						}
 						else
 						{
-							<div style="display: flex; flex-direction: column; gap: 6px;">
+							<ol aria-labelledby="@($"{_uid}-tb-title")" style="display: flex; flex-direction: column; gap: 6px; list-style: none; margin: 0; padding: 0;">
 								@for (int i = 0; i < tournament.TiebreakOrder.Count; i++)
 								{
 									var tb = tournament.TiebreakOrder[i];
 									int idx = i;
-									<div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; background: var(--bg-hover); border: 1px solid var(--border-color); border-radius: 6px; font-size: 13px;">
+									<li style="display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; background: var(--bg-hover); border: 1px solid var(--border-color); border-radius: 6px; font-size: 13px;">
 										<div style="display: flex; align-items: center; gap: 8px;">
 											<span style="font-family: var(--font-mono); font-weight: 700; color: var(--brand-gold); width: 22px;">@(idx + 1).</span>
-											<span style="font-weight: 600;">@(Loc[$"Tiebreak_{tb}"] != $"Tiebreak_{tb}" ? Loc[$"Tiebreak_{tb}"] : tb.ToFullName())</span>
+											<span style="font-weight: 600;">@Loc.TiebreakLabel(tb)</span>
 											<span class="badge badge-gold" style="font-family: var(--font-mono); font-size: 11px; padding: 1px 6px;">@tb.ToShortName()</span>
 										</div>
 										<div style="display: flex; align-items: center; gap: 4px;">
-											<button type="button" class="btn-icon" style="padding: 3px 6px; font-size: 11px;" title="@Loc["Tiebreak_MoveUp"]" disabled="@(idx == 0)" @onclick="() => MoveTiebreakUp(idx)">
-												▲
+											<button type="button" class="btn-icon" style="padding: 3px 6px; font-size: 11px;" title="@Loc["Tiebreak_MoveUp"]" aria-label="@Loc["Tiebreak_MoveUpLabel", Loc.TiebreakLabel(tb)]" disabled="@(idx == 0)" @onclick="() => MoveTiebreakUp(idx)">
+												<span aria-hidden="true">▲</span>
 											</button>
-											<button type="button" class="btn-icon" style="padding: 3px 6px; font-size: 11px;" title="@Loc["Tiebreak_MoveDown"]" disabled="@(idx == tournament.TiebreakOrder.Count - 1)" @onclick="() => MoveTiebreakDown(idx)">
-												▼
+											<button type="button" class="btn-icon" style="padding: 3px 6px; font-size: 11px;" title="@Loc["Tiebreak_MoveDown"]" aria-label="@Loc["Tiebreak_MoveDownLabel", Loc.TiebreakLabel(tb)]" disabled="@(idx == tournament.TiebreakOrder.Count - 1)" @onclick="() => MoveTiebreakDown(idx)">
+												<span aria-hidden="true">▼</span>
 											</button>
-											<button type="button" class="btn-icon" style="padding: 3px 6px; font-size: 11px; color: var(--accent-danger);" title="@Loc["Tiebreak_Remove"]" @onclick="() => RemoveTiebreak(idx)">
+											<button type="button" class="btn-icon" style="padding: 3px 6px; font-size: 11px; color: var(--accent-danger);" title="@Loc["Tiebreak_Remove"]" aria-label="@Loc["Tiebreak_RemoveLabel", Loc.TiebreakLabel(tb)]" @onclick="() => RemoveTiebreak(idx)">
 												<AppIcon Name="x" Size="12" />
 											</button>
 										</div>
-									</div>
+									</li>
 								}
-							</div>
+							</ol>
 						}
 					</div>
 
@@ -337,12 +348,12 @@
 					@if (availableToAdd.Count > 0)
 					{
 						<div style="display: flex; gap: 8px; align-items: center; margin-top: 4px;">
-							<select class="form-select" style="flex: 1; font-size: 13px;" @bind="_selectedTiebreakToAdd">
+							<select class="form-select" style="flex: 1; font-size: 13px;" aria-label="@Loc["Tiebreak_SelectToAdd"]" @bind="_selectedTiebreakToAdd">
 								<option value="">-- @Loc["Tiebreak_SelectToAdd"] --</option>
 								@foreach (var avail in availableToAdd)
 								{
 									<option value="@avail">
-										@(Loc[$"Tiebreak_{avail}"] != $"Tiebreak_{avail}" ? Loc[$"Tiebreak_{avail}"] : avail.ToFullName()) (@avail.ToShortName())
+										@Loc.TiebreakLabel(avail) (@avail.ToShortName())
 									</option>
 								}
 							</select>
@@ -387,6 +398,9 @@
 @code {
 	[Parameter, EditorRequired] public WorkbenchState State { get; set; } = default!;
 
+	private readonly string _uid = DomIds.Next("tournament-settings");
+
+
 	private TiebreakType? _selectedTiebreakToAdd;
 
 	private void OnStartDateChanged(ChangeEventArgs e)
@@ -415,7 +429,7 @@
 		switch (State.Details.TryApplyTo(tournament))
 		{
 			case TournamentDetailsValidation.NameRequired:
-				State.SettingsErrorMessage = Loc["Tournament_Name"] + " is required.";
+				State.SettingsErrorMessage = Loc["Validation_Required", Loc["Tournament_Name"]];
 				return;
 			case TournamentDetailsValidation.TooFewRounds:
 				State.SettingsErrorMessage = Loc["Tournament_MinRoundsError", tournament.MinAllowedRounds];

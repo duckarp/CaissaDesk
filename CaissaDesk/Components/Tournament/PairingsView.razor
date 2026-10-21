@@ -54,7 +54,7 @@
 						<button class="@(isPending ? "btn-secondary" : "btn-primary")"
 								@onclick="GenerateNextRoundAsync"
 								disabled="@isPairing"
-								title="@(isPending ? $"Round {latestRound?.RoundNumber} has {unplayedCount} match(es) in progress. Click to view pending games." : $"Generate Swiss pairings for Round {tournament.Rounds.Count + 1}")">
+								title="@(isPending ? Loc["Pairings_PendingTooltip", latestRound?.RoundNumber ?? 0, unplayedCount] : Loc["Pairings_PairRoundTooltip", tournament.Rounds.Count + 1])">
 							@if (isPending)
 							{
 								<span style="color: var(--brand-gold);"><AppIcon Name="warning" Size="13" /></span>
@@ -98,12 +98,12 @@
 
 		@if (!string.IsNullOrEmpty(State.PairingErrorMessage))
 		{
-			<div class="panel-card" style="background: rgba(218, 54, 51, 0.15); border: 1px solid var(--accent-danger-hover); padding: 10px 14px; display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+			<div class="panel-card" role="alert" style="background: rgba(218, 54, 51, 0.15); border: 1px solid var(--accent-danger-hover); padding: 10px 14px; display: flex; align-items: center; justify-content: space-between; gap: 10px;">
 				<div style="display: flex; align-items: center; gap: 8px; color: #f87171; font-size: 13px;">
 					<AppIcon Name="warning" Size="16" />
 					<span>@State.PairingErrorMessage</span>
 				</div>
-				<button class="modal-close-btn" style="color: #f87171; width: 24px; height: 24px;" @onclick="() => State.PairingErrorMessage = null" type="button" title="@Loc["Common_Dismiss"]">
+				<button class="modal-close-btn" style="color: #f87171; width: 24px; height: 24px;" @onclick="() => State.PairingErrorMessage = null" type="button" title="@Loc["Common_Dismiss"]" aria-label="@Loc["Common_Dismiss"]">
 					<AppIcon Name="x" Size="13" />
 				</button>
 			</div>
@@ -111,12 +111,12 @@
 
 		@if (!string.IsNullOrEmpty(State.PairingWarningMessage))
 		{
-			<div class="panel-card" style="background: rgba(210, 153, 34, 0.15); border: 1px solid var(--accent-warning); padding: 10px 14px; display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+			<div class="panel-card" role="status" style="background: rgba(210, 153, 34, 0.15); border: 1px solid var(--accent-warning); padding: 10px 14px; display: flex; align-items: center; justify-content: space-between; gap: 10px;">
 				<div style="display: flex; align-items: center; gap: 8px; color: var(--accent-warning); font-size: 13px;">
 					<AppIcon Name="warning" Size="16" />
 					<span>@State.PairingWarningMessage</span>
 				</div>
-				<button class="modal-close-btn" style="color: var(--accent-warning); width: 24px; height: 24px;" @onclick="() => State.PairingWarningMessage = null" type="button" title="@Loc["Common_Dismiss"]">
+				<button class="modal-close-btn" style="color: var(--accent-warning); width: 24px; height: 24px;" @onclick="() => State.PairingWarningMessage = null" type="button" title="@Loc["Common_Dismiss"]" aria-label="@Loc["Common_Dismiss"]">
 					<AppIcon Name="x" Size="13" />
 				</button>
 			</div>
@@ -143,13 +143,15 @@
 		else
 		{
 			<!-- Round Selector Bar -->
-			<div style="display: flex; align-items: center; gap: 6px; overflow-x: auto; padding-bottom: 4px;">
+			<div role="group" aria-label="@Loc["Pairings_RoundSelector"]" style="display: flex; align-items: center; gap: 6px; overflow-x: auto; padding-bottom: 4px;">
 				@foreach (var round in tournament.Rounds.OrderBy(r => r.RoundNumber))
 				{
 					bool isActiveRound = round.RoundNumber == State.ActiveRoundNumber;
 					int completedMatches = round.Pairings.Count(p => p.Result != MatchResult.NotPlayed);
 					<button class="@(isActiveRound ? "workspace-tab tab-active" : "workspace-tab")"
 							style="font-size: 13px; height: 32px;"
+							type="button"
+							aria-pressed="@(isActiveRound ? "true" : "false")"
 							@onclick="() => State.ActiveRoundNumber = round.RoundNumber">
 						<span>@Loc["Pairings_RoundNum", round.RoundNumber]</span>
 						<span class="badge @(completedMatches == round.Pairings.Count ? "badge-green" : "badge-gray")" style="font-size: 10px; padding: 0 4px;">
@@ -189,7 +191,7 @@
 										<span>@pairing.BoardNumber</span>
 										@if (pairing.IsManualOverride)
 										{
-											<span class="badge badge-gold" style="font-size: 9px; padding: 1px 3px; margin-left: 3px;" title="Manual Arbiter Override">M</span>
+											<span class="badge badge-gold" style="font-size: 9px; padding: 1px 3px; margin-left: 3px;" title="@Loc["Pairings_ManualBadge"]" aria-label="@Loc["Pairings_ManualBadge"]">@Loc["Pairings_ManualBadgeShort"]</span>
 										}
 									</td>
 
@@ -206,12 +208,12 @@
 												<span style="font-size: 12px; color: var(--text-secondary); font-family: var(--font-mono);">
 													(@(white.FideRating > 0 ? white.FideRating.ToString() : "-"))
 												</span>
-												<span style="color: #ffffff; font-size: 14px;" title="White">♔</span>
+												<span style="color: #ffffff; font-size: 14px;" title="@Loc["Common_White"]" role="img" aria-label="@Loc["Common_White"]">♔</span>
 											</div>
 										}
 										else
 										{
-											<span style="color: var(--text-muted); font-style: italic;">BYE</span>
+											<span style="color: var(--text-muted); font-style: italic;">@Loc["Pairings_Bye"]</span>
 										}
 									</td>
 
@@ -219,10 +221,12 @@
 									<td style="text-align: center;">
 										<button class="@GetMatchResultBadgeClass(pairing.Result)"
 												style="cursor: pointer; min-width: 80px; justify-content: center;"
-												title="Click to enter or change score"
+												type="button"
+												title="@Loc["Pairings_ResultTooltip"]"
+												aria-label="@Loc["Pairings_ResultButtonLabel", pairing.BoardNumber, white?.FullName ?? Loc["Pairings_Bye"], black?.FullName ?? Loc["Pairings_Bye"], pairing.Result == MatchResult.NotPlayed ? Loc["Pairings_ResultNotEntered"] : Loc.ResultLabel(pairing.Result)]"
 												@onclick="() => OpenResultDialog(pairing)">
 											<span style="font-size: 13px; font-weight: 700; font-family: var(--font-mono);">
-												@pairing.Result.ToDisplayString()
+												@Loc.ResultLabel(pairing.Result)
 											</span>
 										</button>
 									</td>
@@ -232,7 +236,7 @@
 										@if (black != null)
 										{
 											<div style="display: inline-flex; align-items: center; gap: 8px;">
-												<span style="color: #64748b; font-size: 14px;" title="Black">♚</span>
+												<span style="color: #64748b; font-size: 14px;" title="@Loc["Common_Black"]" role="img" aria-label="@Loc["Common_Black"]">♚</span>
 												<span style="font-weight: 600;">@black.FullName</span>
 												@if (!string.IsNullOrEmpty(black.Title))
 												{
@@ -245,7 +249,7 @@
 										}
 										else
 										{
-											<span style="color: var(--text-muted); font-style: italic;">BYE</span>
+											<span style="color: var(--text-muted); font-style: italic;">@Loc["Pairings_Bye"]</span>
 										}
 									</td>
 
@@ -259,14 +263,14 @@
 										<td style="text-align: center; white-space: nowrap;">
 											@if (!pairing.IsBye)
 											{
-												<button class="btn-secondary" style="padding: 2px 5px; font-size: 11px; margin-right: 3px;" title="@Loc["Pairings_SwapColors"]" @onclick="() => SwapColorsAsync(activeRound, pairing.BoardNumber)">
+												<button class="btn-secondary" style="padding: 2px 5px; font-size: 11px; margin-right: 3px;" title="@Loc["Pairings_SwapColors"]" aria-label="@Loc["Pairings_SwapColors"]" @onclick="() => SwapColorsAsync(activeRound, pairing.BoardNumber)">
 													<AppIcon Name="swap" Size="11" />
 												</button>
 											}
-											<button class="btn-secondary" style="padding: 2px 5px; font-size: 11px; margin-right: 3px;" title="@Loc["Pairings_EditBoard"]" @onclick="() => OpenEditPairingModal(pairing)">
+											<button class="btn-secondary" style="padding: 2px 5px; font-size: 11px; margin-right: 3px;" title="@Loc["Pairings_EditBoard"]" aria-label="@Loc["Pairings_EditBoard"]" @onclick="() => OpenEditPairingModal(pairing)">
 												<AppIcon Name="edit" Size="11" />
 											</button>
-											<button class="btn-danger" style="padding: 2px 5px; font-size: 11px;" title="@Loc["Pairings_DeleteBoard"]" @onclick="() => RequestDeletePairing(activeRound, pairing)">
+											<button class="btn-danger" style="padding: 2px 5px; font-size: 11px;" title="@Loc["Pairings_DeleteBoard"]" aria-label="@Loc["Pairings_DeleteBoard"]" @onclick="() => RequestDeletePairing(activeRound, pairing)">
 												<AppIcon Name="trash" Size="11" />
 											</button>
 										</td>
@@ -299,82 +303,81 @@
 	<!-- Modal: Games Still in Progress Warning -->
 	@if (_showUnfinishedGamesModal)
 	{
-		<div class="modal-overlay" @onclick="() => _showUnfinishedGamesModal = false">
-			<div class="modal-content" style="max-width: 620px;" @onclick:stopPropagation="true">
-				<div class="modal-header">
-					<div class="modal-title" style="color: #f87171; display: flex; align-items: center; gap: 8px;">
-						<AppIcon Name="warning" Size="20" />
-						<span>@Loc["Warning_CannotPairTitle", tournament.Rounds.Count + 1]</span>
-					</div>
-					<button class="modal-close-btn" @onclick="() => _showUnfinishedGamesModal = false" type="button" title="@Loc["Common_Close"]">
-						<AppIcon Name="x" Size="15" />
-					</button>
+		<ModalDialog LabelledBy="@_pendingTitleId" OnCancel="() => _showUnfinishedGamesModal = false" Style="max-width: 620px;">
+			<div class="modal-header">
+				<div class="modal-title" id="@_pendingTitleId" style="color: #f87171; display: flex; align-items: center; gap: 8px;">
+					<AppIcon Name="warning" Size="20" />
+					<span>@Loc["Warning_CannotPairTitle", tournament.Rounds.Count + 1]</span>
+				</div>
+				<button class="modal-close-btn" @onclick="() => _showUnfinishedGamesModal = false" type="button" title="@Loc["Common_Close"]" aria-label="@Loc["Common_Close"]">
+					<AppIcon Name="x" Size="15" />
+				</button>
+			</div>
+
+			<div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
+				<div style="font-size: 13.5px; color: var(--text-primary); line-height: 1.5;">
+					@Loc["Warning_CannotPairDesc", _unfinishedRoundNumber, _unfinishedPairings.Count]
 				</div>
 
-				<div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
-					<div style="font-size: 13.5px; color: var(--text-primary); line-height: 1.5;">
-						@Loc["Warning_CannotPairDesc", _unfinishedRoundNumber, _unfinishedPairings.Count]
-					</div>
-
-					<div class="data-table-container" style="max-height: 240px; overflow-y: auto;">
-						<table class="data-table">
-							<thead>
+				<div class="data-table-container" style="max-height: 240px; overflow-y: auto;">
+					<table class="data-table">
+						<thead>
+							<tr>
+								<th style="width: 50px; text-align: center;">@Loc["Common_Board"]</th>
+								<th style="text-align: right; width: 38%;">@Loc["Common_White"]</th>
+								<th style="width: 60px; text-align: center;">@Loc["Common_Score"]</th>
+								<th style="width: 38%;">@Loc["Common_Black"]</th>
+								<th style="width: 75px; text-align: center;">@Loc["Common_Actions"]</th>
+							</tr>
+						</thead>
+						<tbody>
+							@foreach (var p in _unfinishedPairings)
+							{
+								var white = tournament.GetPlayer(p.WhitePlayerId);
+								var black = tournament.GetPlayer(p.BlackPlayerId);
 								<tr>
-									<th style="width: 50px; text-align: center;">@Loc["Common_Board"]</th>
-									<th style="text-align: right; width: 38%;">@Loc["Common_White"]</th>
-									<th style="width: 60px; text-align: center;">@Loc["Common_Score"]</th>
-									<th style="width: 38%;">@Loc["Common_Black"]</th>
-									<th style="width: 75px; text-align: center;">@Loc["Common_Actions"]</th>
+									<td style="text-align: center; font-weight: 700; font-family: var(--font-mono); color: var(--text-secondary);">
+										@p.BoardNumber
+									</td>
+									<td style="text-align: right; font-weight: 600;">
+										@(white?.FullName ?? Loc["Pairings_Bye"])
+									</td>
+									<td style="text-align: center; font-weight: 700; color: var(--text-muted); font-family: var(--font-mono);">
+										@Loc["Common_Versus"]
+									</td>
+									<td style="font-weight: 600;">
+										@(black?.FullName ?? Loc["Pairings_Bye"])
+									</td>
+									<td style="text-align: center;">
+										<button class="btn-primary" style="padding: 3px 8px; font-size: 11px;" @onclick="() => OpenResultFromWarningModal(p)">
+											<span>@Loc["Warning_Enter"]</span>
+										</button>
+									</td>
 								</tr>
-							</thead>
-							<tbody>
-								@foreach (var p in _unfinishedPairings)
-								{
-									var white = tournament.GetPlayer(p.WhitePlayerId);
-									var black = tournament.GetPlayer(p.BlackPlayerId);
-									<tr>
-										<td style="text-align: center; font-weight: 700; font-family: var(--font-mono); color: var(--text-secondary);">
-											@p.BoardNumber
-										</td>
-										<td style="text-align: right; font-weight: 600;">
-											@(white?.FullName ?? "BYE")
-										</td>
-										<td style="text-align: center; font-weight: 700; color: var(--text-muted); font-family: var(--font-mono);">
-											vs
-										</td>
-										<td style="font-weight: 600;">
-											@(black?.FullName ?? "BYE")
-										</td>
-										<td style="text-align: center;">
-											<button class="btn-primary" style="padding: 3px 8px; font-size: 11px;" @onclick="() => OpenResultFromWarningModal(p)">
-												<span>@Loc["Warning_Enter"]</span>
-											</button>
-										</td>
-									</tr>
-								}
-							</tbody>
-						</table>
-					</div>
-
-					<div style="font-size: 12px; color: var(--text-secondary);">
-						@Loc["Warning_EnterInstruction"]
-					</div>
+							}
+						</tbody>
+					</table>
 				</div>
 
-				<div class="modal-footer" style="justify-content: space-between;">
-					<button class="btn-secondary" @onclick="GoToActiveRoundAndClose">
-						<span>@Loc["Warning_GoToBoardTable", _unfinishedRoundNumber]</span>
-					</button>
-					<button class="btn-secondary" @onclick="() => _showUnfinishedGamesModal = false">
-						<span>@Loc["Common_Dismiss"]</span>
-					</button>
+				<div style="font-size: 12px; color: var(--text-secondary);">
+					@Loc["Warning_EnterInstruction"]
 				</div>
 			</div>
-		</div>
+
+			<div class="modal-footer" style="justify-content: space-between;">
+				<button class="btn-secondary" @onclick="GoToActiveRoundAndClose">
+					<span>@Loc["Warning_GoToBoardTable", _unfinishedRoundNumber]</span>
+				</button>
+				<button class="btn-secondary" @onclick="() => _showUnfinishedGamesModal = false">
+					<span>@Loc["Common_Dismiss"]</span>
+				</button>
+			</div>
+		</ModalDialog>
 	}
 }
 
 @code {
+	private readonly string _pendingTitleId = DomIds.Next("pending-games-title");
 	[Parameter, EditorRequired] public WorkbenchState State { get; set; } = default!;
 
 	private bool _showResultDialog;
@@ -387,7 +390,7 @@
 
 	private string GetActiveEngineName(Tournament tournament)
 	{
-		if (tournament.System == TournamentSystem.RoundRobin) return "Berger Tables";
+		if (tournament.System == TournamentSystem.RoundRobin) return Loc["Pairings_BergerEngine"];
 		return EngineRegistry.GetEngine(tournament.PairingEngineId).DisplayName;
 	}
 
@@ -434,7 +437,15 @@
 		var outcome = await running;
 		if (!outcome.UpdatesMessages) return;
 
-		State.PairingErrorMessage = outcome.ErrorMessage;
+		State.PairingErrorMessage = outcome.ErrorMessage ?? outcome.Error switch
+		{
+			RoundGenerationError.RoundRobinFailed => Loc["Pairings_ErrorRoundRobin"],
+			RoundGenerationError.PairingFailed => Loc["Pairings_ErrorPairingFailed", outcome.ErrorRoundNumber],
+			RoundGenerationError.RegenerateFailed => Loc["Pairings_ErrorRegenerateFailed", outcome.ErrorRoundNumber],
+			RoundGenerationError.RoundsChangedDuringPairing => Loc["Pairings_ErrorRoundsChanged", outcome.ErrorRoundNumber],
+			_ => null
+		};
+
 		State.PairingWarningMessage = outcome.Warning;
 
 		if (outcome.Status == RoundGenerationStatus.Applied && outcome.ActiveRoundNumber is int round)

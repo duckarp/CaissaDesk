@@ -1,0 +1,94 @@
+@namespace CaissaDesk.Components.Common
+@inject IJSRuntime JS
+@inject ILogger<ModalDialog> Logger
+@implements IAsyncDisposable
+
+@* Shared modal frame: overlay + dialog box with dialog semantics, Esc to cancel, focus moved in on open
+   and restored on close (wwwroot/js/dialog.js). Render it only while the dialog is open. *@
+<div class="modal-overlay" @onclick="HandleOverlayClick">
+	<div @ref="_dialog"
+		 class="@ContentClass"
+		 style="@Style"
+		 role="dialog"
+		 aria-modal="true"
+		 aria-labelledby="@LabelledBy"
+		 tabindex="-1"
+		 @onclick:stopPropagation="true"
+		 @onkeydown="HandleKeyDown"
+		 @onkeydown:stopPropagation="true">
+		@ChildContent
+	</div>
+</div>
+
+@code {
+	/// <summary>Id of the element holding the dialog title (aria-labelledby).</summary>
+	[Parameter, EditorRequired] public string LabelledBy { get; set; } = "";
+	[Parameter] public RenderFragment? ChildContent { get; set; }
+	[Parameter] public string? Style { get; set; }
+	[Parameter] public string? Class { get; set; }
+
+	/// <summary>Invoked for Esc and for a click on the backdrop (when enabled).</summary>
+	[Parameter] public EventCallback OnCancel { get; set; }
+	[Parameter] public bool CloseOnEscape { get; set; } = true;
+	[Parameter] public bool CloseOnOverlayClick { get; set; } = true;
+
+	private ElementReference _dialog;
+	private int _focusToken;
+	private bool _disposed;
+
+	private string ContentClass => string.IsNullOrWhiteSpace(Class) ? "modal-content" : $"modal-content {Class}";
+
+	protected override async Task OnAfterRenderAsync(bool firstRender)
+	{
+		if (!firstRender) return;
+		try
+		{
+			_focusToken = await JS.InvokeAsync<int>("caissaDialog.open", _dialog);
+			if (_disposed)
+			{
+				await CloseFocusAsync();
+			}
+		}
+		catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException or TaskCanceledException)
+		{
+			Logger.LogDebug(ex, "Could not move focus into the dialog.");
+		}
+	}
+
+	private async Task HandleOverlayClick()
+	{
+		if (CloseOnOverlayClick)
+		{
+			await OnCancel.InvokeAsync();
+		}
+	}
+
+	private async Task HandleKeyDown(KeyboardEventArgs e)
+	{
+		if (CloseOnEscape && e.Key is "Escape" or "Esc")
+		{
+			await OnCancel.InvokeAsync();
+		}
+	}
+
+	private async Task CloseFocusAsync()
+	{
+		int token = _focusToken;
+		_focusToken = 0;
+		if (token == 0) return;
+		try
+		{
+			await JS.InvokeVoidAsync("caissaDialog.close", token);
+		}
+		catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException or TaskCanceledException)
+		{
+			Logger.LogDebug(ex, "Could not restore focus after closing the dialog.");
+		}
+	}
+
+	public async ValueTask DisposeAsync()
+	{
+		_disposed = true;
+		await CloseFocusAsync();
+	}
+}

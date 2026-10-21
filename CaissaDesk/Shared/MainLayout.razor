@@ -1,6 +1,9 @@
 @inherits LayoutComponentBase
 @using CaissaDesk.Localization
 @inject ILocalizationService Loc
+@inject IJSRuntime JS
+@inject ILogger<MainLayout> Logger
+@implements IDisposable
 
 @* Catches rendering and event-handler exceptions anywhere below; the WebView error boundary logger writes them to the log file *@
 <ErrorBoundary @ref="_errorBoundary">
@@ -27,4 +30,37 @@
 	private ErrorBoundary? _errorBoundary;
 
 	private void Recover() => _errorBoundary?.Recover();
+
+	protected override void OnInitialized()
+	{
+		Loc.OnLanguageChanged += HandleLanguageChanged;
+	}
+
+	protected override async Task OnAfterRenderAsync(bool firstRender)
+	{
+		if (firstRender)
+		{
+			await SyncDocumentLanguageAsync();
+		}
+	}
+
+	private void HandleLanguageChanged() => _ = InvokeAsync(SyncDocumentLanguageAsync);
+
+	// Keeps <html lang> current and lets the static splash screen in index.html use the chosen language next start
+	private async Task SyncDocumentLanguageAsync()
+	{
+		try
+		{
+			await JS.InvokeVoidAsync("caissaLocale.set", Loc.CurrentLanguage);
+		}
+		catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException or TaskCanceledException)
+		{
+			Logger.LogDebug(ex, "Could not update the document language.");
+		}
+	}
+
+	public void Dispose()
+	{
+		Loc.OnLanguageChanged -= HandleLanguageChanged;
+	}
 }

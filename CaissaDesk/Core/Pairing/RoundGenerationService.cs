@@ -58,11 +58,41 @@ public enum RoundGenerationStatus
     BlockedByUnfinishedGames
 }
 
+/// <summary>Why round generation failed; the UI turns it into a localized message.</summary>
+public enum RoundGenerationError
+{
+    None,
+
+    /// <summary>The Berger tables produced no rounds.</summary>
+    RoundRobinFailed,
+
+    /// <summary>The engine failed without explaining why.</summary>
+    PairingFailed,
+
+    /// <summary>The engine failed to re-pair <see cref="RoundGenerationOutcome.ErrorRoundNumber"/> without explaining why.</summary>
+    RegenerateFailed,
+
+    /// <summary>The rounds changed while <see cref="RoundGenerationOutcome.ErrorRoundNumber"/> was being paired.</summary>
+    RoundsChangedDuringPairing
+}
+
 public sealed class RoundGenerationOutcome
 {
     public RoundGenerationStatus Status { get; init; }
+
+    /// <summary>Error detail reported by the pairing engine (or its exception), shown verbatim when present.</summary>
     public string? ErrorMessage { get; init; }
+
+    /// <summary>Failure reason for which the UI shows its own (localized) text, used when <see cref="ErrorMessage"/> is null.</summary>
+    public RoundGenerationError Error { get; init; }
+
+    /// <summary>Round number the <see cref="Error"/> refers to.</summary>
+    public int ErrorRoundNumber { get; init; }
+
     public string? Warning { get; init; }
+
+    /// <summary>True when there is an error to show (engine detail or a known failure reason).</summary>
+    public bool HasError => ErrorMessage != null || Error != RoundGenerationError.None;
 
     /// <summary>Round the workbench should show after an applied change.</summary>
     public int? ActiveRoundNumber { get; init; }
@@ -76,6 +106,17 @@ public sealed class RoundGenerationOutcome
     internal static readonly RoundGenerationOutcome Ignored = new() { Status = RoundGenerationStatus.Ignored };
     internal static RoundGenerationOutcome NoChange(string? error = null, string? warning = null) =>
         new() { Status = RoundGenerationStatus.NoChange, ErrorMessage = error, Warning = warning };
+
+    /// <summary>Unchanged tournament; the engine detail wins over the generic <paramref name="fallback"/> reason.</summary>
+    internal static RoundGenerationOutcome Failed(string? engineMessage, RoundGenerationError fallback, int roundNumber = 0, string? warning = null) =>
+        new()
+        {
+            Status = RoundGenerationStatus.NoChange,
+            ErrorMessage = engineMessage,
+            Error = engineMessage == null ? fallback : RoundGenerationError.None,
+            ErrorRoundNumber = roundNumber,
+            Warning = warning
+        };
     internal static RoundGenerationOutcome Applied(int? activeRound, string? warning = null) =>
         new() { Status = RoundGenerationStatus.Applied, ActiveRoundNumber = activeRound, Warning = warning };
 }
@@ -132,7 +173,7 @@ public class RoundGenerationService : IRoundGenerationService
 
                 if (newRounds.Count == 0)
                 {
-                    return RoundGenerationOutcome.NoChange("Failed to generate round-robin pairings.");
+                    return RoundGenerationOutcome.Failed(null, RoundGenerationError.RoundRobinFailed);
                 }
             }
             else
@@ -142,7 +183,7 @@ public class RoundGenerationService : IRoundGenerationService
                 warning = result.Warning;
                 if (!result.Success)
                 {
-                    return RoundGenerationOutcome.NoChange(result.ErrorMessage ?? "Failed to generate round pairings.", warning);
+                    return RoundGenerationOutcome.Failed(result.ErrorMessage, RoundGenerationError.PairingFailed, 1, warning);
                 }
                 newRounds = [new Round { RoundNumber = 1, Pairings = result.Pairings }];
             }
@@ -201,15 +242,13 @@ public class RoundGenerationService : IRoundGenerationService
 
             if (!result.Success)
             {
-                return RoundGenerationOutcome.NoChange(result.ErrorMessage ?? "Failed to generate round pairings.", result.Warning);
+                return RoundGenerationOutcome.Failed(result.ErrorMessage, RoundGenerationError.PairingFailed, nextRoundNumber, result.Warning);
             }
 
             // The round list must still be the one that was paired against
             if (tournament.Rounds.Count + 1 != nextRoundNumber)
             {
-                return RoundGenerationOutcome.NoChange(
-                    $"The rounds changed while Round {nextRoundNumber} was being paired; please generate it again.",
-                    result.Warning);
+                return RoundGenerationOutcome.Failed(null, RoundGenerationError.RoundsChangedDuringPairing, nextRoundNumber, result.Warning);
             }
 
             var round = new Round { RoundNumber = nextRoundNumber, Pairings = result.Pairings };
@@ -265,8 +304,7 @@ public class RoundGenerationService : IRoundGenerationService
 
             if (!pairing.Success)
             {
-                return RoundGenerationOutcome.NoChange(
-                    pairing.ErrorMessage ?? $"Failed to regenerate pairings for Round {roundNumber}.", pairing.Warning);
+                return RoundGenerationOutcome.Failed(pairing.ErrorMessage, RoundGenerationError.RegenerateFailed, roundNumber, pairing.Warning);
             }
 
             var before = tournament.Rounds.ToList();

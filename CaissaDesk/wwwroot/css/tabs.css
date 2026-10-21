@@ -179,3 +179,37 @@
   background-color: var(--bg-surface-hover);
   color: var(--brand-gold);
 }
+
+/* Brand is a real button (keyboard reachable); strip the native button look */
+button.app-brand {
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+/* A tab pill holds two sibling buttons: select (fills the pill) and close */
+.workspace-tab-group {
+  padding: 0;
+  gap: 0;
+}
+
+.workspace-tab-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 100%;
+  padding: 0 12px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.workspace-tab-select + .tab-close-btn {
+  margin: 0 6px 0 -6px;
+}
