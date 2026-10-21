@@ -1,5 +1,7 @@
 using System.Formats.Tar;
 using System.IO.Compression;
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using CaissaDesk.Core.Settings;
 using CaissaDesk.Data;
 
@@ -37,8 +39,34 @@ public interface IEngineInstallerService
     Task<EngineInstallResult> InstallEngineAsync(string engineId, IProgress<EngineInstallProgress>? progress = null, CancellationToken cancellationToken = default);
 }
 
+/// <summary>A pinned download: exact release URL plus the SHA-256 of the file published there.</summary>
+public sealed record EngineAsset(string Version, string Url, string Sha256);
+
 public class EngineInstallerService : IEngineInstallerService
 {
+    // Pinned release assets. Bumping a version means updating the URL *and* the hash together; a download
+    // whose SHA-256 differs is rejected (fail closed) and nothing is installed.
+    // The bbpPairings hashes equal the SHA-256 digests GitHub publishes for the v6.0.0 release assets.
+    public static readonly EngineAsset BbpWindowsX64 = new(
+        "6.0.0",
+        "https://github.com/BieremaBoyzProgramming/bbpPairings/releases/download/v6.0.0/bbpPairings-v6.0.0-x86_64-pc-windows.zip",
+        "d2bfc61cbd291a5458f18adccb43b19b6f1be40a9c0cc86a5142b605298dc0d7");
+
+    public static readonly EngineAsset BbpLinuxX64 = new(
+        "6.0.0",
+        "https://github.com/BieremaBoyzProgramming/bbpPairings/releases/download/v6.0.0/bbpPairings-v6.0.0-x86_64-pc-linux.tar.gz",
+        "bffd2d5a4dc9d86eb3d9886339e8ca446d88683f77559f0889ea0d2040e7d827");
+
+    // JaVaFo 2.2 from the versioned directory on the author's site. rrweb.org publishes no checksum: this
+    // hash was computed from that file (identical to what /current/ served at the time it was pinned).
+    public static readonly EngineAsset JaVaFo = new(
+        "2.2",
+        "https://www.rrweb.org/javafo/2.2/javafo.jar",
+        "6d1eef8f83d433a5d6386a0a3bba8326d8d6ab654991e2be00e0c53ba49b247c");
+
+    /// <summary>Upper bound on a download; the real assets are well under 1 MB.</summary>
+    public const long MaxDownloadBytes = 32L * 1024 * 1024;
+
     private readonly HttpClient _httpClient;
     private readonly IPairingEngineRegistry _engineRegistry;
     private readonly IAppSettingsService _appSettings;
@@ -68,80 +96,122 @@ public class EngineInstallerService : IEngineInstallerService
         };
     }
 
+    /// <summary>
+    /// Streams <paramref name="asset"/> to <paramref name="destinationPath"/> while hashing it. Throws
+    /// <see cref="InvalidDataException"/> (after deleting the partial file) when no valid hash is pinned, the
+    /// SHA-256 does not match, or the download exceeds <see cref="MaxDownloadBytes"/>.
+    /// </summary>
+    public static async Task DownloadVerifiedAsync(HttpClient httpClient, EngineAsset asset, string destinationPath, CancellationToken cancellationToken = default)
+    {
+        if (!IsValidSha256Hex(asset.Sha256))
+        {
+            throw new InvalidDataException($"No valid SHA-256 is pinned for {asset.Url}; refusing to download it.");
+        }
+
+        bool verified = false;
+        try
+        {
+            using var response = await httpClient.GetAsync(asset.Url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            response.EnsureSuccessStatusCode();
+
+            if (response.Content.Headers.ContentLength is long declared && declared > MaxDownloadBytes)
+            {
+                throw new InvalidDataException($"Download of {asset.Url} exceeds the {MaxDownloadBytes / (1024 * 1024)} MB limit.");
+            }
+
+            using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+            await using (var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken))
+            await using (var fileStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                var buffer = new byte[81920];
+                long total = 0;
+                int read;
+                while ((read = await contentStream.ReadAsync(buffer, cancellationToken)) > 0)
+                {
+                    total += read;
+                    if (total > MaxDownloadBytes)
+                    {
+                        throw new InvalidDataException($"Download of {asset.Url} exceeds the {MaxDownloadBytes / (1024 * 1024)} MB limit.");
+                    }
+                    hash.AppendData(buffer, 0, read);
+                    await fileStream.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+                }
+            }
+
+            string actual = Convert.ToHexStringLower(hash.GetHashAndReset());
+            if (!actual.Equals(asset.Sha256, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidDataException(
+                    $"Integrity check failed for {asset.Url}: expected SHA-256 {asset.Sha256.ToLowerInvariant()}, got {actual}. The file was not installed.");
+            }
+
+            verified = true;
+        }
+        finally
+        {
+            if (!verified)
+            {
+                TryDelete(destinationPath);
+            }
+        }
+    }
+
+    private static bool IsValidSha256Hex(string? value) =>
+        value is { Length: 64 } && value.All(Uri.IsHexDigit);
+
+    private static EngineAsset? GetBbpAssetForPlatform()
+    {
+        var arch = RuntimeInformation.OSArchitecture;
+        // Windows on Arm runs the x64 build under emulation
+        if (OperatingSystem.IsWindows() && arch is Architecture.X64 or Architecture.Arm64) return BbpWindowsX64;
+        if (OperatingSystem.IsLinux() && arch == Architecture.X64) return BbpLinuxX64;
+        return null;
+    }
+
     private async Task<EngineInstallResult> InstallBbpAsync(
         IProgress<EngineInstallProgress>? progress,
         CancellationToken cancellationToken)
     {
+        var asset = GetBbpAssetForPlatform();
+        if (asset == null)
+        {
+            return EngineInstallResult.Fail(
+                $"No prebuilt bbpPairings binary is available for {RuntimeInformation.OSDescription} ({RuntimeInformation.OSArchitecture}). Build it from source and set its path manually.");
+        }
+
         string enginesDir = GetEnginesDirectory();
         bool isWindows = OperatingSystem.IsWindows();
-
-        string downloadUrl = isWindows
-            ? "https://github.com/BieremaBoyzProgramming/bbpPairings/releases/download/v6.0.0/bbpPairings-v6.0.0-x86_64-pc-windows.zip"
-            : "https://github.com/BieremaBoyzProgramming/bbpPairings/releases/download/v6.0.0/bbpPairings-v6.0.0-x86_64-pc-linux.tar.gz";
-
         string targetFileName = isWindows ? "bbpPairings.exe" : "bbpPairings";
         string targetFilePath = Path.Combine(enginesDir, targetFileName);
 
+        string tempArchive = Path.Combine(Path.GetTempPath(), $"bbp_dl_{Guid.NewGuid():N}.tmp");
+        string tempBinary = Path.Combine(enginesDir, $".bbp_extract_{Guid.NewGuid():N}.tmp");
+
         try
         {
-            progress?.Report(new EngineInstallProgress { Message = "Downloading bbpPairings v6.0.0 package...", Percent = 15 });
-
-            string tempArchive = Path.Combine(Path.GetTempPath(), $"bbp_dl_{Guid.NewGuid():N}.tmp");
-
-            using (var response = await _httpClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken))
-            {
-                response.EnsureSuccessStatusCode();
-                await using var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken);
-                await using var fileStream = new FileStream(tempArchive, FileMode.Create, FileAccess.Write, FileShare.None);
-                await contentStream.CopyToAsync(fileStream, cancellationToken);
-            }
+            progress?.Report(new EngineInstallProgress { Message = $"Downloading bbpPairings v{asset.Version} package...", Percent = 15 });
+            await DownloadVerifiedAsync(_httpClient, asset, tempArchive, cancellationToken);
 
             progress?.Report(new EngineInstallProgress { Message = "Extracting binary...", Percent = 70 });
 
-            if (isWindows)
-            {
-                using var zip = ZipFile.OpenRead(tempArchive);
-                var entry = zip.Entries.FirstOrDefault(e => e.Name.Equals("bbpPairings.exe", StringComparison.OrdinalIgnoreCase) ||
-                                                           e.Name.Equals("bbpPairings", StringComparison.OrdinalIgnoreCase));
-                if (entry == null)
-                {
-                    return EngineInstallResult.Fail("Could not locate bbpPairings executable inside downloaded archive.");
-                }
+            bool found = asset.Url.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
+                ? ExtractFromZip(tempArchive, tempBinary)
+                : await ExtractFromTarGzAsync(tempArchive, tempBinary, cancellationToken);
 
-                entry.ExtractToFile(targetFilePath, overwrite: true);
+            if (!found)
+            {
+                return EngineInstallResult.Fail("Could not locate the bbpPairings executable inside the downloaded archive.");
             }
-            else
+
+            if (!isWindows)
             {
-                await using var fs = File.OpenRead(tempArchive);
-                await using var gz = new GZipStream(fs, CompressionMode.Decompress);
-                using var tar = new TarReader(gz);
-
-                TarEntry? entry;
-                bool found = false;
-                while ((entry = await tar.GetNextEntryAsync(cancellationToken: cancellationToken)) != null)
-                {
-                    if (entry.Name.EndsWith("bbpPairings.exe", StringComparison.OrdinalIgnoreCase) ||
-                        entry.Name.EndsWith("bbpPairings", StringComparison.OrdinalIgnoreCase))
-                    {
-                        await entry.ExtractToFileAsync(targetFilePath, overwrite: true, cancellationToken);
-                        found = true;
-                        break;
-                    }
-                }
-
-                if (!found)
-                {
-                    return EngineInstallResult.Fail("Could not locate bbpPairings binary inside downloaded tar.gz archive.");
-                }
-
-                // Make binary executable on Linux/Unix
-                File.SetUnixFileMode(targetFilePath,
+                File.SetUnixFileMode(tempBinary,
                     UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
                     UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
                     UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
             }
 
-            try { File.Delete(tempArchive); } catch { }
+            File.Move(tempBinary, targetFilePath, overwrite: true);
 
             progress?.Report(new EngineInstallProgress { Message = "Configuring engine registry...", Percent = 90 });
 
@@ -156,10 +226,61 @@ public class EngineInstallerService : IEngineInstallerService
             progress?.Report(new EngineInstallProgress { Message = "bbpPairings installed and ready!", Percent = 100 });
             return EngineInstallResult.Ok(targetFilePath);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             return EngineInstallResult.Fail($"Failed to download/install bbpPairings: {ex.Message}");
         }
+        finally
+        {
+            TryDelete(tempArchive);
+            TryDelete(tempBinary);
+        }
+    }
+
+    private static bool IsBbpExecutableName(string entryPath)
+    {
+        string name = Path.GetFileName(entryPath.Replace('\\', '/').TrimEnd('/'));
+        return name.Equals("bbpPairings.exe", StringComparison.OrdinalIgnoreCase) ||
+               name.Equals("bbpPairings", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool ExtractFromZip(string archivePath, string destinationPath)
+    {
+        using var zip = ZipFile.OpenRead(archivePath);
+        // Directory entries have an empty Name; the entry is written only to our own temp path
+        var entry = zip.Entries.FirstOrDefault(e => e.Name.Length > 0 && IsBbpExecutableName(e.FullName));
+        if (entry == null) return false;
+
+        entry.ExtractToFile(destinationPath, overwrite: true);
+        return true;
+    }
+
+    /// <summary>
+    /// Copies the first regular-file entry named bbpPairings(.exe) to <paramref name="destinationPath"/>.
+    /// Symbolic/hard links, devices and other entry types are skipped.
+    /// </summary>
+    public static async Task<bool> ExtractFromTarGzAsync(string archivePath, string destinationPath, CancellationToken cancellationToken = default)
+    {
+        await using var fs = File.OpenRead(archivePath);
+        await using var gz = new GZipStream(fs, CompressionMode.Decompress);
+        await using var tar = new TarReader(gz);
+
+        TarEntry? entry;
+        while ((entry = await tar.GetNextEntryAsync(cancellationToken: cancellationToken)) != null)
+        {
+            if (entry.EntryType is not (TarEntryType.RegularFile or TarEntryType.V7RegularFile)) continue;
+            if (!IsBbpExecutableName(entry.Name) || entry.DataStream == null) continue;
+
+            await using var output = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None);
+            await entry.DataStream.CopyToAsync(output, cancellationToken);
+            return true;
+        }
+
+        return false;
     }
 
     private async Task<EngineInstallResult> InstallJaVaFoAsync(
@@ -168,21 +289,12 @@ public class EngineInstallerService : IEngineInstallerService
     {
         string enginesDir = GetEnginesDirectory();
         string targetFilePath = Path.Combine(enginesDir, "javafo.jar");
-        string downloadUrl = "https://www.rrweb.org/javafo/current/javafo.jar";
+        string tempJar = Path.Combine(Path.GetTempPath(), $"javafo_dl_{Guid.NewGuid():N}.tmp");
 
         try
         {
-            progress?.Report(new EngineInstallProgress { Message = "Downloading javafo.jar (FIDE reference)...", Percent = 25 });
-
-            string tempJar = Path.Combine(Path.GetTempPath(), $"javafo_dl_{Guid.NewGuid():N}.tmp");
-
-            using (var response = await _httpClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken))
-            {
-                response.EnsureSuccessStatusCode();
-                await using var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken);
-                await using var fileStream = new FileStream(tempJar, FileMode.Create, FileAccess.Write, FileShare.None);
-                await contentStream.CopyToAsync(fileStream, cancellationToken);
-            }
+            progress?.Report(new EngineInstallProgress { Message = $"Downloading javafo.jar {JaVaFo.Version} (FIDE reference)...", Percent = 25 });
+            await DownloadVerifiedAsync(_httpClient, JaVaFo, tempJar, cancellationToken);
 
             progress?.Report(new EngineInstallProgress { Message = "Installing javafo.jar...", Percent = 75 });
             File.Move(tempJar, targetFilePath, overwrite: true);
@@ -204,10 +316,23 @@ public class EngineInstallerService : IEngineInstallerService
             progress?.Report(new EngineInstallProgress { Message = "javafo.jar installed!", Percent = 100 });
             return EngineInstallResult.Ok(targetFilePath, note);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             return EngineInstallResult.Fail($"Failed to download/install JaVaFo: {ex.Message}");
         }
+        finally
+        {
+            TryDelete(tempJar);
+        }
+    }
+
+    private static void TryDelete(string path)
+    {
+        try { if (File.Exists(path)) File.Delete(path); } catch { }
     }
 
     private static string GetEnginesDirectory()

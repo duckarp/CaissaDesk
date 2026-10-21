@@ -60,7 +60,17 @@ public class NativeDutchPairingEngine : IPairingEngine
         }
     }
 
-    public PairingResult GenerateRoundPairings(Tournament tournament, int roundNumber)
+    public PairingResult GenerateRoundPairings(Tournament tournament, int roundNumber) =>
+        Generate(tournament, roundNumber, CancellationToken.None);
+
+    /// <summary>
+    /// Runs the backtracking search on the thread pool. The search is bounded by <see cref="MaxSearchNodes"/>
+    /// (a failed result when exceeded) and observes <paramref name="cancellationToken"/>.
+    /// </summary>
+    public Task<PairingResult> GenerateRoundPairingsAsync(Tournament tournament, int roundNumber, CancellationToken cancellationToken = default) =>
+        Task.Run(() => Generate(tournament, roundNumber, cancellationToken), cancellationToken);
+
+    private PairingResult Generate(Tournament tournament, int roundNumber, CancellationToken cancellationToken)
     {
         var activePlayers = tournament.Players
             .Where(p => p.Status == PlayerStatus.Active)
@@ -173,7 +183,7 @@ public class NativeDutchPairingEngine : IPairingEngine
                 // History covers every player so games against withdrawn/absent opponents still count
                 var poolIds = playersToPair.Select(p => p.Id).ToHashSet();
                 var histories = BuildHistories(tournament).Where(h => poolIds.Contains(h.Player.Id)).ToList();
-                var subResult = GenerateSubsequentRound(histories, roundNumber);
+                var subResult = GenerateSubsequentRound(histories, roundNumber, cancellationToken);
                 if (!subResult.Success) return subResult;
                 pairings = subResult.Pairings;
             }
@@ -250,13 +260,13 @@ public class NativeDutchPairingEngine : IPairingEngine
         return PairingResult.Ok(pairings);
     }
 
-    private PairingResult GenerateSubsequentRound(List<PlayerHistory> histories, int roundNumber)
+    private PairingResult GenerateSubsequentRound(List<PlayerHistory> histories, int roundNumber, CancellationToken cancellationToken)
     {
         var pool = new List<PlayerHistory>(histories);
         var pairings = new List<Pairing>();
         int boardNumber = 1;
         Pairing? byePairing = null;
-        var search = new SearchBudget(MaxSearchNodes);
+        var search = new SearchBudget(MaxSearchNodes, cancellationToken);
 
         List<(PlayerHistory White, PlayerHistory Black)>? matchedPairs;
 
@@ -331,11 +341,17 @@ public class NativeDutchPairingEngine : IPairingEngine
         return PairingResult.Ok(pairings);
     }
 
-    private sealed class SearchBudget(int maxNodes)
+    private sealed class SearchBudget(int maxNodes, CancellationToken cancellationToken)
     {
         private int _nodes;
         public bool Exhausted => _nodes >= maxNodes;
-        public bool TryStep() => ++_nodes <= maxNodes;
+
+        public bool TryStep()
+        {
+            // Checking the token every 1024 steps keeps the overhead negligible
+            if ((_nodes & 0x3FF) == 0) cancellationToken.ThrowIfCancellationRequested();
+            return ++_nodes <= maxNodes;
+        }
     }
 
     private static List<(PlayerHistory White, PlayerHistory Black)>? MatchBrackets(List<PlayerHistory> players, SearchBudget search)

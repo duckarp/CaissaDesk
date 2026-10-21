@@ -29,5 +29,15 @@ public interface IPairingEngine
     string Id { get; }
     string DisplayName { get; }
     bool IsAvailable { get; }
+
+    /// <summary>Synchronous pairing. Blocks the caller; UI code must use <see cref="GenerateRoundPairingsAsync"/>.</summary>
     PairingResult GenerateRoundPairings(Tournament tournament, int roundNumber);
+
+    /// <summary>
+    /// Pairs the round without blocking the caller: CPU-bound engines run on the thread pool and external
+    /// engines await their process. Throws <see cref="OperationCanceledException"/> when cancelled.
+    /// The engine only reads <paramref name="tournament"/>; pass a <see cref="PairingSnapshot"/> copy when
+    /// the live model may be rendered or changed while pairing is in progress.
+    /// </summary>
+    Task<PairingResult> GenerateRoundPairingsAsync(Tournament tournament, int roundNumber, CancellationToken cancellationToken = default);
 }

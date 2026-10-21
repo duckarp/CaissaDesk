@@ -18,8 +18,28 @@ public static class ExternalPairingEngineRunner
         int roundNumber,
         string fileName,
         Func<string, string, IEnumerable<string>> buildArguments,
-        TimeSpan? timeout = null)
+        TimeSpan? timeout = null) =>
+        // No synchronization context is captured (ConfigureAwait(false) throughout), so blocking here is safe
+        RunAsync(engineName, tournament, roundNumber, fileName, buildArguments, timeout, CancellationToken.None)
+            .GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Asynchronous variant of <see cref="Run"/>: awaits the engine process instead of blocking a thread.
+    /// The process tree is killed on timeout (reported as a failed result) or on cancellation (rethrown as
+    /// <see cref="OperationCanceledException"/>).
+    /// </summary>
+    /// <param name="buildArguments">Receives (trfPath, outputPath) and returns the argument list.</param>
+    public static async Task<PairingResult> RunAsync(
+        string engineName,
+        Tournament tournament,
+        int roundNumber,
+        string fileName,
+        Func<string, string, IEnumerable<string>> buildArguments,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var precheck = ValidateInput(tournament, roundNumber);
         if (precheck != null) return precheck;
 
@@ -37,6 +57,7 @@ public static class ExternalPairingEngineRunner
 
         try
         {
+            // The TRF is written before the first await, i.e. from the state the caller handed in
             File.WriteAllText(tempTrf, TrfHandler.GenerateTrf(tournament, roundNumber));
 
             var psi = new ProcessStartInfo
@@ -52,7 +73,7 @@ public static class ExternalPairingEngineRunner
                 psi.ArgumentList.Add(arg);
             }
 
-            var run = RunProcess(psi, timeout ?? DefaultTimeout);
+            var run = await RunProcessAsync(psi, timeout ?? DefaultTimeout, cancellationToken).ConfigureAwait(false);
             if (run.Error != null)
             {
                 return PairingResult.Fail($"{engineName}: {run.Error}");
@@ -69,7 +90,12 @@ public static class ExternalPairingEngineRunner
                 return PairingResult.Fail($"{engineName} did not produce a pairings output file.");
             }
 
-            return ParsePairingsOutput(engineName, tournament, File.ReadAllText(tempOut), roundNumber);
+            string output = await File.ReadAllTextAsync(tempOut, cancellationToken).ConfigureAwait(false);
+            return ParsePairingsOutput(engineName, tournament, output, roundNumber);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -84,31 +110,60 @@ public static class ExternalPairingEngineRunner
 
     public sealed record ProcessRun(int ExitCode, string StdOut, string StdErr, string? Error);
 
+    /// <summary>Blocking wrapper around <see cref="RunProcessAsync"/>.</summary>
+    public static ProcessRun RunProcess(ProcessStartInfo psi, TimeSpan timeout) =>
+        RunProcessAsync(psi, timeout, CancellationToken.None).GetAwaiter().GetResult();
+
     /// <summary>
     /// Runs a process, draining stdout/stderr asynchronously (so a chatty engine cannot dead-lock on a
-    /// full pipe) and killing the whole process tree if it does not finish within <paramref name="timeout"/>.
+    /// full pipe) and killing the whole process tree if it does not finish within <paramref name="timeout"/>
+    /// or <paramref name="cancellationToken"/> is cancelled (the latter throws <see cref="OperationCanceledException"/>).
     /// </summary>
-    public static ProcessRun RunProcess(ProcessStartInfo psi, TimeSpan timeout)
+    public static async Task<ProcessRun> RunProcessAsync(ProcessStartInfo psi, TimeSpan timeout, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         using var process = Process.Start(psi);
         if (process == null)
         {
             return new ProcessRun(-1, "", "", $"failed to start process '{psi.FileName}'.");
         }
 
-        var stdoutTask = process.StandardOutput.ReadToEndAsync();
-        var stderrTask = process.StandardError.ReadToEndAsync();
+        var stdoutTask = process.StandardOutput.ReadToEndAsync(CancellationToken.None);
+        var stderrTask = process.StandardError.ReadToEndAsync(CancellationToken.None);
 
-        if (!process.WaitForExit(timeout))
+        using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        waitCts.CancelAfter(timeout);
+
+        try
         {
-            try { process.Kill(entireProcessTree: true); } catch { }
-            try { process.WaitForExit(5000); } catch { }
-            return new ProcessRun(-1, "", "", $"timed out after {timeout.TotalSeconds:0} s and was terminated.");
+            await process.WaitForExitAsync(waitCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            await KillTreeAsync(process).ConfigureAwait(false);
+            // Observe the drain tasks so they cannot fault unobserved
+            try { await Task.WhenAll(stdoutTask, stderrTask).WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false); } catch { }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            return new ProcessRun(-1, "", "", $"timed out after {timeout.TotalSeconds:0.#} s and was terminated.");
         }
 
-        // Ensures redirected streams are fully read once the process has exited
-        process.WaitForExit();
-        return new ProcessRun(process.ExitCode, stdoutTask.GetAwaiter().GetResult(), stderrTask.GetAwaiter().GetResult(), null);
+        // The process has exited, so the redirected streams reach EOF
+        string stdout = await stdoutTask.ConfigureAwait(false);
+        string stderr = await stderrTask.ConfigureAwait(false);
+        return new ProcessRun(process.ExitCode, stdout, stderr, null);
+    }
+
+    private static async Task KillTreeAsync(Process process)
+    {
+        try { process.Kill(entireProcessTree: true); } catch { }
+        try
+        {
+            using var reapCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await process.WaitForExitAsync(reapCts.Token).ConfigureAwait(false);
+        }
+        catch { }
     }
 
     /// <summary>Active players without an advance bye request for the round, i.e. the engine's pool.</summary>

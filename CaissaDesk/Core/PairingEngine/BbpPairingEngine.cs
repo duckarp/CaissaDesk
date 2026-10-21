@@ -28,14 +28,18 @@ public class BbpPairingEngine : IPairingEngine
 
     public bool IsAvailable => !string.IsNullOrEmpty(ExecutablePath) && File.Exists(ExecutablePath);
 
-    public PairingResult GenerateRoundPairings(Tournament tournament, int roundNumber)
+    public PairingResult GenerateRoundPairings(Tournament tournament, int roundNumber) =>
+        GenerateRoundPairingsAsync(tournament, roundNumber).GetAwaiter().GetResult();
+
+    public Task<PairingResult> GenerateRoundPairingsAsync(Tournament tournament, int roundNumber, CancellationToken cancellationToken = default)
     {
         if (!IsAvailable)
         {
-            return PairingResult.Fail("bbpPairings engine is not installed. Please install bbpPairings or place the binary in your PATH.");
+            return Task.FromResult(PairingResult.Fail("bbpPairings engine is not installed. Please install bbpPairings or place the binary in your PATH."));
         }
 
-        return ExternalPairingEngineRunner.Run("bbpPairings", tournament, roundNumber, ExecutablePath!, (trf, output) => ["--dutch", trf, "-p", output]);
+        return ExternalPairingEngineRunner.RunAsync("bbpPairings", tournament, roundNumber, ExecutablePath!,
+            (trf, output) => ["--dutch", trf, "-p", output], cancellationToken: cancellationToken);
     }
 
     private static string? FindBbpExecutable()

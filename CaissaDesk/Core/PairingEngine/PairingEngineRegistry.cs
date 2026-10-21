@@ -15,6 +15,13 @@ public interface IPairingEngineRegistry
     IPairingEngine GetDefaultEngine(TournamentSystem system);
     void ReloadEngines(string? bbpPath = null, string? javaPath = null, string? javafoJarPath = null);
     PairingResult TestEngine(string engineId);
+    Task<PairingResult> TestEngineAsync(string engineId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Self-tests a temporary engine instance configured with the given (possibly unsaved) paths; the
+    /// registered engines are left untouched.
+    /// </summary>
+    Task<PairingResult> TestEngineWithPathsAsync(string engineId, string? bbpPath, string? javaPath, string? javafoJarPath, CancellationToken cancellationToken = default);
 }
 
 public class PairingEngineRegistry : IPairingEngineRegistry
@@ -44,14 +51,42 @@ public class PairingEngineRegistry : IPairingEngineRegistry
         javafo?.SetCustomPaths(javaPath, javafoJarPath);
     }
 
-    public PairingResult TestEngine(string engineId)
+    public PairingResult TestEngine(string engineId) =>
+        TestEngineAsync(engineId).GetAwaiter().GetResult();
+
+    public Task<PairingResult> TestEngineAsync(string engineId, CancellationToken cancellationToken = default)
     {
         var engine = _engines.FirstOrDefault(e => e.Id.Equals(engineId, StringComparison.OrdinalIgnoreCase));
-        if (engine == null)
-        {
-            return PairingResult.Fail($"Engine '{engineId}' not found in registry.");
-        }
+        return engine == null
+            ? Task.FromResult(PairingResult.Fail($"Engine '{engineId}' not found in registry."))
+            : RunSelfTestAsync(engine, cancellationToken);
+    }
 
+    public Task<PairingResult> TestEngineWithPathsAsync(
+        string engineId,
+        string? bbpPath,
+        string? javaPath,
+        string? javafoJarPath,
+        CancellationToken cancellationToken = default)
+    {
+        // A throw-away instance: unsaved paths must never leak into the engines the tournaments use
+        IPairingEngine? engine = engineId.Trim().ToLowerInvariant() switch
+        {
+            "native_dutch" => new NativeDutchPairingEngine(),
+            "bbp" => new BbpPairingEngine(bbpPath),
+            "javafo" => new JaVaFoPairingEngine(javaPath, javafoJarPath),
+            "berger" => new BergerPairingEngine(),
+            _ => null
+        };
+
+        return engine == null
+            ? Task.FromResult(PairingResult.Fail($"Engine '{engineId}' not found in registry."))
+            : RunSelfTestAsync(engine, cancellationToken);
+    }
+
+    /// <summary>Pairs round 1 of a small synthetic event to prove the engine runs end to end.</summary>
+    public static async Task<PairingResult> RunSelfTestAsync(IPairingEngine engine, CancellationToken cancellationToken = default)
+    {
         if (!engine.IsAvailable)
         {
             return PairingResult.Fail($"Engine '{engine.DisplayName}' is not available (executable or dependencies missing).");
@@ -60,7 +95,7 @@ public class PairingEngineRegistry : IPairingEngineRegistry
         var testTournament = new Tournament
         {
             Name = "Self-Test Event",
-            System = engineId == "berger" ? TournamentSystem.RoundRobin : TournamentSystem.SwissDutch,
+            System = engine.Id == "berger" ? TournamentSystem.RoundRobin : TournamentSystem.SwissDutch,
             TotalRounds = 3,
             Players =
             [
@@ -73,9 +108,7 @@ public class PairingEngineRegistry : IPairingEngineRegistry
 
         try
         {
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-            var result = engine.GenerateRoundPairings(testTournament, 1);
-            sw.Stop();
+            var result = await engine.GenerateRoundPairingsAsync(testTournament, 1, cancellationToken).ConfigureAwait(false);
 
             if (result.Success && result.Pairings.Count > 0)
             {
@@ -85,6 +118,10 @@ public class PairingEngineRegistry : IPairingEngineRegistry
             return result.Success
                 ? PairingResult.Fail("Engine returned 0 pairings.")
                 : result;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -135,9 +172,14 @@ public sealed class FallbackPairingEngine(IPairingEngine inner, string warning) 
     public string DisplayName => $"{inner.DisplayName} (fallback)";
     public bool IsAvailable => inner.IsAvailable;
 
-    public PairingResult GenerateRoundPairings(Tournament tournament, int roundNumber)
+    public PairingResult GenerateRoundPairings(Tournament tournament, int roundNumber) =>
+        AttachWarning(inner.GenerateRoundPairings(tournament, roundNumber));
+
+    public async Task<PairingResult> GenerateRoundPairingsAsync(Tournament tournament, int roundNumber, CancellationToken cancellationToken = default) =>
+        AttachWarning(await inner.GenerateRoundPairingsAsync(tournament, roundNumber, cancellationToken).ConfigureAwait(false));
+
+    private PairingResult AttachWarning(PairingResult result)
     {
-        var result = inner.GenerateRoundPairings(tournament, roundNumber);
         result.Warning = result.Warning == null ? warning : $"{warning} {result.Warning}";
         return result;
     }

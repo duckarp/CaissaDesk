@@ -309,9 +309,9 @@
 
 							@if (_tournament.Rounds.Count == 0)
 							{
-								<button class="btn-primary" @onclick="GeneratePairingsAsync" disabled="@(_tournament.Players.Count < 2)">
+								<button class="btn-primary" @onclick="GeneratePairingsAsync" disabled="@(_tournament.Players.Count < 2 || _isPairing)">
 									<AppIcon Name="pairings" Size="14" />
-									<span>@Loc["Pairings_Generate"]</span>
+									<span>@(_isPairing ? Loc["Pairings_Generating"] : Loc["Pairings_Generate"])</span>
 								</button>
 							}
 							else
@@ -324,6 +324,7 @@
 
 									<button class="@(isPending ? "btn-secondary" : "btn-primary")"
 											@onclick="GenerateNextRoundAsync"
+											disabled="@_isPairing"
 											title="@(isPending ? $"Round {latestRound?.RoundNumber} has {unplayedCount} match(es) in progress. Click to view pending games." : $"Generate Swiss pairings for Round {_tournament.Rounds.Count + 1}")">
 										@if (isPending)
 										{
@@ -333,7 +334,7 @@
 										{
 											<AppIcon Name="plus" Size="13" />
 										}
-										<span>@Loc["Pairings_PairRound", _tournament.Rounds.Count + 1]</span>
+										<span>@(_isPairing ? Loc["Pairings_Generating"] : Loc["Pairings_PairRound", _tournament.Rounds.Count + 1])</span>
 										@if (isPending)
 										{
 											<span class="badge badge-gray" style="font-size: 10px; margin-left: 2px;">@Loc["Pairings_Pending", unplayedCount]</span>
@@ -342,7 +343,7 @@
 								}
 								@if (!HasAnyResultsEntered())
 								{
-									<button class="btn-secondary" @onclick="RequestRegeneratePairings" title="@Loc["Pairings_ResetRegenerate"]">
+									<button class="btn-secondary" @onclick="RequestRegeneratePairings" disabled="@_isPairing" title="@Loc["Pairings_ResetRegenerate"]">
 										<AppIcon Name="refresh" Size="13" />
 										<span>@Loc["Pairings_ResetRegenerate"]</span>
 									</button>
@@ -350,13 +351,13 @@
 								else
 								{
 									int currentRoundNumber = GetCurrentRoundNumber();
-									<button class="btn-secondary" @onclick="() => RequestResetRound(currentRoundNumber)" title="@Loc["Pairings_ResetRound", currentRoundNumber]">
+									<button class="btn-secondary" @onclick="() => RequestResetRound(currentRoundNumber)" disabled="@_isPairing" title="@Loc["Pairings_ResetRound", currentRoundNumber]">
 										<AppIcon Name="refresh" Size="13" />
 										<span>@Loc["Pairings_ResetRound", currentRoundNumber]</span>
 									</button>
 									@if (_arbiterMode && _tournament.System == TournamentSystem.SwissDutch && _tournament.Rounds.Count > 1)
 									{
-										<button class="btn-secondary" style="color: var(--accent-danger);" @onclick="() => RequestDeleteRound(currentRoundNumber)" title="@Loc["Pairings_DeleteRound", currentRoundNumber]">
+										<button class="btn-secondary" style="color: var(--accent-danger);" @onclick="() => RequestDeleteRound(currentRoundNumber)" disabled="@_isPairing" title="@Loc["Pairings_DeleteRound", currentRoundNumber]">
 											<AppIcon Name="trash" Size="13" />
 											<span>@Loc["Pairings_DeleteRound", currentRoundNumber]</span>
 										</button>
@@ -404,9 +405,9 @@
 									? Loc["Pairings_EmptyRR"]
 									: Loc["Pairings_EmptySwiss"])
 							</p>
-							<button class="btn-primary" @onclick="GeneratePairingsAsync" disabled="@(_tournament.Players.Count < 2)">
+							<button class="btn-primary" @onclick="GeneratePairingsAsync" disabled="@(_tournament.Players.Count < 2 || _isPairing)">
 								<AppIcon Name="pairings" Size="14" />
-								<span>@Loc["Pairings_GenerateNow"]</span>
+								<span>@(_isPairing ? Loc["Pairings_Generating"] : Loc["Pairings_GenerateNow"])</span>
 							</button>
 						</div>
 					}
@@ -2363,77 +2364,84 @@
 
 	private async Task GeneratePairingsAsync()
 	{
-		if (_tournament == null || _tournament.Players.Count < 2) return;
+		if (_tournament == null || _tournament.Players.Count < 2 || _isPairing) return;
+		var tournament = _tournament;
 		_pairingErrorMessage = null;
 		_pairingWarningMessage = null;
+		_isPairing = true;
 
-		// Pair against an empty history; the live rounds are only replaced once pairing succeeded
-		List<Round> newRounds;
-		if (_tournament.System == TournamentSystem.RoundRobin)
-		{
-			try
-			{
-				newRounds = WithRoundHistory([], () => new BergerPairingEngine().GenerateAllRounds(_tournament));
-			}
-			catch (Exception ex)
-			{
-				_pairingErrorMessage = ex.Message;
-				return;
-			}
-
-			if (newRounds.Count == 0)
-			{
-				_pairingErrorMessage = "Failed to generate round-robin pairings.";
-				return;
-			}
-		}
-		else
-		{
-			var result = GenerateRoundWithHistory([], 1);
-			_pairingWarningMessage = result.Warning;
-			if (!result.Success)
-			{
-				_pairingErrorMessage = result.ErrorMessage ?? "Failed to generate round pairings.";
-				return;
-			}
-			newRounds = [new Round { RoundNumber = 1, Pairings = result.Pairings }];
-		}
-
-		_tournament.Rounds = newRounds;
-		if (_tournament.System == TournamentSystem.RoundRobin)
-		{
-			_tournament.TotalRounds = newRounds.Count;
-		}
-		_activeRoundNumber = 1;
-
-		await TournamentRepo.SaveAsync(_tournament);
-		Tab.NotifyChanged();
-	}
-
-	/// <summary>
-	/// Runs <paramref name="generate"/> while the tournament temporarily exposes <paramref name="history"/>
-	/// as its rounds, so engines can pair against a hypothetical history without the live rounds being lost.
-	/// </summary>
-	private T WithRoundHistory<T>(List<Round> history, Func<T> generate)
-	{
-		var liveRounds = _tournament!.Rounds;
-		_tournament.Rounds = history;
 		try
 		{
-			return generate();
+			// Pair against an empty history; the live rounds are only replaced once pairing succeeded
+			List<Round> newRounds;
+			if (tournament.System == TournamentSystem.RoundRobin)
+			{
+				try
+				{
+					// Berger tables are a cheap closed-form lookup, so this stays synchronous
+					newRounds = new BergerPairingEngine().GenerateAllRounds(PairingSnapshot.WithRounds(tournament, []));
+				}
+				catch (Exception ex)
+				{
+					_pairingErrorMessage = ex.Message;
+					return;
+				}
+
+				if (newRounds.Count == 0)
+				{
+					_pairingErrorMessage = "Failed to generate round-robin pairings.";
+					return;
+				}
+			}
+			else
+			{
+				var result = await PairAgainstHistoryAsync(tournament, [], 1);
+				if (result == null || !ReferenceEquals(_tournament, tournament)) return;
+				_pairingWarningMessage = result.Warning;
+				if (!result.Success)
+				{
+					_pairingErrorMessage = result.ErrorMessage ?? "Failed to generate round pairings.";
+					return;
+				}
+				newRounds = [new Round { RoundNumber = 1, Pairings = result.Pairings }];
+			}
+
+			tournament.Rounds = newRounds;
+			if (tournament.System == TournamentSystem.RoundRobin)
+			{
+				tournament.TotalRounds = newRounds.Count;
+			}
+			_activeRoundNumber = 1;
+
+			await TournamentRepo.SaveAsync(tournament);
+			Tab.NotifyChanged();
 		}
 		finally
 		{
-			_tournament.Rounds = liveRounds;
+			_isPairing = false;
 		}
 	}
 
-	private PairingResult GenerateRoundWithHistory(List<Round> history, int roundNumber)
+	private bool _isPairing;
+	private readonly CancellationTokenSource _pairingCts = new();
+
+	/// <summary>
+	/// Pairs <paramref name="roundNumber"/> against a hypothetical <paramref name="history"/> without ever
+	/// mutating the live tournament: the engine works on a shallow copy whose Rounds list is the history, so
+	/// rendering and other handlers keep seeing the real rounds while the (possibly slow) engine runs.
+	/// Returns null when pairing was cancelled because the workbench was closed.
+	/// </summary>
+	private async Task<PairingResult?> PairAgainstHistoryAsync(Tournament live, IEnumerable<Round> history, int roundNumber)
 	{
 		try
 		{
-			var engine = EngineRegistry.GetEngine(_tournament!.PairingEngineId);
-			return WithRoundHistory(history, () => engine.GenerateRoundPairings(_tournament, roundNumber));
+			var engine = EngineRegistry.GetEngine(live.PairingEngineId);
+			var snapshot = PairingSnapshot.WithRounds(live, history);
+			return await engine.GenerateRoundPairingsAsync(snapshot, roundNumber, _pairingCts.Token);
+		}
+		catch (OperationCanceledException) when (_pairingCts.IsCancellationRequested)
+		{
+			return null;
 		}
 		catch (Exception ex)
 		{
@@ -2446,13 +2454,14 @@
 
 	private async Task GenerateNextRoundAsync()
 	{
-		if (_tournament == null) return;
+		if (_tournament == null || _isPairing) return;
+		var tournament = _tournament;
 		_pairingErrorMessage = null;
 		_pairingWarningMessage = null;
-		int nextRoundNumber = _tournament.Rounds.Count + 1;
-		if (nextRoundNumber > _tournament.TotalRounds) return;
+		int nextRoundNumber = tournament.Rounds.Count + 1;
+		if (nextRoundNumber > tournament.TotalRounds) return;
 
-		var latestRound = _tournament.Rounds.OrderBy(r => r.RoundNumber).LastOrDefault();
+		var latestRound = tournament.Rounds.OrderBy(r => r.RoundNumber).LastOrDefault();
 		if (latestRound != null)
 		{
 			var pending = latestRound.Pairings.Where(p => p.Result == MatchResult.NotPlayed).ToList();
@@ -2465,18 +2474,34 @@
 			}
 		}
 
-		var result = GenerateRoundWithHistory(_tournament.Rounds, nextRoundNumber);
-		_pairingWarningMessage = result.Warning;
-		if (result.Success)
+		_isPairing = true;
+		try
 		{
-			_tournament.Rounds.Add(new Round { RoundNumber = nextRoundNumber, Pairings = result.Pairings });
+			var result = await PairAgainstHistoryAsync(tournament, tournament.Rounds, nextRoundNumber);
+			if (result == null || !ReferenceEquals(_tournament, tournament)) return;
+
+			_pairingWarningMessage = result.Warning;
+			if (!result.Success)
+			{
+				_pairingErrorMessage = result.ErrorMessage ?? "Failed to generate round pairings.";
+				return;
+			}
+
+			// The round list must still be the one that was paired against
+			if (tournament.Rounds.Count + 1 != nextRoundNumber)
+			{
+				_pairingErrorMessage = $"The rounds changed while Round {nextRoundNumber} was being paired; please generate it again.";
+				return;
+			}
+
+			tournament.Rounds.Add(new Round { RoundNumber = nextRoundNumber, Pairings = result.Pairings });
 			_activeRoundNumber = nextRoundNumber;
-			await TournamentRepo.SaveAsync(_tournament);
+			await TournamentRepo.SaveAsync(tournament);
 			Tab.NotifyChanged();
 		}
-		else
+		finally
 		{
-			_pairingErrorMessage = result.ErrorMessage ?? "Failed to generate round pairings.";
+			_isPairing = false;
 		}
 	}
 
@@ -2524,13 +2549,14 @@
 
 	private async Task ResetRoundAsync(int roundNumber)
 	{
-		if (_tournament == null) return;
+		if (_tournament == null || _isPairing) return;
+		var tournament = _tournament;
 		_pairingErrorMessage = null;
 		_pairingWarningMessage = null;
 
-		if (_tournament.System == TournamentSystem.RoundRobin)
+		if (tournament.System == TournamentSystem.RoundRobin)
 		{
-			var targetRound = _tournament.Rounds.FirstOrDefault(r => r.RoundNumber == roundNumber);
+			var targetRound = tournament.Rounds.FirstOrDefault(r => r.RoundNumber == roundNumber);
 			if (targetRound != null)
 			{
 				foreach (var p in targetRound.Pairings)
@@ -2542,22 +2568,32 @@
 		}
 		else
 		{
-			// Pair against the history without this round; keep the existing round if the engine fails
-			var history = _tournament.Rounds.Where(r => r.RoundNumber != roundNumber).ToList();
-			var result = GenerateRoundWithHistory(history, roundNumber);
-			_pairingWarningMessage = result.Warning;
-			if (!result.Success)
+			_isPairing = true;
+			try
 			{
-				_pairingErrorMessage = result.ErrorMessage ?? $"Failed to regenerate pairings for Round {roundNumber}.";
-				return;
-			}
+				// Pair against the history without this round; keep the existing round if the engine fails
+				var history = tournament.Rounds.Where(r => r.RoundNumber != roundNumber).ToList();
+				var result = await PairAgainstHistoryAsync(tournament, history, roundNumber);
+				if (result == null || !ReferenceEquals(_tournament, tournament)) return;
 
-			_tournament.Rounds.RemoveAll(r => r.RoundNumber == roundNumber);
-			_tournament.Rounds.Add(new Round { RoundNumber = roundNumber, Pairings = result.Pairings });
-			_activeRoundNumber = roundNumber;
+				_pairingWarningMessage = result.Warning;
+				if (!result.Success)
+				{
+					_pairingErrorMessage = result.ErrorMessage ?? $"Failed to regenerate pairings for Round {roundNumber}.";
+					return;
+				}
+
+				tournament.Rounds.RemoveAll(r => r.RoundNumber == roundNumber);
+				tournament.Rounds.Add(new Round { RoundNumber = roundNumber, Pairings = result.Pairings });
+				_activeRoundNumber = roundNumber;
+			}
+			finally
+			{
+				_isPairing = false;
+			}
 		}
 
-		await TournamentRepo.SaveAsync(_tournament);
+		await TournamentRepo.SaveAsync(tournament);
 		Tab.NotifyChanged();
 	}
 
@@ -2576,7 +2612,7 @@
 
 	private async Task DeleteRoundAsync(int roundNumber)
 	{
-		if (_tournament == null) return;
+		if (_tournament == null || _isPairing) return;
 		_pairingErrorMessage = null;
 		_pairingWarningMessage = null;
 
@@ -2589,7 +2625,7 @@
 
 	private async Task RegeneratePairingsAsync()
 	{
-		if (_tournament == null) return;
+		if (_tournament == null || _isPairing) return;
 		// GeneratePairingsAsync pairs against an empty history and only replaces the rounds on success
 		await GeneratePairingsAsync();
 	}
@@ -2953,6 +2989,9 @@
 
 	public void Dispose()
 	{
+		// Abandon any pairing still running for this workbench (kills an external engine process)
+		_pairingCts.Cancel();
+		_pairingCts.Dispose();
 		Tab.OnTabChanged -= StateHasChanged;
 		Loc.OnLanguageChanged -= StateHasChanged;
 	}

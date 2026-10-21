@@ -29,14 +29,19 @@ public class JaVaFoPairingEngine : IPairingEngine
     public bool IsAvailable => !string.IsNullOrEmpty(JavaPath) && File.Exists(JavaPath) &&
                                !string.IsNullOrEmpty(JarPath) && File.Exists(JarPath);
 
-    public PairingResult GenerateRoundPairings(Tournament tournament, int roundNumber)
+    public PairingResult GenerateRoundPairings(Tournament tournament, int roundNumber) =>
+        GenerateRoundPairingsAsync(tournament, roundNumber).GetAwaiter().GetResult();
+
+    public Task<PairingResult> GenerateRoundPairingsAsync(Tournament tournament, int roundNumber, CancellationToken cancellationToken = default)
     {
         if (!IsAvailable)
         {
-            return PairingResult.Fail("JaVaFo pairing engine is not available. Please ensure Java JRE is installed and javafo.jar is located in the application directory.");
+            return Task.FromResult(PairingResult.Fail("JaVaFo pairing engine is not available. Please ensure Java JRE is installed and javafo.jar is located in the application directory."));
         }
 
-        return ExternalPairingEngineRunner.Run("JaVaFo", tournament, roundNumber, JavaPath!, (trf, output) => ["-jar", JarPath!, trf, "-p", output]);
+        string jarPath = JarPath!;
+        return ExternalPairingEngineRunner.RunAsync("JaVaFo", tournament, roundNumber, JavaPath!,
+            (trf, output) => ["-jar", jarPath, trf, "-p", output], cancellationToken: cancellationToken);
     }
 
     private static string? FindJavaExecutable()

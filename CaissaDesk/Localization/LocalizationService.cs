@@ -590,6 +590,8 @@ public class LocalizationService : ILocalizationService
         ["Dashboard_ImportInvalid"] = "Could not import \"{0}\": {1}",
         ["Dashboard_ImportError"] = "Failed to import tournament: {0}",
         ["Tiebreak_GamesWon"] = "Games Won over the Board (WON)",
+        // Async pairing / engine self-test
+        ["Pairings_Generating"] = "Pairing…",
     };
 
     private static Dictionary<string, string> GetSlovakStrings() => new()
@@ -1018,5 +1020,7 @@ public class LocalizationService : ILocalizationService
         ["Dashboard_ImportInvalid"] = "Súbor \"{0}\" sa nepodarilo importovať: {1}",
         ["Dashboard_ImportError"] = "Import turnaja zlyhal: {0}",
         ["Tiebreak_GamesWon"] = "Výhry za šachovnicou (WON)",
+        // Async pairing / engine self-test
+        ["Pairings_Generating"] = "Párujem…",
     };
 }

@@ -397,9 +397,9 @@
 								<div style="font-size: 12px; color: var(--text-muted); font-family: var(--font-mono);">
 									caissadesk://internal/native_dutch
 								</div>
-								<button type="button" class="btn-secondary" style="font-size: 12px; padding: 4px 10px;" @onclick='() => RunEngineTest("native_dutch")'>
+								<button type="button" class="btn-secondary" style="font-size: 12px; padding: 4px 10px;" disabled="@IsTestingEngine("native_dutch")" @onclick='() => RunEngineTestAsync("native_dutch")'>
 									<AppIcon Name="play" Size="12" />
-									<span>@Loc["Settings_TestEngineBtn"]</span>
+									<span>@(IsTestingEngine("native_dutch") ? Loc["Settings_TestingEngine"] : Loc["Settings_TestEngineBtn"])</span>
 								</button>
 							</div>
 
@@ -458,10 +458,10 @@
 									</button>
 								}
 								<button type="button" class="btn-secondary" style="font-size: 12px; padding: 4px 10px;"
-										disabled="@(bbpEngine?.IsAvailable != true)"
-										@onclick='() => RunEngineTest("bbp")'>
+										disabled="@((bbpEngine?.IsAvailable != true && string.IsNullOrWhiteSpace(_enginesModel.CustomBbpPath)) || IsTestingEngine("bbp"))"
+										@onclick='() => RunEngineTestAsync("bbp")'>
 									<AppIcon Name="play" Size="12" />
-									<span>@Loc["Settings_TestEngineBtn"]</span>
+									<span>@(IsTestingEngine("bbp") ? Loc["Settings_TestingEngine"] : Loc["Settings_TestEngineBtn"])</span>
 								</button>
 							</div>
 
@@ -524,10 +524,10 @@
 									</button>
 								}
 								<button type="button" class="btn-secondary" style="font-size: 12px; padding: 4px 10px;"
-										disabled="@(javafoEngine?.IsAvailable != true)"
-										@onclick='() => RunEngineTest("javafo")'>
+										disabled="@((javafoEngine?.IsAvailable != true && string.IsNullOrWhiteSpace(_enginesModel.CustomJavaPath) && string.IsNullOrWhiteSpace(_enginesModel.CustomJavafoJarPath)) || IsTestingEngine("javafo"))"
+										@onclick='() => RunEngineTestAsync("javafo")'>
 									<AppIcon Name="play" Size="12" />
-									<span>@Loc["Settings_TestEngineBtn"]</span>
+									<span>@(IsTestingEngine("javafo") ? Loc["Settings_TestingEngine"] : Loc["Settings_TestEngineBtn"])</span>
 								</button>
 							</div>
 
@@ -740,6 +740,8 @@
 
 	public void Dispose()
 	{
+		_engineTestCts.Cancel();
+		_engineTestCts.Dispose();
 		Loc.OnLanguageChanged -= StateHasChanged;
 	}
 
@@ -863,20 +865,37 @@
 		}
 	}
 
-	private void RunEngineTest(string engineId)
+	private readonly HashSet<string> _testingEngines = new(StringComparer.OrdinalIgnoreCase);
+	private readonly CancellationTokenSource _engineTestCts = new();
+
+	private bool IsTestingEngine(string engineId) => _testingEngines.Contains(engineId);
+
+	private async Task RunEngineTestAsync(string engineId)
 	{
+		if (!_testingEngines.Add(engineId)) return;
 		_testResults.Remove(engineId);
 		_testDurations.Remove(engineId);
 
-		// Apply current inputs to registry before testing
-		EngineRegistry.ReloadEngines(_enginesModel.CustomBbpPath, _enginesModel.CustomJavaPath, _enginesModel.CustomJavafoJarPath);
+		try
+		{
+			// Test the unsaved paths on a temporary engine instance; the live registry only changes on Save
+			var sw = System.Diagnostics.Stopwatch.StartNew();
+			var result = await EngineRegistry.TestEngineWithPathsAsync(
+				engineId, _enginesModel.CustomBbpPath, _enginesModel.CustomJavaPath, _enginesModel.CustomJavafoJarPath,
+				_engineTestCts.Token);
+			sw.Stop();
 
-		var sw = System.Diagnostics.Stopwatch.StartNew();
-		var result = EngineRegistry.TestEngine(engineId);
-		sw.Stop();
-
-		_testResults[engineId] = result;
-		_testDurations[engineId] = Math.Max(1, sw.ElapsedMilliseconds);
+			_testResults[engineId] = result;
+			_testDurations[engineId] = Math.Max(1, sw.ElapsedMilliseconds);
+		}
+		catch (OperationCanceledException) when (_engineTestCts.IsCancellationRequested)
+		{
+			// Settings page closed while the test was running
+		}
+		finally
+		{
+			_testingEngines.Remove(engineId);
+		}
 	}
 
 	private string? _cloudErrorMessage;

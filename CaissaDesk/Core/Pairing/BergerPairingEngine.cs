@@ -14,6 +14,13 @@ public class BergerPairingEngine : IPairingEngine
     /// </summary>
     public const string FreeRoundRemark = "Free round (no opponent)";
 
+    /// <summary>Berger tables are a closed-form lookup, so the async variant completes synchronously.</summary>
+    public Task<PairingResult> GenerateRoundPairingsAsync(Tournament tournament, int roundNumber, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(GenerateRoundPairings(tournament, roundNumber));
+    }
+
     public PairingResult GenerateRoundPairings(Tournament tournament, int roundNumber)
     {
         if (tournament.Players.Count < 2)
