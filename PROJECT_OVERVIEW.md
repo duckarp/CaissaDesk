@@ -6,7 +6,7 @@ This document provides a persistent reference mapping the relationship, shared f
 
 ## 1. Project Roles & Visions
 
-| Dimension | **Caissalytics** (`/home/tomask/projects/Caissalytics`) | **CaissaDesk** (`/home/tomask/projects/CaissaDesk`) | **CaissaResults** (`/home/tomask/projects/CaissaDesk/CaissaResults`) |
+| Dimension | **Caissalytics**  | **CaissaDesk**  | **CaissaResults** (separate project, not part of this repository) |
 |---|---|---|---|
 | **Primary Domain** | Player analytics, deep Stockfish UCI analysis, personal repertoire, endgame training, tactics, game databases. | Tournament pairing & arbiter workstation, FIDE pairings engine, standings, FIDE TRF reports. | Public web results portal, live broadcasting, tournament archives, player cards, crosstables (Chess-Results modern alternative). |
 | **Target User** | Competitive chess player, chess coach, club analyst. | Tournament Director (TD), Chief Arbiter, club organizer. | Spectators, players, coaches, federations, arbiters. |

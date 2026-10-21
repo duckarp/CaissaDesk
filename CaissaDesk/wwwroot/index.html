@@ -108,20 +108,7 @@
 		<a href="" class="reload">Reload</a>
 		<a class="dismiss">🗙</a>
 	</div>
-	<script src="js/soundService.js"></script>
 	<script>
-		window.downloadTextFile = function(filename, content) {
-			const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-			const url = URL.createObjectURL(blob);
-			const a = document.createElement('a');
-			a.href = url;
-			a.download = filename;
-			document.body.appendChild(a);
-			a.click();
-			document.body.removeChild(a);
-			URL.revokeObjectURL(url);
-		};
-
 		window.printCurrentPage = function() {
 			window.print();
 		};

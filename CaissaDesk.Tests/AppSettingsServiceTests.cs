@@ -11,7 +11,7 @@ public class AppSettingsServiceTests
     public void AppSettings_Defaults_AreValid()
     {
         var settings = new AppSettings();
-        Assert.Equal("Tomas K.", settings.DefaultChiefArbiter);
+        Assert.Equal("", settings.DefaultChiefArbiter);
         Assert.Equal("Chess Club", settings.DefaultVenue);
         Assert.Equal("SVK", settings.DefaultFederation);
         Assert.Equal(7, settings.DefaultTotalRounds);
