@@ -80,7 +80,7 @@
 	{
 		<div class="panel-card" style="display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; margin-bottom: 20px; border-radius: 6px; font-size: 13px; background: @(_exportIsError ? "rgba(239, 68, 68, 0.1)" : "rgba(76, 175, 80, 0.1)"); border: 1px solid @(_exportIsError ? "rgba(239, 68, 68, 0.3)" : "rgba(76, 175, 80, 0.3)"); color: @(_exportIsError ? "var(--accent-danger-hover)" : "var(--accent-success)");">
 			<div style="display: flex; align-items: center; gap: 8px;">
-				<AppIcon Name="@(_exportIsError ? "warning" : "checkmark")" Size="14" />
+				<AppIcon Name="@(_exportIsError ? "warning" : "check")" Size="14" />
 				<span>@_exportMessage</span>
 			</div>
 			<button class="modal-close-btn" @onclick="() => _exportMessage = null" style="font-size: 12px; color: var(--text-secondary);">
