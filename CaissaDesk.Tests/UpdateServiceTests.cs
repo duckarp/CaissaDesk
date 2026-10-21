@@ -486,19 +486,21 @@ public sealed class UpdateServiceTests : IDisposable
         Assert.Equal(UpdateFailure.ApplyFailed, failed.Failure);
         Assert.Equal(0, _shutdownRequests);
 
-        string scriptPath = Path.Combine(staged.StagingDirectory, OperatingSystem.IsWindows() ? "apply-update.cmd" : "apply-update.sh");
+        // The fake host is Linux (see CreateService), so a shell script is written whatever OS runs the tests
+        string scriptPath = Path.Combine(staged.StagingDirectory, "apply-update.sh");
         Assert.True(File.Exists(scriptPath));
         var psi = Assert.Single(_started);
         Assert.False(psi.UseShellExecute);
         Assert.True(psi.CreateNoWindow);
+        Assert.Equal("/bin/sh", psi.FileName);
+        Assert.Equal([scriptPath], psi.ArgumentList);
+        string content = File.ReadAllText(scriptPath);
+        Assert.Contains("PID=" + Environment.ProcessId, content);
+        Assert.Contains("TARGET=" + UpdateScriptBuilder.ShellQuote(InstalledExe), content);
         if (!OperatingSystem.IsWindows())
         {
-            Assert.Equal("/bin/sh", psi.FileName);
-            Assert.Equal([scriptPath], psi.ArgumentList);
+            // File modes only exist on the real OS the script was written on
             Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute, File.GetUnixFileMode(scriptPath));
-            string content = File.ReadAllText(scriptPath);
-            Assert.Contains("PID=" + Environment.ProcessId, content);
-            Assert.Contains("TARGET=" + UpdateScriptBuilder.ShellQuote(InstalledExe), content);
         }
     }
 

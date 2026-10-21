@@ -86,7 +86,7 @@ public class TournamentRepositoryTests
         }
         finally
         {
-            if (File.Exists(dbPath)) File.Delete(dbPath);
+            DeleteDbFiles(dbPath);
         }
     }
 
@@ -113,7 +113,7 @@ public class TournamentRepositoryTests
         }
         finally
         {
-            if (File.Exists(dbPath)) File.Delete(dbPath);
+            DeleteDbFiles(dbPath);
         }
     }
 
@@ -153,7 +153,7 @@ public class TournamentRepositoryTests
         }
         finally
         {
-            if (File.Exists(dbPath)) File.Delete(dbPath);
+            DeleteDbFiles(dbPath);
         }
     }
 
@@ -240,7 +240,7 @@ public class TournamentRepositoryTests
         }
         finally
         {
-            if (File.Exists(dbPath)) File.Delete(dbPath);
+            DeleteDbFiles(dbPath);
         }
     }
 
@@ -311,7 +311,7 @@ public class TournamentRepositoryTests
         }
         finally
         {
-            if (File.Exists(dbPath)) File.Delete(dbPath);
+            DeleteDbFiles(dbPath);
         }
     }
 
