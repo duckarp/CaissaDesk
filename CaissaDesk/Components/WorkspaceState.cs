@@ -121,11 +121,6 @@ public class WorkspaceState
         }
     }
 
-    public void CreateTournamentTab(string name = "New Tournament")
-    {
-        RequestCreateTournament();
-    }
-
     public TournamentTab OpenTournament(TournamentModel tournament)
     {
         var existing = _tabs.OfType<TournamentTab>().FirstOrDefault(t => t.TournamentId == tournament.Id);

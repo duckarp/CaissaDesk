@@ -9,10 +9,9 @@
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20Windows-brightgreen.svg?style=flat-square)](https://github.com/duckarp/CaissaDesk/releases)
 [![Latest Release](https://img.shields.io/github/v/release/duckarp/CaissaDesk?style=flat-square&color=blue)](https://github.com/duckarp/CaissaDesk/releases/latest)
 [![CI Build](https://img.shields.io/github/actions/workflow/status/duckarp/CaissaDesk/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/duckarp/CaissaDesk/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/Tests-86%20Passing-success.svg?style=flat-square)](https://github.com/duckarp/CaissaDesk/actions)
 [![License](https://img.shields.io/badge/License-GPLv3-blue.svg?style=flat-square)](LICENSE)
 
-*Caissalytics' sister desktop workstation: a modern, lightweight, open-source alternative to legacy tournament software. Built with .NET 10, Photino.Blazor native desktop shell, SQLite, and FIDE-certified pairing engines.*
+*Caissalytics' sister desktop workstation: a modern, lightweight, open-source alternative to legacy tournament software. Built with .NET 10, Photino.Blazor native desktop shell, SQLite, and pluggable pairing engines (native Dutch engine, bbpPairings, JaVaFo).*
 
 [Key Features](#-key-features) • [Pairing Engines](#-fide-pairing-engines) • [Tiebreak Systems](#-fide-tiebreak-engine) • [Downloads](#-installation--downloads) • [Building](#-building-from-source)
 
@@ -30,7 +29,7 @@
   - National database scouting (Slovak Chess Federation / SŠZ rating and club integration).
   - Configurable tournament seeding precedence (FIDE first vs. National first).
   - Full title hierarchy including standard FIDE titles (`GM`, `IM`, `FM`, `CM`, `WGM`, `WIM`, `WFM`, `WCM`) and FIDE Online Arena titles (`AGM`, `AIM`, `AFM`, `ACM`).
-- **⚙️ Pluggable FIDE Pairing Engine Architecture**: Run pairings using our built-in pure C# Dutch engine (zero external dependencies) or seamlessly switch to FIDE-certified external engines (**bbpPairings** or **JaVaFo**) with integrated test diagnostics and automated downloads.
+- **⚙️ Pluggable FIDE Pairing Engine Architecture**: Run pairings using our built-in pure C# Dutch engine (a simplified implementation, not FIDE-certified; zero external dependencies) or seamlessly switch to the externally maintained, FIDE-endorsed engines (**bbpPairings** or **JaVaFo**) with integrated test diagnostics and automated downloads.
 - **🎯 Comprehensive Arbiter Round Operations**:
   - Fast keyboard-friendly result entry (`1-0`, `0-1`, `½-½`, `1F-0`, `0-1F`, `0F-0F`, unplayed).
   - Late player registrations with automatic half-point or zero-point byes for past rounds.
@@ -42,7 +41,7 @@
 - **📄 Official Printing & FIDE TRF Export**:
   - Export official 132-column FIDE Tournament Report Files (`.trf`) with compliant tags and player lines for rating submission.
   - Print-ready A4 layouts (`@media print`): Board Pairings (with signature lines), Alphabetical Wall Lists, Standings Crosstables, Berger matrices, and Table Match Cards (4 per page).
-- **💾 Safe Local Storage & File Exchange**: Thread-safe SQLite persistence with WAL mode ensuring zero data loss during live tournaments, plus standalone tournament export/import (`.cdesk`).
+- **💾 Safe Local Storage & File Exchange**: Thread-safe SQLite persistence for local tournament data, plus standalone tournament export/import (`.cdesk`).
 - **🌍 Bilingual Interface (English & Slovak)**: Full runtime switching between English and Slovak with persistent user preference storage.
 - **🎨 Modern Control Center UI**: Caissalytics-inspired layout featuring sleek dark/light themes, tabbed multi-tournament workspace, and vertical navigation settings.
 
@@ -54,7 +53,7 @@ CaissaDesk features an engine registry supporting multiple pairing backends:
 
 | Engine | Type | Description |
 |---|---|---|
-| **Native Dutch Engine** | Built-in C# | High-speed, pure .NET implementation of FIDE Handbook C.04. Operates with zero external dependencies and handles score brackets, floaters, color balance, and pairing-allocated byes. |
+| **Native Dutch Engine** | Built-in C# | Simplified pure .NET Dutch Swiss implementation inspired by FIDE Handbook C.04 (not FIDE-certified; use bbpPairings or JaVaFo for official events). Operates with zero external dependencies and handles score brackets, floaters, color balance, and pairing-allocated byes. |
 | **bbpPairings** | Native C++ binary | FIDE-certified Swiss pairing engine by Roberto Ricca. Configurable via local binary or automated download in settings. |
 | **JaVaFo** | Java (`.jar`) | Official FIDE-certified pairing engine by Roberto Ricca, run via system Java runtime. |
 | **Berger Engine** | Deterministic rotational | Mathematical rotational pairing tables for Round Robin tournaments (even and odd player counts). |
@@ -146,7 +145,7 @@ The solution is cleanly partitioned into modular projects:
 CaissaDesk/
 ├── CaissaDesk/               # Desktop UI (Photino.Blazor, Razor components, arbiter controllers)
 ├── Caissa.Shared/            # Shared domain models (Tournament, Player, Round, Pairing, Tiebreak)
-└── CaissaDesk.Tests/         # Comprehensive xUnit test suite (86+ passing tests)
+└── CaissaDesk.Tests/         # Comprehensive xUnit test suite (xUnit)
 ```
 
 The test suite covers:

@@ -8,7 +8,7 @@ public class AppSettings
     public string Language { get; set; } = "en";
 
     // Tournament Defaults
-    public string DefaultChiefArbiter { get; set; } = "Tomas K.";
+    public string DefaultChiefArbiter { get; set; } = "";
     public string DefaultDeputyArbiter { get; set; } = string.Empty;
     public string DefaultOrganizer { get; set; } = string.Empty;
     public string DefaultVenue { get; set; } = "Chess Club";
