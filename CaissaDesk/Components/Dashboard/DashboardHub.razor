@@ -7,6 +7,7 @@
 @inject ILocalizationService Loc
 @inject IFileExportService FileExport
 @inject ILogger<DashboardHub> Logger
+@inject INotificationService Notifications
 @implements IDisposable
 
 <div class="dashboard-hub" style="padding: 24px 32px; max-width: 2200px; margin: 0 auto; width: 100%;">
@@ -329,16 +330,7 @@
 					 OnClose="CloseEditModal"
 					 OnSaved="HandleTournamentEdited" />
 
-<ConfirmModal IsOpen="_confirmIsOpen"
-			  Title="@_confirmTitle"
-			  Message="@_confirmMessage"
-			  Details="@_confirmDetails"
-			  ConfirmText="@_confirmConfirmText"
-			  HeaderIcon="@_confirmHeaderIcon"
-			  ConfirmIcon="@_confirmIcon"
-			  IsDestructive="@_confirmIsDestructive"
-			  OnConfirm="ExecuteConfirmAction"
-			  OnCancel="() => _confirmIsOpen = false" />
+<ConfirmDialog State="_confirm" />
 
 @code {
 	private List<TournamentSummary>? _tournaments;
@@ -358,25 +350,78 @@
 	private int ActiveCount => _tournaments?.Count(t => !t.IsFinished) ?? 0;
 	private int ArchivedCount => _tournaments?.Count(t => t.IsFinished) ?? 0;
 
+	private readonly ConfirmDialogState _confirm = new();
+	private bool _dashboardWasActive;
+	private Task? _loadTask;
+	private bool _reloadRequested;
+
 	protected override async Task OnInitializedAsync()
 	{
 		Loc.OnLanguageChanged += StateHasChanged;
 		Workspace.OnChange += HandleWorkspaceChanged;
+		_dashboardWasActive = Workspace.ActiveTab is DashboardTab;
 		await LoadTournamentsAsync();
 	}
 
+	/// <summary>
+	/// The summaries can only go stale while another tab is in front (workbench edits), so they are reloaded
+	/// when the dashboard becomes the active tab again, not on every tab switch, open or close.
+	/// </summary>
 	private void HandleWorkspaceChanged()
 	{
-		_ = InvokeAsync(LoadTournamentsAsync);
+		bool isActive = Workspace.ActiveTab is DashboardTab;
+		bool becameActive = isActive && !_dashboardWasActive;
+		_dashboardWasActive = isActive;
+		if (!becameActive) return;
+
+		// Workspace events are plain Action callbacks; the reload is awaited inside and never throws
+		_ = InvokeAsync(ReloadAndRenderAsync);
 	}
 
+	private async Task ReloadAndRenderAsync()
+	{
+		await LoadTournamentsAsync();
+		StateHasChanged();
+	}
+
+	/// <summary>
+	/// Loads the tournament summaries. Concurrent requests are coalesced: callers arriving while a load runs
+	/// wait for it plus at most one follow-up load, instead of starting overlapping queries.
+	/// </summary>
 	private async Task LoadTournamentsAsync()
+	{
+		if (_loadTask is { IsCompleted: false })
+		{
+			_reloadRequested = true;
+			await _loadTask;
+			return;
+		}
+
+		_loadTask = RunLoadsAsync();
+		await _loadTask;
+	}
+
+	private async Task RunLoadsAsync()
 	{
 		_isLoading = true;
 		try
 		{
-			var list = await TournamentRepo.GetAllSummariesAsync();
-			_tournaments = list.ToList();
+			do
+			{
+				_reloadRequested = false;
+				try
+				{
+					var list = await TournamentRepo.GetAllSummariesAsync();
+					_tournaments = list.ToList();
+				}
+				catch (Exception ex)
+				{
+					// Keep showing the last known list
+					Logger.LogError(ex, "Loading tournament summaries failed.");
+					Notifications.ShowError(Loc["Toast_LoadFailed", ex.Message]);
+				}
+			}
+			while (_reloadRequested);
 		}
 		finally
 		{
@@ -432,74 +477,88 @@
 
 	private async Task OpenTournamentAsync(string id)
 	{
-		var tournament = await TournamentRepo.GetByIdAsync(id);
+		Tournament? tournament;
+		try
+		{
+			tournament = await TournamentRepo.GetByIdAsync(id);
+		}
+		catch (Exception ex)
+		{
+			Logger.LogError(ex, "Opening tournament {TournamentId} failed.", id);
+			Notifications.ShowError(Loc["Toast_LoadFailed", ex.Message]);
+			return;
+		}
+
 		if (tournament != null)
 		{
 			Workspace.OpenTournament(tournament);
 		}
 	}
 
-	private bool _confirmIsOpen;
-	private string _confirmTitle = "";
-	private string _confirmMessage = "";
-	private string? _confirmDetails;
-	private string? _confirmConfirmText;
-	private string? _confirmHeaderIcon;
-	private string? _confirmIcon;
-	private bool _confirmIsDestructive = true;
-	private Func<Task>? _confirmAction;
-
 	private void RequestDeleteTournament(string id, string name)
 	{
-		_confirmTitle = Loc["Confirm_DeleteTournamentTitle"];
-		_confirmMessage = Loc["Confirm_DeleteTournamentMsg", name];
-		_confirmDetails = Loc["Confirm_CannotUndo"];
-		_confirmConfirmText = Loc["Common_Delete"];
-		_confirmHeaderIcon = "trash";
-		_confirmIcon = "trash";
-		_confirmIsDestructive = true;
-		_confirmAction = () => ExecuteDeleteTournamentAsync(id);
-		_confirmIsOpen = true;
+		_confirm.Request(
+			Loc["Confirm_DeleteTournamentTitle"],
+			Loc["Confirm_DeleteTournamentMsg", name],
+			() => ExecuteDeleteTournamentAsync(id),
+			details: Loc["Confirm_CannotUndo"],
+			confirmText: Loc["Common_Delete"],
+			icon: "trash");
 	}
 
 	private void RequestToggleArchive(string id, string name, bool isFinished)
 	{
-		_confirmTitle = isFinished ? Loc["Confirm_ArchiveTournamentTitle"] : Loc["Confirm_UnarchiveTournamentTitle"];
-		_confirmMessage = isFinished ? Loc["Confirm_ArchiveTournamentMsg", name] : Loc["Confirm_UnarchiveTournamentMsg", name];
-		_confirmDetails = null;
-		_confirmConfirmText = isFinished ? Loc["Dashboard_ArchiveTournament"] : Loc["Dashboard_UnarchiveTournament"];
-		_confirmHeaderIcon = isFinished ? "archive" : "unarchive";
-		_confirmIcon = isFinished ? "archive" : "unarchive";
-		_confirmIsDestructive = false;
-		_confirmAction = () => ExecuteToggleArchiveAsync(id, isFinished);
-		_confirmIsOpen = true;
+		_confirm.Request(
+			isFinished ? Loc["Confirm_ArchiveTournamentTitle"] : Loc["Confirm_UnarchiveTournamentTitle"],
+			isFinished ? Loc["Confirm_ArchiveTournamentMsg", name] : Loc["Confirm_UnarchiveTournamentMsg", name],
+			() => ExecuteToggleArchiveAsync(id, isFinished),
+			confirmText: isFinished ? Loc["Dashboard_ArchiveTournament"] : Loc["Dashboard_UnarchiveTournament"],
+			icon: isFinished ? "archive" : "unarchive",
+			isDestructive: false);
 	}
 
-	private async Task ExecuteConfirmAction()
-	{
-		_confirmIsOpen = false;
-		if (_confirmAction != null)
-		{
-			await _confirmAction.Invoke();
-			_confirmAction = null;
-		}
-	}
-
+	// Confirmed actions run from the ConfirmDialog's event handler, which only re-renders that dialog:
+	// re-render the dashboard explicitly. Failures are reported by the ConfirmDialog as a toast.
 	private async Task ExecuteDeleteTournamentAsync(string id)
 	{
-		await TournamentRepo.DeleteAsync(id);
-		await LoadTournamentsAsync();
+		try
+		{
+			await TournamentRepo.DeleteAsync(id);
+		}
+		finally
+		{
+			await LoadTournamentsAsync();
+			StateHasChanged();
+		}
 	}
 
 	private async Task ExecuteToggleArchiveAsync(string id, bool isFinished)
 	{
-		await TournamentRepo.SetFinishedAsync(id, isFinished);
-		await LoadTournamentsAsync();
+		try
+		{
+			await TournamentRepo.SetFinishedAsync(id, isFinished);
+		}
+		finally
+		{
+			await LoadTournamentsAsync();
+			StateHasChanged();
+		}
 	}
 
 	private async Task CreateSampleAsync()
 	{
-		var sample = await TournamentRepo.CreateDemoTournamentAsync();
+		Tournament sample;
+		try
+		{
+			sample = await TournamentRepo.CreateDemoTournamentAsync();
+		}
+		catch (Exception ex)
+		{
+			Logger.LogError(ex, "Creating the sample tournament failed.");
+			Notifications.ShowError(Loc["Toast_SaveFailed", ex.Message]);
+			return;
+		}
+
 		await LoadTournamentsAsync();
 		Workspace.OpenTournament(sample);
 	}
@@ -509,14 +568,7 @@
 		try
 		{
 			string json = await TournamentRepo.ExportJsonAsync(id);
-			string safeName = string.Join("_", name.Split(Path.GetInvalidFileNameChars())).Replace(" ", "_");
-			string filename = $"{safeName}.cdesk";
-
-			string? savedPath = await FileExport.SaveTextFileAsync(
-				Loc["Export_CdeskDialogTitle"],
-				filename,
-				json,
-				(Loc["Export_CdeskFilterName"], new[] { ".cdesk" }));
+			string? savedPath = await FileExport.SaveCdeskAsync(name, json, Loc);
 
 			if (!string.IsNullOrEmpty(savedPath))
 			{
@@ -526,6 +578,7 @@
 		}
 		catch (Exception ex)
 		{
+			Logger.LogError(ex, "Export of tournament {TournamentId} failed.", id);
 			_exportMessage = Loc["Dashboard_ExportError", ex.Message];
 			_exportIsError = true;
 		}
@@ -557,16 +610,26 @@
 		}
 	}
 
-	private void HandleTournamentCreated(Tournament tournament)
+	private async Task HandleTournamentCreated(Tournament tournament)
 	{
-		_ = LoadTournamentsAsync();
+		await LoadTournamentsAsync();
 		Workspace.OpenTournament(tournament);
 	}
 
 	private async Task OpenEditModalAsync(string id)
 	{
 		_editingTournamentId = id;
-		_editingTournament = await TournamentRepo.GetByIdAsync(id);
+		try
+		{
+			_editingTournament = await TournamentRepo.GetByIdAsync(id);
+		}
+		catch (Exception ex)
+		{
+			Logger.LogError(ex, "Loading tournament {TournamentId} for editing failed.", id);
+			Notifications.ShowError(Loc["Toast_LoadFailed", ex.Message]);
+			_editingTournamentId = null;
+			return;
+		}
 		_showEditModal = true;
 	}
 
