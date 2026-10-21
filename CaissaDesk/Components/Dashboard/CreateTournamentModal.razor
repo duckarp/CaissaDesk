@@ -85,6 +85,16 @@
 					</div>
 				</div>
 
+				<div class="form-group">
+					<label class="form-label">@Loc["Tournament_TopSeedColor"]</label>
+					<select class="form-select" @bind="_topSeedColor">
+						<option value="@TopSeedColorWhite">@Loc["Common_White"]</option>
+						<option value="@TopSeedColorBlack">@Loc["Common_Black"]</option>
+						<option value="@TopSeedColorRandom">@Loc["Tournament_TopSeedColorRandom"]</option>
+					</select>
+					<div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">@Loc["Tournament_TopSeedColorHint"]</div>
+				</div>
+
 				<div style="display: flex; align-items: center; gap: 8px; margin-top: 6px;">
 					<input type="checkbox" id="fideRatedCheck" @bind="_fideRated" style="cursor: pointer; width: 16px; height: 16px; accent-color: var(--brand-gold);" />
 					<label for="fideRatedCheck" style="font-size: 13px; color: var(--text-primary); cursor: pointer; user-select: none;">
@@ -121,6 +131,11 @@
 	private SeedingPrecedence _seeding = SeedingPrecedence.FideFirst;
 	private bool _fideRated = true;
 
+	private const string TopSeedColorWhite = "white";
+	private const string TopSeedColorBlack = "black";
+	private const string TopSeedColorRandom = "random";
+	private string _topSeedColor = TopSeedColorWhite;
+
 	protected override void OnInitialized()
 	{
 		Loc.OnLanguageChanged += StateHasChanged;
@@ -149,6 +164,7 @@
 		_federation = s.DefaultFederation;
 		_seeding = s.DefaultSeedingPrecedence;
 		_fideRated = s.DefaultFideRated;
+		_topSeedColor = TopSeedColorWhite;
 	}
 
 	public void Dispose()
@@ -160,6 +176,14 @@
 	{
 		await OnClose.InvokeAsync();
 	}
+
+	// "Random" is drawn once here so the stored tournament (and every TRF/pairing) is deterministic
+	private static FirstRoundColor ResolveTopSeedColor(string choice) => choice switch
+	{
+		TopSeedColorBlack => FirstRoundColor.Black,
+		TopSeedColorRandom => Random.Shared.Next(2) == 0 ? FirstRoundColor.White : FirstRoundColor.Black,
+		_ => FirstRoundColor.White
+	};
 
 	private async Task CreateAsync()
 	{
@@ -180,6 +204,7 @@
 			Federation = string.IsNullOrWhiteSpace(_federation) ? "SVK" : _federation.Trim().ToUpperInvariant(),
 			SeedingPrecedence = _seeding,
 			FideRated = _fideRated,
+			TopSeedFirstRoundColor = ResolveTopSeedColor(_topSeedColor),
 			PairingEngineId = AppSettings.Settings.DefaultSwissEngineId,
 			TiebreakOrder = _system == TournamentSystem.RoundRobin
 				? TiebreakPreset.RoundRobin.GetDefaultList()

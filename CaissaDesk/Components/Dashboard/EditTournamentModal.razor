@@ -138,6 +138,17 @@
 							</div>
 						</div>
 					</div>
+
+					<div class="form-group">
+						<label class="form-label">@Loc["Tournament_TopSeedColor"]</label>
+						<select class="form-select" @bind="_topSeedColor" disabled="@_topSeedColorLocked">
+							<option value="@FirstRoundColor.White">@Loc["Common_White"]</option>
+							<option value="@FirstRoundColor.Black">@Loc["Common_Black"]</option>
+						</select>
+						<div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+							@(_topSeedColorLocked ? Loc["Tournament_TopSeedColorLocked"] : Loc["Tournament_TopSeedColorHint"])
+						</div>
+					</div>
 				}
 			</div>
 
@@ -180,6 +191,8 @@
 	private DateTime _endDate = DateTime.Today;
 	private SeedingPrecedence _seeding = SeedingPrecedence.FideFirst;
 	private bool _fideRated = true;
+	private FirstRoundColor _topSeedColor = FirstRoundColor.White;
+	private bool _topSeedColorLocked;
 
 	protected override async Task OnParametersSetAsync()
 	{
@@ -240,6 +253,9 @@
 		_endDate = t.EndDate;
 		_seeding = t.SeedingPrecedence;
 		_fideRated = t.FideRated;
+		_topSeedColor = t.TopSeedFirstRoundColor;
+		// The initial colour also drives later colour allocation, so it is fixed once round 1 is paired
+		_topSeedColorLocked = t.Rounds.Any(r => r.Pairings.Count > 0);
 	}
 
 	private async Task LoadTournamentAsync(string id)
@@ -317,6 +333,7 @@
 		_tournament.EndDate = _endDate;
 		_tournament.SeedingPrecedence = _seeding;
 		_tournament.FideRated = _fideRated;
+		if (!_topSeedColorLocked) _tournament.TopSeedFirstRoundColor = _topSeedColor;
 
 		await TournamentRepo.SaveAsync(_tournament);
 		await OnSaved.InvokeAsync(_tournament);

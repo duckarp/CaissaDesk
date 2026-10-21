@@ -19,6 +19,16 @@ public enum SeedingPrecedence
     NationalFirst = 1
 }
 
+/// <summary>
+/// Colour of the top seed (start rank 1) in round 1; the initial colour of TRF "XXC white1/black1".
+/// Random is resolved to White or Black when the tournament is created, so only these two are stored.
+/// </summary>
+public enum FirstRoundColor
+{
+    White = 0,
+    Black = 1
+}
+
 public enum PlayerStatus
 {
     Active = 0,

@@ -174,7 +174,7 @@ public class NativeDutchPairingEngine : IPairingEngine
             // Pair playersToPair
             if (isFirstRound)
             {
-                var r1Result = GenerateRound1(playersToPair);
+                var r1Result = GenerateRound1(playersToPair, tournament.TopSeedFirstRoundColor);
                 if (!r1Result.Success) return r1Result;
                 pairings = r1Result.Pairings;
             }
@@ -200,7 +200,7 @@ public class NativeDutchPairingEngine : IPairingEngine
         return PairingResult.Ok(pairings);
     }
 
-    private static PairingResult GenerateRound1(List<Player> activePlayers)
+    private static PairingResult GenerateRound1(List<Player> activePlayers, FirstRoundColor topSeedColor)
     {
         var pairings = new List<Pairing>();
         int boardNumber = 1;
@@ -234,11 +234,12 @@ public class NativeDutchPairingEngine : IPairingEngine
             var pTop = topHalf[i];
             var pBottom = bottomHalf[i];
 
-            // FIDE standard color alternation on consecutive boards:
+            // FIDE standard color alternation on consecutive boards (initial colour White):
             // Board 1: pTop is White
             // Board 2: pBottom is White (pTop is Black)
             // Board 3: pTop is White ...
-            bool topIsWhite = (i % 2 == 0);
+            // With initial colour Black the whole pattern is inverted.
+            bool topIsWhite = (i % 2 == 0) == (topSeedColor == FirstRoundColor.White);
 
             pairings.Add(new Pairing
             {

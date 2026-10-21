@@ -37,7 +37,7 @@ public static class TrfHandler
             sb.AppendLine($"112 {tournament.DeputyArbiter}");
         sb.AppendLine($"122 {tournament.TimeControlDetails}");
         sb.AppendLine($"XXR {Math.Max(Math.Max(1, tournament.TotalRounds), pairingRound ?? 0)}");
-        sb.AppendLine("XXC white1");
+        sb.AppendLine(tournament.TopSeedFirstRoundColor == FirstRoundColor.Black ? "XXC black1" : "XXC white1");
 
         // 2. Pre-calculate points and per-round entries for players
         var sortedPlayers = tournament.Players.OrderBy(p => p.StartRank).ToList();
