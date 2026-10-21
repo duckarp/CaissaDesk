@@ -6,6 +6,7 @@ using Caissa.Shared.Security;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using CaissaDesk.Core;
 
 namespace CaissaDesk.Data;
 
@@ -59,7 +60,7 @@ public class TournamentRepository : ITournamentRepository
         }
 
         string dataDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            AppPaths.LocalAppDataRoot,
             "CaissaDesk");
         Directory.CreateDirectory(dataDir);
         string dbPath = Path.Combine(dataDir, "caissadesk.db");

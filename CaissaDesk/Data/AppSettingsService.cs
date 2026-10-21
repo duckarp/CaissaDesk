@@ -3,6 +3,7 @@ using CaissaDesk.Core.PairingEngine;
 using CaissaDesk.Core.Settings;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using CaissaDesk.Core;
 
 namespace CaissaDesk.Data;
 
@@ -55,7 +56,7 @@ public class AppSettingsService : IAppSettingsService
         }
 
         string configDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            AppPaths.LocalAppDataRoot,
             "CaissaDesk");
         Directory.CreateDirectory(configDir);
         return Path.Combine(configDir, "desk_settings.json");

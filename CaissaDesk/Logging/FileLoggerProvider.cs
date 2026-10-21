@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text;
 using Microsoft.Extensions.Logging;
+using CaissaDesk.Core;
 
 namespace CaissaDesk.Logging;
 
@@ -51,7 +52,7 @@ public sealed class FileLoggerProvider : ILoggerProvider
         string baseDir;
         try
         {
-            baseDir = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            baseDir = AppPaths.LocalAppDataRoot;
         }
         catch
         {

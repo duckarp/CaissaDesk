@@ -337,7 +337,7 @@ internal class Program
         // One-time cleanup of artefacts written by older builds, gated by a version marker
         // so we do not touch the icon theme on every launch.
         var markerDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CaissaDesk");
+            AppPaths.LocalAppDataRoot, "CaissaDesk");
         var markerFile = Path.Combine(markerDir, "desktop-integration.version");
         if (ReadMarkerVersion(markerFile, log) < DesktopIntegrationVersion)
         {

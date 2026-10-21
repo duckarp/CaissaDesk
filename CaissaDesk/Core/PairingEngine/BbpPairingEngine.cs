@@ -1,4 +1,5 @@
 using Caissa.Shared.Models;
+using CaissaDesk.Core;
 
 namespace CaissaDesk.Core.PairingEngine;
 
@@ -47,7 +48,7 @@ public class BbpPairingEngine : IPairingEngine
         try
         {
             string exeName = OperatingSystem.IsWindows() ? "bbpPairings.exe" : "bbpPairings";
-            string appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            string appData = AppPaths.LocalAppDataRoot;
 
             string[] directCandidates = [
                 Path.Combine(appData, "CaissaDesk", "engines", exeName),

@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using CaissaDesk.Core.Settings;
 using CaissaDesk.Data;
+using CaissaDesk.Core;
 
 namespace CaissaDesk.Core.PairingEngine;
 
@@ -338,7 +339,7 @@ public class EngineInstallerService : IEngineInstallerService
     private static string GetEnginesDirectory()
     {
         string dir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            AppPaths.LocalAppDataRoot,
             "CaissaDesk",
             "engines");
         Directory.CreateDirectory(dir);

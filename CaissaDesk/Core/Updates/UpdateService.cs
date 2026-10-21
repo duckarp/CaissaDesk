@@ -9,6 +9,7 @@ using CaissaDesk.Data;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using CaissaDesk.Core;
 
 namespace CaissaDesk.Core.Updates;
 
@@ -77,7 +78,7 @@ public sealed class UpdateService : IUpdateService
     /// </summary>
     private static string DefaultUpdatesRoot()
     {
-        string baseDir = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.DoNotVerify);
+        string baseDir = AppPaths.LocalAppDataRoot;
         return string.IsNullOrEmpty(baseDir) ? "" : Path.Combine(baseDir, "CaissaDesk", "updates");
     }
 

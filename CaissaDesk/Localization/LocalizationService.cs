@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using CaissaDesk.Data;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using CaissaDesk.Core;
 
 namespace CaissaDesk.Localization;
 
@@ -40,7 +41,7 @@ public class LocalizationService : ILocalizationService
                 try
                 {
                     string configDir = Path.Combine(
-                        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                        AppPaths.LocalAppDataRoot,
                         "CaissaDesk");
                     string settingsPath = Path.Combine(configDir, "desk_settings.json");
                     if (File.Exists(settingsPath))
@@ -125,7 +126,7 @@ public class LocalizationService : ILocalizationService
             try
             {
                 string configDir = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    AppPaths.LocalAppDataRoot,
                     "CaissaDesk");
                 Directory.CreateDirectory(configDir);
                 string settingsPath = Path.Combine(configDir, "desk_settings.json");

@@ -1,4 +1,5 @@
 using Caissa.Shared.Models;
+using CaissaDesk.Core;
 
 namespace CaissaDesk.Core.PairingEngine;
 
@@ -64,7 +65,7 @@ public class JaVaFoPairingEngine : IPairingEngine
 
     private static string? FindJaVaFoJar()
     {
-        string appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        string appData = AppPaths.LocalAppDataRoot;
         string[] candidates = [
             Path.Combine(appData, "CaissaDesk", "engines", "javafo.jar"),
             Path.Combine(appData, "CaissaDesk", "javafo.jar"),
