@@ -585,6 +585,10 @@ public class LocalizationService : ILocalizationService
         ["Settings_LangRegional"] = "Language & Regional",
         ["Settings_InterfaceLang"] = "Interface Language",
         ["Settings_InterfaceLangDesc"] = "Select the language for arbiter menus and reports",
+
+        // Tournament import errors
+        ["Dashboard_ImportInvalid"] = "Could not import \"{0}\": {1}",
+        ["Dashboard_ImportError"] = "Failed to import tournament: {0}",
     };
 
     private static Dictionary<string, string> GetSlovakStrings() => new()
@@ -1008,5 +1012,9 @@ public class LocalizationService : ILocalizationService
         ["Settings_LangRegional"] = "Jazyk a región",
         ["Settings_InterfaceLang"] = "Jazyk rozhrania",
         ["Settings_InterfaceLangDesc"] = "Vyberte jazyk pre ponuky rozhodcu a výstupy",
+
+        // Tournament import errors
+        ["Dashboard_ImportInvalid"] = "Súbor \"{0}\" sa nepodarilo importovať: {1}",
+        ["Dashboard_ImportError"] = "Import turnaja zlyhal: {0}",
     };
 }

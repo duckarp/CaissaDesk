@@ -6,6 +6,7 @@
 @inject WorkspaceState Workspace
 @inject ILocalizationService Loc
 @inject IFileExportService FileExport
+@inject ILogger<DashboardHub> Logger
 @implements IDisposable
 
 <div class="dashboard-hub" style="padding: 24px 32px; max-width: 2200px; margin: 0 auto; width: 100%;">
@@ -538,12 +539,21 @@
 			using var reader = new StreamReader(stream);
 			string json = await reader.ReadToEndAsync();
 			var tournament = await TournamentRepo.ImportJsonAsync(json);
+			_exportMessage = null;
 			await LoadTournamentsAsync();
 			Workspace.OpenTournament(tournament);
 		}
+		catch (FormatException ex)
+		{
+			Logger.LogWarning(ex, "Import of {FileName} rejected.", e.File.Name);
+			_exportMessage = Loc["Dashboard_ImportInvalid", e.File.Name, ex.Message];
+			_exportIsError = true;
+		}
 		catch (Exception ex)
 		{
-			Console.WriteLine($"Import failed: {ex.Message}");
+			Logger.LogError(ex, "Import of {FileName} failed.", e.File.Name);
+			_exportMessage = Loc["Dashboard_ImportError", ex.Message];
+			_exportIsError = true;
 		}
 	}
 

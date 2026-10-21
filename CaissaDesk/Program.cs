@@ -5,8 +5,10 @@ using CaissaDesk.Core.Arbiter;
 using CaissaDesk.Core.PairingEngine;
 using CaissaDesk.Data;
 using CaissaDesk.Localization;
+using CaissaDesk.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Logging;
 using Photino.Blazor;
 
 namespace CaissaDesk;
@@ -16,21 +18,52 @@ internal class Program
     [DllImport("libglib-2.0.so.0", EntryPoint = "g_set_prgname", CallingConvention = CallingConvention.Cdecl)]
     private static extern void g_set_prgname(string prgname);
 
+    /// <summary>Bump when the Linux desktop integration layout changes and old artefacts need cleaning up.</summary>
+    private const int DesktopIntegrationVersion = 2;
+
     [STAThread]
     static void Main(string[] args)
     {
-        SetLinuxProgramName("caissadesk");
+        // WinExe has no console: route all diagnostics to a rolling log file.
+        var fileLoggerProvider = new FileLoggerProvider();
+        var log = fileLoggerProvider.CreateLogger("CaissaDesk.Program");
+
+        AppDomain.CurrentDomain.UnhandledException += (_, error) =>
+        {
+            log.LogCritical(error.ExceptionObject as Exception,
+                "Unhandled exception (terminating: {IsTerminating}): {ExceptionObject}",
+                error.IsTerminating, error.ExceptionObject);
+        };
+        TaskScheduler.UnobservedTaskException += (_, error) =>
+        {
+            log.LogError(error.Exception, "Unobserved task exception.");
+            error.SetObserved();
+        };
+
+        log.LogInformation("CaissaDesk {Version} starting on {OS} (.NET {Runtime}).",
+            typeof(Program).Assembly.GetName().Version, RuntimeInformation.OSDescription, Environment.Version);
+
+        SetLinuxProgramName("caissadesk", log);
 
         var appBuilder = PhotinoBlazorAppBuilder.CreateDefault(args);
 
         // Register application services
-        appBuilder.Services.AddLogging();
+        appBuilder.Services.AddLogging(logging =>
+        {
+            logging.SetMinimumLevel(LogLevel.Information);
+            logging.AddProvider(fileLoggerProvider);
+        });
         appBuilder.Services.AddHttpClient();
         appBuilder.Services.AddScoutingHttpClients();
         appBuilder.Services.AddSingleton<IAppWindowProvider, AppWindowProvider>();
         appBuilder.Services.AddSingleton<ITiebreakService, TiebreakService>();
-        appBuilder.Services.AddSingleton<ITournamentRepository, TournamentRepository>();
-        appBuilder.Services.AddSingleton<IAppSettingsService, AppSettingsService>();
+        appBuilder.Services.AddSingleton<ITournamentRepository>(sp =>
+            new TournamentRepository(null, sp.GetRequiredService<ILogger<TournamentRepository>>()));
+        appBuilder.Services.AddSingleton<IAppSettingsService>(sp =>
+            new AppSettingsService(
+                sp.GetRequiredService<IPairingEngineRegistry>(),
+                null,
+                sp.GetRequiredService<ILogger<AppSettingsService>>()));
         appBuilder.Services.AddSingleton<IPairingEngineRegistry, PairingEngineRegistry>();
         appBuilder.Services.AddSingleton<IEngineInstallerService, EngineInstallerService>();
         appBuilder.Services.AddSingleton<IArbiterService, ArbiterService>();
@@ -61,8 +94,9 @@ internal class Program
                 fileProvider = embeddedProvider;
             }
         }
-        catch
+        catch (Exception ex)
         {
+            log.LogWarning(ex, "Embedded wwwroot unavailable; falling back to physical files at {Path}.", physicalWwwroot);
             if (!Directory.Exists(physicalWwwroot))
             {
                 Directory.CreateDirectory(physicalWwwroot);
@@ -86,7 +120,7 @@ internal class Program
         app.Services.GetRequiredService<IAppWindowProvider>().Window = app.MainWindow;
 
         // Configure native desktop window
-        var iconFile = EnsureIconOnDisk(fileProvider);
+        var iconFile = EnsureIconOnDisk(fileProvider, log);
 
         app.MainWindow
             .SetTitle("CaissaDesk")
@@ -108,31 +142,39 @@ internal class Program
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[CaissaDesk] Could not set window icon: {ex.Message}");
+                log.LogWarning(ex, "Could not set window icon {IconFile}.", iconFile);
             }
         }
-
-        AppDomain.CurrentDomain.UnhandledException += (sender, error) =>
-        {
-            Console.Error.WriteLine($"[CaissaDesk] Unhandled exception: {error.ExceptionObject}");
-        };
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
             try
             {
-                EnsureLinuxDesktopIntegration(fileProvider);
+                EnsureLinuxDesktopIntegration(fileProvider, log);
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[CaissaDesk] Linux desktop integration error: {ex}");
+                log.LogWarning(ex, "Linux desktop integration failed.");
             }
         }
 
-        app.Run();
+        try
+        {
+            app.Run();
+            log.LogInformation("CaissaDesk exited normally.");
+        }
+        catch (Exception ex)
+        {
+            log.LogCritical(ex, "CaissaDesk terminated with an unhandled exception.");
+            throw;
+        }
+        finally
+        {
+            fileLoggerProvider.Dispose();
+        }
     }
 
-    private static void SetLinuxProgramName(string name)
+    private static void SetLinuxProgramName(string name, ILogger log)
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
@@ -140,14 +182,15 @@ internal class Program
             {
                 g_set_prgname(name);
             }
-            catch
+            catch (Exception ex)
             {
                 // Non-fatal if libglib is not available
+                log.LogDebug(ex, "g_set_prgname unavailable.");
             }
         }
     }
 
-    private static string? EnsureIconOnDisk(IFileProvider fileProvider)
+    private static string? EnsureIconOnDisk(IFileProvider fileProvider, ILogger log)
     {
         try
         {
@@ -232,91 +275,197 @@ internal class Program
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[CaissaDesk] Could not extract icon to disk: {ex.Message}");
+            log.LogWarning(ex, "Could not extract icon to disk.");
         }
 
         return null;
     }
 
-    private static void EnsureLinuxDesktopIntegration(IFileProvider fileProvider)
+    private static void EnsureLinuxDesktopIntegration(IFileProvider fileProvider, ILogger log)
     {
-        try
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (string.IsNullOrEmpty(home)) return;
+
+        var shareDir = Path.Combine(home, ".local", "share");
+        var appsDir = Path.Combine(shareDir, "applications");
+        var iconsRoot = Path.Combine(shareDir, "icons", "hicolor");
+        var icon256Dir = Path.Combine(iconsRoot, "256x256", "apps");
+        var iconSvgDir = Path.Combine(iconsRoot, "scalable", "apps");
+
+        Directory.CreateDirectory(appsDir);
+        Directory.CreateDirectory(icon256Dir);
+        Directory.CreateDirectory(iconSvgDir);
+
+        // One-time cleanup of artefacts written by older builds, gated by a version marker
+        // so we do not touch the icon theme on every launch.
+        var markerDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CaissaDesk");
+        var markerFile = Path.Combine(markerDir, "desktop-integration.version");
+        if (ReadMarkerVersion(markerFile, log) < DesktopIntegrationVersion)
         {
-            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            if (string.IsNullOrEmpty(home)) return;
-
-            var appsDir = Path.Combine(home, ".local", "share", "applications");
-            var icon256Dir = Path.Combine(home, ".local", "share", "icons", "hicolor", "256x256", "apps");
-            var iconSvgDir = Path.Combine(home, ".local", "share", "icons", "hicolor", "scalable", "apps");
-
-            Directory.CreateDirectory(appsDir);
-            Directory.CreateDirectory(icon256Dir);
-            Directory.CreateDirectory(iconSvgDir);
-
-            // Clean up any low-res raster icons that might cause desktop environments to render tight-padded icons
+            // Low-res raster icons made desktop environments render tight-padded icons.
             string[] cleanupSizes = ["16x16", "24x24", "32x32", "48x48", "64x64", "128x128"];
             foreach (var size in cleanupSizes)
             {
-                var sizeApps = Path.Combine(home, ".local", "share", "icons", "hicolor", size, "apps");
                 foreach (var fname in new[] { "caissadesk.png", "CaissaDesk.png" })
                 {
-                    var file = Path.Combine(sizeApps, fname);
-                    if (File.Exists(file))
-                    {
-                        try { File.Delete(file); } catch { }
-                    }
+                    TryDelete(Path.Combine(iconsRoot, size, "apps", fname), log);
                 }
             }
 
-            // Copy/extract 256x256 icon
-            var targetPng = Path.Combine(icon256Dir, "caissadesk.png");
-            var pngInfo = fileProvider.GetFileInfo("icon-256.png");
-            if (!pngInfo.Exists) pngInfo = fileProvider.GetFileInfo("icon.png");
-            if (!pngInfo.Exists) pngInfo = fileProvider.GetFileInfo("favicon.png");
+            // Mixed-case duplicates of our icons.
+            TryDelete(Path.Combine(icon256Dir, "CaissaDesk.png"), log);
+            TryDelete(Path.Combine(iconSvgDir, "CaissaDesk.svg"), log);
 
-            if (pngInfo.Exists)
+            try
             {
-                using var src = pngInfo.CreateReadStream();
-                using var dst = File.Create(targetPng);
-                src.CopyTo(dst);
-                File.Copy(targetPng, Path.Combine(icon256Dir, "CaissaDesk.png"), true);
+                Directory.CreateDirectory(markerDir);
+                File.WriteAllText(markerFile, DesktopIntegrationVersion.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                log.LogInformation("Cleaned up legacy desktop integration files (marker v{Version}).", DesktopIntegrationVersion);
             }
-
-            // Copy/extract scalable SVG icon
-            var targetSvg = Path.Combine(iconSvgDir, "caissadesk.svg");
-            var svgInfo = fileProvider.GetFileInfo("images/icon.svg");
-            if (!svgInfo.Exists) svgInfo = fileProvider.GetFileInfo("icon.svg");
-            if (!svgInfo.Exists) svgInfo = fileProvider.GetFileInfo("favicon.svg");
-
-            if (svgInfo.Exists)
+            catch (Exception ex)
             {
-                using var src = svgInfo.CreateReadStream();
-                using var dst = File.Create(targetSvg);
-                src.CopyTo(dst);
-                File.Copy(targetSvg, Path.Combine(iconSvgDir, "CaissaDesk.svg"), true);
+                log.LogWarning(ex, "Could not write desktop integration marker {Path}.", markerFile);
             }
-
-            var desktopFile = Path.Combine(appsDir, "caissadesk.desktop");
-            var exePath = Environment.ProcessPath ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "CaissaDesk");
-            var desktopContent = $"""
-                [Desktop Entry]
-                Name=CaissaDesk
-                GenericName=Chess Tournament Management
-                Comment=Chess Tournament Workstation
-                Exec="{exePath}"
-                Icon=caissadesk
-                Terminal=false
-                Type=Application
-                Categories=Game;BoardGame;Utility;
-                StartupWMClass=caissadesk
-                StartupNotify=true
-                """;
-            File.WriteAllText(desktopFile, desktopContent);
-            File.WriteAllText(Path.Combine(appsDir, "CaissaDesk.desktop"), desktopContent);
         }
-        catch
+
+        // Stale duplicate desktop entry created by older builds; only remove it if it is ours.
+        var staleDesktopFile = Path.Combine(appsDir, "CaissaDesk.desktop");
+        try
         {
-            // Non-fatal desktop entry creation
+            if (File.Exists(staleDesktopFile) &&
+                File.ReadAllText(staleDesktopFile).Contains("StartupWMClass=caissadesk", StringComparison.Ordinal))
+            {
+                File.Delete(staleDesktopFile);
+                log.LogInformation("Removed stale desktop entry {Path}.", staleDesktopFile);
+            }
         }
+        catch (Exception ex)
+        {
+            log.LogWarning(ex, "Could not remove stale desktop entry {Path}.", staleDesktopFile);
+        }
+
+        // 256x256 raster icon
+        var pngInfo = fileProvider.GetFileInfo("icon-256.png");
+        if (!pngInfo.Exists) pngInfo = fileProvider.GetFileInfo("icon.png");
+        if (!pngInfo.Exists) pngInfo = fileProvider.GetFileInfo("favicon.png");
+        if (pngInfo.Exists)
+        {
+            WriteIfChanged(Path.Combine(icon256Dir, "caissadesk.png"), ReadAll(pngInfo), log);
+        }
+
+        // Scalable SVG icon
+        var svgInfo = fileProvider.GetFileInfo("images/icon.svg");
+        if (!svgInfo.Exists) svgInfo = fileProvider.GetFileInfo("icon.svg");
+        if (!svgInfo.Exists) svgInfo = fileProvider.GetFileInfo("favicon.svg");
+        if (svgInfo.Exists)
+        {
+            WriteIfChanged(Path.Combine(iconSvgDir, "caissadesk.svg"), ReadAll(svgInfo), log);
+        }
+
+        // Prefer the AppImage path when running from an AppImage: ProcessPath points into the
+        // temporary squashfs mount, which disappears when the app exits.
+        var appImage = Environment.GetEnvironmentVariable("APPIMAGE");
+        var exePath = !string.IsNullOrWhiteSpace(appImage) && File.Exists(appImage)
+            ? appImage
+            : Environment.ProcessPath ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "CaissaDesk");
+
+        var desktopContent = $"""
+            [Desktop Entry]
+            Name=CaissaDesk
+            GenericName=Chess Tournament Management
+            Comment=Chess Tournament Workstation
+            Exec="{EscapeDesktopExecArgument(exePath)}"
+            Icon=caissadesk
+            Terminal=false
+            Type=Application
+            Categories=Game;BoardGame;Utility;
+            StartupWMClass=caissadesk
+            StartupNotify=true
+
+            """;
+        WriteIfChanged(Path.Combine(appsDir, "caissadesk.desktop"), System.Text.Encoding.UTF8.GetBytes(desktopContent), log);
+    }
+
+    private static int ReadMarkerVersion(string markerFile, ILogger log)
+    {
+        try
+        {
+            if (File.Exists(markerFile) &&
+                int.TryParse(File.ReadAllText(markerFile).Trim(), System.Globalization.NumberStyles.Integer,
+                    System.Globalization.CultureInfo.InvariantCulture, out int v))
+            {
+                return v;
+            }
+        }
+        catch (Exception ex)
+        {
+            log.LogDebug(ex, "Could not read desktop integration marker {Path}.", markerFile);
+        }
+        return 0;
+    }
+
+    private static byte[] ReadAll(IFileInfo fileInfo)
+    {
+        using var src = fileInfo.CreateReadStream();
+        using var ms = new MemoryStream();
+        src.CopyTo(ms);
+        return ms.ToArray();
+    }
+
+    private static void WriteIfChanged(string path, byte[] content, ILogger log)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                var info = new FileInfo(path);
+                if (info.Length == content.Length && File.ReadAllBytes(path).AsSpan().SequenceEqual(content))
+                {
+                    return;
+                }
+            }
+
+            File.WriteAllBytes(path, content);
+            log.LogInformation("Updated desktop integration file {Path}.", path);
+        }
+        catch (Exception ex)
+        {
+            log.LogWarning(ex, "Could not write desktop integration file {Path}.", path);
+        }
+    }
+
+    private static void TryDelete(string path, ILogger log)
+    {
+        try
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+        catch (Exception ex)
+        {
+            log.LogDebug(ex, "Could not delete {Path}.", path);
+        }
+    }
+
+    /// <summary>
+    /// Escapes a value for use inside a double-quoted Exec argument of a .desktop file
+    /// (quoting rules applied first, then the general string escape for backslashes, plus % field codes).
+    /// </summary>
+    private static string EscapeDesktopExecArgument(string value)
+    {
+        var sb = new System.Text.StringBuilder(value.Length + 8);
+        foreach (char c in value)
+        {
+            switch (c)
+            {
+                case '\\': sb.Append(@"\\\\"); break;
+                case '"': sb.Append(@"\\"""); break;
+                case '`': sb.Append(@"\\`"); break;
+                case '$': sb.Append(@"\\$"); break;
+                case '%': sb.Append("%%"); break;
+                default: sb.Append(c); break;
+            }
+        }
+        return sb.ToString();
     }
 }

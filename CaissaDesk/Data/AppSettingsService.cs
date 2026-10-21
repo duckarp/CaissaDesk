@@ -1,6 +1,8 @@
 using System.Text.Json;
 using CaissaDesk.Core.PairingEngine;
 using CaissaDesk.Core.Settings;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CaissaDesk.Data;
 
@@ -16,14 +18,19 @@ public class AppSettingsService : IAppSettingsService
 {
     private readonly IPairingEngineRegistry _engineRegistry;
     private readonly string? _customConfigPath;
+    private readonly ILogger<AppSettingsService> _logger;
     private AppSettings _settings = new();
 
     public AppSettings Settings => _settings;
     public event Action? OnSettingsChanged;
 
-    public AppSettingsService(IPairingEngineRegistry engineRegistry, string? customConfigPath = null)
+    public AppSettingsService(
+        IPairingEngineRegistry engineRegistry,
+        string? customConfigPath = null,
+        ILogger<AppSettingsService>? logger = null)
     {
         _engineRegistry = engineRegistry;
+        _logger = logger ?? NullLogger<AppSettingsService>.Instance;
         _customConfigPath = customConfigPath;
         LoadSettingsSync();
     }
@@ -54,7 +61,7 @@ public class AppSettingsService : IAppSettingsService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error locating settings file: {ex.Message}");
+            _logger.LogWarning(ex, "Could not locate settings file; using defaults.");
             return;
         }
 
@@ -75,7 +82,7 @@ public class AppSettingsService : IAppSettingsService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error reading settings: {ex.Message}");
+            _logger.LogWarning(ex, "Could not read settings; using defaults.");
             return;
         }
 
@@ -89,17 +96,17 @@ public class AppSettingsService : IAppSettingsService
         _engineRegistry.ReloadEngines(_settings.CustomBbpPath, _settings.CustomJavaPath, _settings.CustomJavafoJarPath);
     }
 
-    private static void BackUpCorruptFile(string path, Exception? ex)
+    private void BackUpCorruptFile(string path, Exception? ex)
     {
         try
         {
             string backupPath = $"{path}.corrupt-{DateTime.Now:yyyyMMdd-HHmmss}";
             File.Copy(path, backupPath, overwrite: true);
-            Console.WriteLine($"Settings file is corrupt ({ex?.Message ?? "empty"}); backed up to {backupPath}, using defaults.");
+            _logger.LogWarning(ex, "Settings file is corrupt or empty; backed up to {BackupPath}, using defaults.", backupPath);
         }
         catch (Exception backupEx)
         {
-            Console.WriteLine($"Settings file is corrupt and could not be backed up: {backupEx.Message}");
+            _logger.LogError(backupEx, "Settings file is corrupt and could not be backed up.");
         }
     }
 
@@ -129,7 +136,10 @@ public class AppSettingsService : IAppSettingsService
                 var existing = JsonSerializer.Deserialize<Dictionary<string, object>>(existingJson);
                 if (existing != null) dict = existing;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Existing settings file {Path} could not be parsed; it will be overwritten.", path);
+            }
         }
 
         // Serialize updated settings into dictionary
@@ -152,8 +162,9 @@ public class AppSettingsService : IAppSettingsService
             File.WriteAllText(tempPath, finalJson);
             File.Move(tempPath, path, overwrite: true);
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogError(ex, "Error saving settings to {Path}.", path);
             try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
             throw;
         }
