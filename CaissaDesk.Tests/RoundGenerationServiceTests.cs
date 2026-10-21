@@ -125,6 +125,7 @@ public class RoundGenerationServiceTests
 
         Assert.Equal(RoundGenerationStatus.NoChange, outcome.Status);
         Assert.Equal("boom", outcome.ErrorMessage);
+        Assert.Equal(RoundGenerationError.None, outcome.Error);
         Assert.Equal("fallback", outcome.Warning);
         Assert.Same(existing, t.Rounds.Single());
         Assert.Empty(saved);
@@ -155,7 +156,10 @@ public class RoundGenerationServiceTests
 
         var outcome = await svc.GenerateInitialAsync(session, t, Persist([]));
 
-        Assert.Equal("Failed to generate round pairings.", outcome.ErrorMessage);
+        Assert.Null(outcome.ErrorMessage);
+        Assert.Equal(RoundGenerationError.PairingFailed, outcome.Error);
+        Assert.Equal(1, outcome.ErrorRoundNumber);
+        Assert.True(outcome.HasError);
     }
 
     [Fact]
@@ -327,7 +331,8 @@ public class RoundGenerationServiceTests
         var outcome = await svc.GenerateNextRoundAsync(session, t, Persist([]));
 
         Assert.Equal(RoundGenerationStatus.NoChange, outcome.Status);
-        Assert.Contains("changed while Round 1", outcome.ErrorMessage);
+        Assert.Equal(RoundGenerationError.RoundsChangedDuringPairing, outcome.Error);
+        Assert.Equal(1, outcome.ErrorRoundNumber);
         Assert.Single(t.Rounds);
     }
 
@@ -414,7 +419,9 @@ public class RoundGenerationServiceTests
 
         var outcome = await svc.ResetRoundAsync(session, t, 1, Persist([]));
 
-        Assert.Equal("Failed to regenerate pairings for Round 1.", outcome.ErrorMessage);
+        Assert.Null(outcome.ErrorMessage);
+        Assert.Equal(RoundGenerationError.RegenerateFailed, outcome.Error);
+        Assert.Equal(1, outcome.ErrorRoundNumber);
         Assert.Same(round, t.Rounds.Single());
     }
 
