@@ -87,8 +87,19 @@ public static class CaissaSecurity
             return true;
         }
 
-        // 2. Fallback check for legacy unhashed stored keys
+        // 2. Fallback for legacy unhashed stored keys. A stored value that is itself a SHA-256 hash is never
+        // compared directly, otherwise anyone holding the hash (e.g. from a database backup) could use it as the key.
+        if (IsSha256Hex(storedKeyOrHash))
+        {
+            return false;
+        }
+
         return FixedTimeEquals(storedKeyOrHash, providedKey);
+    }
+
+    private static bool IsSha256Hex(string value)
+    {
+        return value.Length == 64 && value.All(Uri.IsHexDigit);
     }
 
     /// <summary>
@@ -103,12 +114,18 @@ public static class CaissaSecurity
     /// <summary>
     /// Signs an outgoing HTTP request with timestamp, body hash, and HMAC-SHA256 signature.
     /// </summary>
+    /// <param name="includeBearerToken">
+    /// Also send the API key as a Bearer token. The signature alone authenticates the request, and the server
+    /// only falls back to the Bearer token for unsigned requests, so clients should pass <c>false</c> to keep
+    /// the HMAC secret off the wire.
+    /// </param>
     public static void SignRequest(
         HttpRequestMessage request,
         string pathAndQuery,
         string? bodyJson,
         string? apiKey,
-        string? tournamentKey = null)
+        string? tournamentKey = null,
+        bool includeBearerToken = true)
     {
         var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
         var bodyHash = ComputeSha256(bodyJson ?? string.Empty);
@@ -125,7 +142,10 @@ public static class CaissaSecurity
 
         if (!string.IsNullOrWhiteSpace(apiKey))
         {
-            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+            if (includeBearerToken)
+            {
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+            }
 
             var stringToSign = BuildStringToSign(method, pathAndQuery, timestamp, bodyHash);
             var signature = ComputeHmacSha256(apiKey, stringToSign);
