@@ -106,7 +106,15 @@ public class LocalizationService : ILocalizationService
         {
             var updated = _settingsService.Settings.Clone();
             updated.Language = _currentLanguage;
-            await _settingsService.SaveSettingsAsync(updated);
+            try
+            {
+                await _settingsService.SaveSettingsAsync(updated);
+            }
+            catch (Exception ex)
+            {
+                // Language still switches for this session; it just won't persist
+                Console.WriteLine($"Error saving language preference: {ex.Message}");
+            }
         }
         else if (_loadPersistedSettings)
         {
@@ -470,6 +478,7 @@ public class LocalizationService : ILocalizationService
         ["Settings_SaveDefaults"] = "Save Defaults",
         ["Settings_SaveEngines"] = "Save Engine Settings",
         ["Settings_DefaultsSaved"] = "Tournament default settings saved successfully.",
+        ["Settings_SaveFailed"] = "Settings could not be saved: {0}",
         ["Settings_EnginesSaved"] = "Pairing engine configuration saved successfully.",
         ["Settings_EngineNotInstalled"] = "Engine is not installed. Download or configure it before selecting.",
         ["Settings_DownloadInstallBtn"] = "Download & Install",
@@ -890,6 +899,7 @@ public class LocalizationService : ILocalizationService
         ["Settings_SaveDefaults"] = "Uložiť predvolené hodnoty",
         ["Settings_SaveEngines"] = "Uložiť nastavenia motorov",
         ["Settings_DefaultsSaved"] = "Predvolené hodnoty turnaja boli úspešne uložené.",
+        ["Settings_SaveFailed"] = "Nastavenia sa nepodarilo uložiť: {0}",
         ["Settings_EnginesSaved"] = "Nastavenie losovacích motorov bolo úspešne uložené.",
         ["Settings_EngineNotInstalled"] = "Motor nie je nainštalovaný. Pred výberom ho stiahnite alebo nastavte cestu.",
         ["Settings_DownloadInstallBtn"] = "Stiahnuť a nainštalovať",

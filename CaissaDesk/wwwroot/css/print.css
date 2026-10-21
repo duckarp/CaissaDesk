@@ -33,16 +33,60 @@
     .btn-danger, 
     .modal-header, 
     .modal-footer, 
-    .modal-overlay,
     .no-print {
         display: none !important;
     }
 
+    /*
+     * Print isolation: the sheet lives inside .modal-overlay, so hiding the overlay would hide the
+     * sheet too. Instead make everything invisible and re-show only the sheet subtree
+     * (visibility, unlike display, can be overridden by descendants).
+     */
+    body * {
+        visibility: hidden !important;
+    }
+
+    .printable-sheet-preview,
+    .printable-sheet-preview * {
+        visibility: visible !important;
+    }
+
+    /* Pin the overlay to the page origin; drop its viewport-fixed layout, clipping and backdrop so the sheet can flow across pages */
+    .modal-overlay {
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: auto !important;
+        bottom: auto !important;
+        display: block !important;
+        width: 100% !important;
+    }
+
+    .modal-content,
+    .modal-body {
+        position: static !important;
+        display: block !important;
+        width: 100% !important;
+        max-width: none !important;
+        padding: 0 !important;
+    }
+
+    .modal-overlay,
+    .modal-content,
+    .modal-body {
+        overflow: visible !important;
+        max-height: none !important;
+        height: auto !important;
+        background: transparent !important;
+        box-shadow: none !important;
+        border: none !important;
+        transform: none !important;
+        backdrop-filter: none !important;
+    }
+
     .printable-sheet-preview {
         display: block !important;
-        position: absolute;
-        top: 0;
-        left: 0;
+        position: static !important;
         width: 100% !important;
         max-height: none !important;
         overflow: visible !important;
