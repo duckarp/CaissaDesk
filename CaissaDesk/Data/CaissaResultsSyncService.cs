@@ -187,7 +187,7 @@ public class CaissaResultsSyncService : ICaissaResultsSyncService
             };
 
             var apiKey = _settingsService.Settings.CaissaResultsApiKey;
-            CaissaSecurity.SignRequest(request, pathAndQuery, json, apiKey, tournament.SyncKey);
+            CaissaSecurity.SignRequest(request, pathAndQuery, json, apiKey, tournament.SyncKey, includeBearerToken: false);
 
             using var response = await client.SendAsync(request, cancellationToken);
 
@@ -259,7 +259,7 @@ public class CaissaResultsSyncService : ICaissaResultsSyncService
             };
 
             var apiKey = _settingsService.Settings.CaissaResultsApiKey;
-            CaissaSecurity.SignRequest(request, pathAndQuery, json, apiKey, tournamentSyncKey);
+            CaissaSecurity.SignRequest(request, pathAndQuery, json, apiKey, tournamentSyncKey, includeBearerToken: false);
 
             using var response = await client.SendAsync(request, cancellationToken);
 
@@ -317,7 +317,7 @@ public class CaissaResultsSyncService : ICaissaResultsSyncService
             using var request = new HttpRequestMessage(HttpMethod.Delete, $"{baseUrl}{pathAndQuery}");
 
             var apiKey = _settingsService.Settings.CaissaResultsApiKey;
-            CaissaSecurity.SignRequest(request, pathAndQuery, string.Empty, apiKey, tournamentSyncKey);
+            CaissaSecurity.SignRequest(request, pathAndQuery, string.Empty, apiKey, tournamentSyncKey, includeBearerToken: false);
 
             using var response = await client.SendAsync(request, cancellationToken);
             return response.IsSuccessStatusCode;
