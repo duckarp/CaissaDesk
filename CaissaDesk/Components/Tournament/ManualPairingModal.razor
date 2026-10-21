@@ -1,0 +1,219 @@
+@namespace CaissaDesk.Components.Tournament
+@using Caissa.Shared.Models
+@using CaissaDesk.Core.Arbiter
+@using CaissaDesk.Components.Icons
+@using CaissaDesk.Localization
+@inject IArbiterService ArbiterService
+@inject ILocalizationService Loc
+@implements IDisposable
+
+@if (IsOpen && Tournament != null && Round != null)
+{
+	<div class="modal-overlay" @onclick="CloseAsync">
+		<div class="modal-content" style="max-width: 560px;" @onclick:stopPropagation="true">
+			<div class="modal-header">
+				<div class="modal-title">
+					<span style="color: var(--brand-gold);"><AppIcon Name="edit" Size="18" /></span>
+					<span>@(Pairing == null ? Loc["Manual_TitleAdd"] : Loc["Manual_TitleEdit", Pairing.BoardNumber, Round.RoundNumber])</span>
+				</div>
+				<button class="modal-close-btn" @onclick="CloseAsync" type="button" title="@Loc["Common_Close"]">
+					<AppIcon Name="x" Size="15" />
+				</button>
+			</div>
+
+			<div class="modal-body" style="display: flex; flex-direction: column; gap: 16px;">
+				<div class="form-group">
+					<label class="form-label">@Loc["Manual_BoardNumber"]</label>
+					<input type="number" class="form-input" min="1" max="500" @bind="_boardNumber" />
+				</div>
+
+				<!-- White Player Selector -->
+				<div class="form-group">
+					<label class="form-label">@Loc["Manual_WhitePlayer"]</label>
+					<select class="form-select" @bind="_whitePlayerId">
+						<option value="">@Loc["Manual_SelectWhite"]</option>
+						@foreach (var p in Tournament.Players.OrderBy(p => p.StartRank))
+						{
+							<option value="@p.Id">
+								@p.StartRank. @(!string.IsNullOrEmpty(p.Title) ? $"[{p.Title}] " : "")@p.FullName (@(p.FideRating > 0 ? p.FideRating.ToString() : "-"))
+							</option>
+						}
+					</select>
+				</div>
+
+				<!-- Black Player Selector (or Bye) -->
+				<div class="form-group">
+					<label class="form-label">@Loc["Manual_BlackPlayer"]</label>
+					<select class="form-select" @bind="_blackPlayerId">
+						<option value="">@Loc["Manual_NoneBye"]</option>
+						@foreach (var p in Tournament.Players.OrderBy(p => p.StartRank))
+						{
+							if (p.Id != _whitePlayerId)
+							{
+								<option value="@p.Id">
+									@p.StartRank. @(!string.IsNullOrEmpty(p.Title) ? $"[{p.Title}] " : "")@p.FullName (@(p.FideRating > 0 ? p.FideRating.ToString() : "-"))
+								</option>
+							}
+						}
+					</select>
+				</div>
+
+				<!-- Initial Match Result -->
+				<div class="form-group">
+					<label class="form-label">@Loc["Common_Result"]</label>
+					<select class="form-select" @bind="_result">
+						<option value="@MatchResult.NotPlayed">@Loc["Result_ResetNotPlayed"]</option>
+						<option value="@MatchResult.WhiteWin">@Loc["Result_WhiteWin"]</option>
+						<option value="@MatchResult.Draw">@Loc["Result_Draw"]</option>
+						<option value="@MatchResult.BlackWin">@Loc["Result_BlackWin"]</option>
+						<option value="@MatchResult.WhiteForfeit">@Loc["Result_WhiteForfeit"]</option>
+						<option value="@MatchResult.BlackForfeit">@Loc["Result_BlackForfeit"]</option>
+						<option value="@MatchResult.DoubleForfeit">@Loc["Result_DoubleForfeit"]</option>
+						<option value="@MatchResult.ByeFull">@Loc["Result_FullBye"]</option>
+						<option value="@MatchResult.ByeHalf">@Loc["Result_HalfBye"]</option>
+						<option value="@MatchResult.ByeZero">@Loc["Result_ZeroBye"]</option>
+					</select>
+				</div>
+
+				<!-- Remarks -->
+				<div class="form-group">
+					<label class="form-label">@Loc["Result_ArbiterRemarks"]</label>
+					<input type="text" class="form-input" placeholder="@Loc["Result_RemarksPlaceholder"]" @bind="_remarks" />
+				</div>
+			</div>
+
+			<div class="modal-footer" style="justify-content: space-between;">
+				@if (Pairing != null)
+				{
+					<button class="btn-danger" @onclick="RequestDeleteCurrentPairing">
+						<AppIcon Name="trash" Size="13" />
+						<span>@Loc["Manual_DeleteBoard"]</span>
+					</button>
+				}
+				else
+				{
+					<div></div>
+				}
+
+				<div style="display: flex; gap: 8px;">
+					<button class="btn-secondary" @onclick="CloseAsync">@Loc["Common_Cancel"]</button>
+					<button class="btn-primary" @onclick="SavePairingAsync" disabled="@string.IsNullOrEmpty(_whitePlayerId)">
+						<AppIcon Name="check" Size="13" />
+						<span>@Loc["Manual_SavePairing"]</span>
+					</button>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<ConfirmModal IsOpen="_showConfirmDelete"
+				  Title="@_confirmDeleteTitle"
+				  Message="@_confirmDeleteMessage"
+				  Details="@Loc["Confirm_CannotUndo"]"
+				  ConfirmText="@Loc["Common_Delete"]"
+				  HeaderIcon="trash"
+				  ConfirmIcon="trash"
+				  IsDestructive="true"
+				  OnConfirm="DeleteCurrentPairingAsync"
+				  OnCancel="() => _showConfirmDelete = false" />
+}
+
+@code {
+	[Parameter] public bool IsOpen { get; set; }
+	[Parameter] public Tournament? Tournament { get; set; }
+	[Parameter] public Round? Round { get; set; }
+	[Parameter] public Pairing? Pairing { get; set; }
+	[Parameter] public EventCallback OnClose { get; set; }
+	[Parameter] public EventCallback OnSaved { get; set; }
+
+	private bool _showConfirmDelete = false;
+	private string _confirmDeleteTitle = "";
+	private string _confirmDeleteMessage = "";
+
+	private void RequestDeleteCurrentPairing()
+	{
+		if (Pairing == null) return;
+		var white = Tournament?.GetPlayer(Pairing.WhitePlayerId);
+		var black = Tournament?.GetPlayer(Pairing.BlackPlayerId);
+		_confirmDeleteTitle = Loc["Confirm_DeletePairingTitle"];
+		_confirmDeleteMessage = Loc["Confirm_DeletePairingMsg",
+			Pairing.BoardNumber,
+			white?.FullName ?? Loc["Pairings_Bye"],
+			black?.FullName ?? Loc["Pairings_Bye"]];
+		_showConfirmDelete = true;
+	}
+
+	private int _boardNumber = 1;
+	private string _whitePlayerId = "";
+	private string _blackPlayerId = "";
+	private MatchResult _result = MatchResult.NotPlayed;
+	private string _remarks = "";
+
+	protected override void OnInitialized()
+	{
+		Loc.OnLanguageChanged += StateHasChanged;
+	}
+
+	protected override void OnParametersSet()
+	{
+		if (Pairing != null)
+		{
+			_boardNumber = Pairing.BoardNumber;
+			_whitePlayerId = Pairing.WhitePlayerId ?? "";
+			_blackPlayerId = Pairing.BlackPlayerId ?? "";
+			_result = Pairing.Result;
+			_remarks = Pairing.Remarks ?? "";
+		}
+		else if (Round != null)
+		{
+			_boardNumber = Round.Pairings.Count > 0 ? Round.Pairings.Max(p => p.BoardNumber) + 1 : 1;
+			_whitePlayerId = "";
+			_blackPlayerId = "";
+			_result = MatchResult.NotPlayed;
+			_remarks = "Manual Pairing";
+		}
+	}
+
+	public void Dispose()
+	{
+		Loc.OnLanguageChanged -= StateHasChanged;
+	}
+
+	private async Task CloseAsync()
+	{
+		_showConfirmDelete = false;
+		await OnClose.InvokeAsync();
+	}
+
+	private async Task SavePairingAsync()
+	{
+		if (Tournament == null || Round == null || string.IsNullOrEmpty(_whitePlayerId)) return;
+
+		string? blackId = string.IsNullOrWhiteSpace(_blackPlayerId) ? null : _blackPlayerId;
+
+		if (Pairing != null)
+		{
+			Pairing.BoardNumber = _boardNumber;
+			Pairing.WhitePlayerId = _whitePlayerId;
+			Pairing.BlackPlayerId = blackId;
+			Pairing.Result = _result;
+			Pairing.Remarks = string.IsNullOrWhiteSpace(_remarks) ? null : _remarks.Trim();
+			Pairing.IsManualOverride = true;
+		}
+		else
+		{
+			var newPairing = ArbiterService.AddManualPairing(Round, _whitePlayerId, blackId, _result, _remarks);
+			newPairing.BoardNumber = _boardNumber;
+		}
+
+		await OnSaved.InvokeAsync();
+	}
+
+	private async Task DeleteCurrentPairingAsync()
+	{
+		_showConfirmDelete = false;
+		if (Round == null || Pairing == null) return;
+		ArbiterService.DeletePairing(Round, Pairing.Id);
+		await OnSaved.InvokeAsync();
+	}
+}

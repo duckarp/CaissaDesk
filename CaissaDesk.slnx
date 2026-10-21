@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="Caissa.Shared/Caissa.Shared.csproj" />
+  <Project Path="CaissaDesk/CaissaDesk.csproj" />
+  <Project Path="CaissaDesk.Tests/CaissaDesk.Tests.csproj" />
+</Solution>

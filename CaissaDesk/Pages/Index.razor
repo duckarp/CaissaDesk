@@ -1,0 +1,48 @@
+@page "/"
+@using CaissaDesk.Components.Dashboard
+@using CaissaDesk.Components.Tournament
+@using CaissaDesk.Components.Settings
+@using CaissaDesk.Localization
+@inject WorkspaceState Workspace
+@inject ILocalizationService Loc
+@implements IDisposable
+
+<PageTitle>@Loc["App_Title"]</PageTitle>
+
+<WorkspaceTabs />
+
+<div class="workspace-view-container">
+	<div class="@(Workspace.ActiveTab is DashboardTab ? "workspace-view" : "workspace-view view-hidden")">
+		<DashboardHub />
+	</div>
+
+	@foreach (var tab in Workspace.Tabs.OfType<TournamentTab>())
+	{
+		bool isActive = tab == Workspace.ActiveTab;
+		<div @key="tab.Id" class="@(isActive ? "workspace-view" : "workspace-view view-hidden")">
+			<TournamentWorkbench Tab="tab" />
+		</div>
+	}
+
+	@foreach (var tab in Workspace.Tabs.OfType<SettingsTab>())
+	{
+		bool isActive = tab == Workspace.ActiveTab;
+		<div @key="tab.Id" class="@(isActive ? "workspace-view" : "workspace-view view-hidden")">
+			<SettingsControlCenter Tab="tab" />
+		</div>
+	}
+</div>
+
+@code {
+	protected override void OnInitialized()
+	{
+		Workspace.OnChange += StateHasChanged;
+		Loc.OnLanguageChanged += StateHasChanged;
+	}
+
+	public void Dispose()
+	{
+		Workspace.OnChange -= StateHasChanged;
+		Loc.OnLanguageChanged -= StateHasChanged;
+	}
+}

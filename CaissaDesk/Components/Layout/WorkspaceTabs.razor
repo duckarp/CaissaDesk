@@ -1,0 +1,97 @@
+@namespace CaissaDesk.Components.Layout
+@using CaissaDesk.Components
+@using CaissaDesk.Components.Icons
+@using CaissaDesk.Components.Dashboard
+@using Caissa.Shared.Models
+@using CaissaDesk.Localization
+@inject WorkspaceState Workspace
+@inject ILocalizationService Loc
+@implements IDisposable
+
+<header class="app-header">
+	<div class="app-brand" @onclick="Workspace.SelectDashboard" title="CaissaDesk - Chess Tournament Management Workstation">
+		<img src="images/icon.svg" alt="CaissaDesk" class="brand-logo-icon" />
+		<span class="brand-title">
+			<strong class="brand-caissa">CAISSA</strong><span class="brand-desk">DESK</span>
+		</span>
+		<span class="brand-badge" title="CaissaDesk Desktop Workstation">
+			<span>v1.0.0</span>
+		</span>
+	</div>
+
+	<div class="header-actions">
+		<button class="btn-secondary" title="@Loc["Nav_Settings"]" @onclick="() => Workspace.CreateSettingsTab()">
+			<AppIcon Name="settings" Size="14" />
+			<span>@Loc["Nav_Settings"]</span>
+		</button>
+		<button class="btn-primary" @onclick="OpenCreateTournamentModal">
+			<AppIcon Name="plus" Size="14" />
+			<span>@Loc["Nav_NewTournament"]</span>
+		</button>
+	</div>
+</header>
+
+<nav class="workspace-tabs-container">
+	<div class="tab-list">
+		@foreach (var tab in Workspace.Tabs)
+		{
+			bool isActive = tab == Workspace.ActiveTab;
+			string tabClass = isActive ? "workspace-tab tab-active" : "workspace-tab";
+
+			<button class="@tabClass" @onclick="() => Workspace.SelectTab(tab.Id)">
+				<span class="tab-icon">
+					<AppIcon Name="@tab.Icon" Size="14" />
+				</span>
+				<span>@(tab is DashboardTab ? Loc["Nav_Dashboard"] : tab is SettingsTab ? Loc["Nav_Settings"] : tab.Title)</span>
+				@if (tab.CanClose)
+				{
+					<span class="tab-close-btn" @onclick="() => Workspace.CloseTab(tab.Id)" @onclick:stopPropagation="true" title="@Loc["Nav_CloseTab"]">
+						<AppIcon Name="x" Size="10" />
+					</span>
+				}
+			</button>
+		}
+		<button class="new-tab-btn" title="@Loc["Nav_NewTournament"]" @onclick="OpenCreateTournamentModal" type="button">
+			<AppIcon Name="plus" Size="13" />
+		</button>
+	</div>
+</nav>
+
+<CreateTournamentModal IsOpen="_showCreateModal"
+					   OnClose="() => _showCreateModal = false"
+					   OnCreated="HandleTournamentCreated" />
+
+@code {
+	private bool _showCreateModal = false;
+
+	protected override void OnInitialized()
+	{
+		Workspace.OnChange += StateHasChanged;
+		Workspace.OnRequestCreateTournament += HandleRequestCreateTournament;
+		Loc.OnLanguageChanged += StateHasChanged;
+	}
+
+	private void OpenCreateTournamentModal()
+	{
+		_showCreateModal = true;
+	}
+
+	private void HandleRequestCreateTournament()
+	{
+		_showCreateModal = true;
+		StateHasChanged();
+	}
+
+	private void HandleTournamentCreated(Tournament tournament)
+	{
+		_showCreateModal = false;
+		Workspace.OpenTournament(tournament);
+	}
+
+	public void Dispose()
+	{
+		Workspace.OnChange -= StateHasChanged;
+		Workspace.OnRequestCreateTournament -= HandleRequestCreateTournament;
+		Loc.OnLanguageChanged -= StateHasChanged;
+	}
+}

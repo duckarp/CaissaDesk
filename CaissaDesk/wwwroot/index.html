@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>CaissaDesk</title>
+	<base href="/" />
+	<link rel="icon" type="image/svg+xml" href="favicon.svg" />
+	<link rel="alternate icon" type="image/png" href="favicon.png" />
+	<link rel="stylesheet" href="css/theme.css" />
+	<link rel="stylesheet" href="css/tabs.css" />
+	<link rel="stylesheet" href="css/layout.css" />
+	<link rel="stylesheet" href="css/settings.css" />
+	<link rel="stylesheet" href="css/print.css" />
+	<style>
+		/* Instant startup styles to prevent flash or unstyled content before external CSS loads */
+		body {
+			margin: 0;
+			background-color: #0e1117;
+			overflow: hidden;
+		}
+		.app-initial-splash {
+			position: fixed;
+			inset: 0;
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			justify-content: center;
+			background-color: #0e1117;
+			color: #f0f6fc;
+			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+			user-select: none;
+			z-index: 9999;
+		}
+		.app-splash-logo {
+			width: 64px;
+			height: 64px;
+			margin-bottom: 16px;
+			object-fit: contain;
+			filter: drop-shadow(0 0 12px rgba(250, 204, 21, 0.4));
+		}
+		.app-splash-title {
+			font-size: 22px;
+			font-weight: 700;
+			letter-spacing: -0.02em;
+			margin-bottom: 20px;
+			background: linear-gradient(135deg, #fef08a 0%, #facc15 35%, #eab308 70%, #ca8a04 100%);
+			-webkit-background-clip: text;
+			-webkit-text-fill-color: transparent;
+		}
+		.app-splash-spinner {
+			width: 32px;
+			height: 32px;
+			border: 3px solid #21262d;
+			border-top-color: #facc15;
+			border-radius: 50%;
+			animation: splash-spin 0.8s linear infinite;
+			margin-bottom: 14px;
+		}
+		.app-splash-text {
+			font-size: 13px;
+			color: #8b949e;
+			letter-spacing: 0.01em;
+		}
+		@keyframes splash-spin {
+			to { transform: rotate(360deg); }
+		}
+		#blazor-error-ui {
+			display: none;
+			background: #21262d;
+			color: #f0f6fc;
+			bottom: 0;
+			box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.5);
+			border-top: 1px solid #da3633;
+			left: 0;
+			padding: 0.75rem 1.25rem;
+			position: fixed;
+			width: 100%;
+			z-index: 10000;
+			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+			font-size: 13px;
+		}
+		#blazor-error-ui a.reload {
+			color: #facc15;
+			margin-left: 0.5rem;
+			text-decoration: underline;
+		}
+		#blazor-error-ui .dismiss {
+			cursor: pointer;
+			position: absolute;
+			right: 1rem;
+			top: 0.75rem;
+			color: #8b949e;
+		}
+	</style>
+</head>
+<body>
+	<div id="app">
+		<div class="app-initial-splash">
+			<img src="icon-128.png" alt="CaissaDesk" class="app-splash-logo" />
+			<div class="app-splash-title">CaissaDesk</div>
+			<div class="app-splash-spinner"></div>
+			<div class="app-splash-text">App is loading, please wait...</div>
+		</div>
+	</div>
+	<div id="blazor-error-ui" style="display: none;">
+		An unhandled error has occurred.
+		<a href="" class="reload">Reload</a>
+		<a class="dismiss">🗙</a>
+	</div>
+	<script src="js/soundService.js"></script>
+	<script>
+		window.downloadTextFile = function(filename, content) {
+			const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = filename;
+			document.body.appendChild(a);
+			a.click();
+			document.body.removeChild(a);
+			URL.revokeObjectURL(url);
+		};
+
+		window.printCurrentPage = function() {
+			window.print();
+		};
+	</script>
+	<script src="_framework/blazor.webview.js"></script>
+</body>
+</html>

@@ -1,0 +1,998 @@
+using System.Collections.Concurrent;
+using CaissaDesk.Data;
+
+namespace CaissaDesk.Localization;
+
+public class LocalizationService : ILocalizationService
+{
+    private readonly IAppSettingsService? _settingsService;
+    private readonly bool _loadPersistedSettings;
+    private string _currentLanguage = "en";
+    private readonly ConcurrentDictionary<string, LanguageInfo> _languages = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, string>> _dictionaries = new(StringComparer.OrdinalIgnoreCase);
+
+    public event Action? OnLanguageChanged;
+
+    public string CurrentLanguage => _currentLanguage;
+
+    public IReadOnlyList<LanguageInfo> SupportedLanguages =>
+        _languages.Values.OrderBy(l => l.Code == "en" ? 0 : l.Code == "sk" ? 1 : 2).ThenBy(l => l.Name).ToList();
+
+    public LocalizationService(IAppSettingsService? settingsService = null, bool loadPersistedSettings = true)
+    {
+        _settingsService = settingsService;
+        _loadPersistedSettings = loadPersistedSettings;
+
+        RegisterBuiltInLanguages();
+
+        if (loadPersistedSettings)
+        {
+            if (_settingsService != null && !string.IsNullOrWhiteSpace(_settingsService.Settings.Language) && _languages.ContainsKey(_settingsService.Settings.Language))
+            {
+                _currentLanguage = _settingsService.Settings.Language;
+            }
+            else
+            {
+                try
+                {
+                    string configDir = Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                        "CaissaDesk");
+                    string settingsPath = Path.Combine(configDir, "desk_settings.json");
+                    if (File.Exists(settingsPath))
+                    {
+                        string json = File.ReadAllText(settingsPath);
+                        using var doc = System.Text.Json.JsonDocument.Parse(json);
+                        if (doc.RootElement.TryGetProperty("Language", out var langProp) ||
+                            doc.RootElement.TryGetProperty("language", out langProp))
+                        {
+                            string? lang = langProp.GetString();
+                            if (!string.IsNullOrWhiteSpace(lang) && _languages.ContainsKey(lang))
+                            {
+                                _currentLanguage = lang;
+                            }
+                        }
+                    }
+                }
+                catch
+                {
+                    // Fall back to default
+                }
+            }
+        }
+    }
+
+    public string this[string key]
+    {
+        get
+        {
+            if (_dictionaries.TryGetValue(_currentLanguage, out var dict) && dict.TryGetValue(key, out var val))
+                return val;
+
+            if (_dictionaries.TryGetValue("en", out var enDict) && enDict.TryGetValue(key, out var enVal))
+                return enVal;
+
+            return key;
+        }
+    }
+
+    public string this[string key, params object[] args]
+    {
+        get
+        {
+            string template = this[key];
+            try
+            {
+                return string.Format(template, args);
+            }
+            catch
+            {
+                return template;
+            }
+        }
+    }
+
+    public async Task SetLanguageAsync(string languageCode)
+    {
+        if (string.IsNullOrWhiteSpace(languageCode) || !_languages.ContainsKey(languageCode))
+            return;
+
+        if (_currentLanguage.Equals(languageCode, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        _currentLanguage = languageCode.ToLowerInvariant();
+
+        if (_settingsService != null)
+        {
+            var updated = _settingsService.Settings.Clone();
+            updated.Language = _currentLanguage;
+            await _settingsService.SaveSettingsAsync(updated);
+        }
+        else if (_loadPersistedSettings)
+        {
+            try
+            {
+                string configDir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "CaissaDesk");
+                Directory.CreateDirectory(configDir);
+                string settingsPath = Path.Combine(configDir, "desk_settings.json");
+
+                var settings = new Dictionary<string, object>();
+                if (File.Exists(settingsPath))
+                {
+                    try
+                    {
+                        string json = File.ReadAllText(settingsPath);
+                        var existing = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(json);
+                        if (existing != null) settings = existing;
+                    }
+                    catch { }
+                }
+
+                settings["Language"] = _currentLanguage;
+                string updatedJson = System.Text.Json.JsonSerializer.Serialize(settings, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+                File.WriteAllText(settingsPath, updatedJson);
+            }
+            catch { }
+        }
+
+        OnLanguageChanged?.Invoke();
+    }
+
+    public void RegisterLanguage(LanguageInfo info, IReadOnlyDictionary<string, string> strings)
+    {
+        _languages[info.Code] = info;
+        var dict = _dictionaries.GetOrAdd(info.Code, _ => new ConcurrentDictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+        foreach (var (k, v) in strings)
+        {
+            dict[k] = v;
+        }
+    }
+
+    private void RegisterBuiltInLanguages()
+    {
+        RegisterLanguage(new LanguageInfo("en", "English", "English", "🇬🇧"), GetEnglishStrings());
+        RegisterLanguage(new LanguageInfo("sk", "Slovak", "Slovenčina", "🇸🇰"), GetSlovakStrings());
+    }
+
+    private static Dictionary<string, string> GetEnglishStrings() => new()
+    {
+        // App & Navigation
+        ["App_Title"] = "CaissaDesk - Chess Tournament Management",
+        ["Nav_Tournaments"] = "Tournaments",
+        ["Nav_NewTournament"] = "New Tournament",
+        ["Nav_Standings"] = "Standings",
+        ["Nav_Pairings"] = "Pairings",
+        ["Nav_Players"] = "Players",
+        ["Nav_Settings"] = "Settings",
+        ["Nav_Dashboard"] = "Dashboard",
+        ["Nav_CloseTab"] = "Close",
+        ["Nav_Export"] = "Export",
+        ["Nav_TRFExport"] = "FIDE TRF Export",
+        ["Nav_ChessResults"] = "Chess-Results Upload",
+        ["Nav_Print"] = "Print / PDF",
+
+        // Common
+        ["Common_Save"] = "Save",
+        ["Common_Cancel"] = "Cancel",
+        ["Common_Delete"] = "Delete",
+        ["Common_Edit"] = "Edit",
+        ["Common_Search"] = "Search...",
+        ["Common_Round"] = "Round",
+        ["Common_White"] = "White",
+        ["Common_Black"] = "Black",
+        ["Common_Result"] = "Result",
+        ["Common_Score"] = "Score",
+        ["Common_Rank"] = "Rank",
+        ["Common_Seed"] = "Seed",
+        ["Common_Name"] = "Name",
+        ["Common_FullName"] = "Full Name",
+        ["Common_FirstName"] = "First Name",
+        ["Common_LastName"] = "Last Name",
+        ["Common_Club"] = "Club / Team",
+        ["Common_Federation"] = "Federation",
+        ["Common_Rating"] = "Rating",
+        ["Common_NationalRating"] = "National Rating",
+        ["Common_Title"] = "Title",
+        ["Common_FideId"] = "FIDE ID",
+        ["Common_NationalId"] = "National ID",
+        ["Common_Points"] = "Points",
+        ["Common_Games"] = "Games",
+        ["Common_Buchholz"] = "Buchholz",
+        ["Common_SonnebornBerger"] = "Sonneborn-Berger",
+        ["Common_Open"] = "Open",
+        ["Common_Arbiter"] = "Arbiter",
+        ["Common_Venue"] = "Venue",
+        ["Common_Status"] = "Status",
+        ["Common_Actions"] = "Actions",
+        ["Common_Board"] = "Board",
+        ["Common_Born"] = "Born",
+        ["Common_Dismiss"] = "Dismiss",
+        ["Common_Done"] = "Done",
+        ["Common_Close"] = "Close",
+        ["Common_SaveChanges"] = "Save Changes",
+        ["Common_Gender"] = "Gender",
+        ["Common_Male"] = "Male",
+        ["Common_Female"] = "Female",
+        ["Common_Confirm"] = "Confirm",
+
+        // Confirmations
+        ["Confirm_DeleteTournamentTitle"] = "Delete Tournament",
+        ["Confirm_DeleteTournamentMsg"] = "Are you sure you want to permanently delete tournament \"{0}\"? All rounds, pairings, and results will be lost.",
+        ["Confirm_ArchiveTournamentTitle"] = "Archive Tournament",
+        ["Confirm_ArchiveTournamentMsg"] = "Are you sure you want to archive tournament \"{0}\"? It will be marked as finished and moved to the archive.",
+        ["Confirm_UnarchiveTournamentTitle"] = "Restore Tournament",
+        ["Confirm_UnarchiveTournamentMsg"] = "Are you sure you want to restore tournament \"{0}\" to active tournaments?",
+        ["Confirm_DeletePlayerTitle"] = "Remove Player",
+        ["Confirm_DeletePlayerMsg"] = "Are you sure you want to remove \"{0}\" from the roster?",
+        ["Confirm_DeletePairingTitle"] = "Delete Pairing",
+        ["Confirm_DeletePairingMsg"] = "Are you sure you want to delete board {0} ({1} vs {2})?",
+        ["Confirm_RegeneratePairingsTitle"] = "Reset & Regenerate Tournament",
+        ["Confirm_RegeneratePairingsMsg"] = "Are you sure you want to reset and regenerate pairings? All existing rounds and entered results will be cleared.",
+        ["Confirm_ResetRoundTitle"] = "Reset Round {0}",
+        ["Confirm_ResetRoundMsg"] = "Are you sure you want to reset Round {0}? All pairings and entered results for Round {0} will be cleared and regenerated.",
+        ["Confirm_DeleteRoundTitle"] = "Delete Round {0}",
+        ["Confirm_DeleteRoundMsg"] = "Are you sure you want to delete Round {0}? All pairings and results for this round will be removed.",
+        ["Confirm_CannotUndo"] = "This action cannot be undone.",
+
+        // Dashboard
+        ["Dashboard_Subtitle"] = "Modern FIDE Swiss & Round Robin Arbiter Workstation",
+        ["Dashboard_LoadSample"] = "Load Sample Tournament",
+        ["Dashboard_ImportCdesk"] = "Import .cdesk",
+        ["Dashboard_StatTournaments"] = "Tournaments Managed",
+        ["Dashboard_StatPlayers"] = "Registered Players",
+        ["Dashboard_StatFideRated"] = "FIDE Rated Events",
+        ["Dashboard_EmptyTitle"] = "No Tournaments Yet",
+        ["Dashboard_EmptyDesc"] = "Create your first Swiss or Round Robin tournament, or load a pre-configured sample tournament to explore the interface.",
+        ["Dashboard_ExportCdeskTooltip"] = "Export tournament file (.cdesk)",
+        ["Dashboard_ExportSuccess"] = "Tournament successfully exported to {0}",
+        ["Dashboard_ExportError"] = "Failed to export tournament: {0}",
+        ["Export_CdeskDialogTitle"] = "Export Tournament (.cdesk)",
+        ["Export_CdeskFilterName"] = "CaissaDesk Tournament (*.cdesk)",
+        ["Export_TrfDialogTitle"] = "Export FIDE TRF (.trf)",
+        ["Export_TrfFilterName"] = "FIDE Tournament Report File (*.trf)",
+        ["Dashboard_DeleteTooltip"] = "Delete tournament",
+        ["Dashboard_TabActive"] = "Active ({0})",
+        ["Dashboard_TabArchived"] = "Archived ({0})",
+        ["Dashboard_ArchiveTournament"] = "Archive tournament",
+        ["Dashboard_UnarchiveTournament"] = "Restore to active list",
+        ["Dashboard_ArchivedBadge"] = "Archived",
+        ["Dashboard_FinishedBadge"] = "Finished",
+        ["Dashboard_EmptyArchivedTitle"] = "No Archived Tournaments",
+        ["Dashboard_EmptyArchivedDesc"] = "Completed tournaments that are marked as finished will appear here in your archives.",
+        ["Dashboard_EmptyActiveTitle"] = "No Active Tournaments",
+        ["Dashboard_EmptyActiveDesc"] = "All tournaments are currently archived, or create a new tournament to start.",
+        ["Dashboard_NoMatchTitle"] = "No Matching Tournaments",
+        ["Dashboard_NoMatchDesc"] = "Try adjusting your search query or filters.",
+        ["Dashboard_ResetFilters"] = "Reset Filters",
+        ["Dashboard_FilterAllSystems"] = "All Systems",
+        ["Dashboard_FilterAllRatings"] = "All Events",
+        ["Dashboard_FilterFideOnly"] = "FIDE Rated Only",
+        ["Dashboard_SortBy"] = "Sort by...",
+        ["Dashboard_SortDateDesc"] = "Date: Newest",
+        ["Dashboard_SortDateAsc"] = "Date: Oldest",
+        ["Dashboard_SortNameAsc"] = "Name: A - Z",
+        ["Dashboard_SortNameDesc"] = "Name: Z - A",
+        ["Dashboard_SortPlayersDesc"] = "Players: Most",
+        ["Dashboard_SortRoundsDesc"] = "Rounds: Most",
+        ["Dashboard_FilterCount"] = "{0} of {1} tournaments",
+
+        // Create Tournament Modal
+        ["Tournament_Name"] = "Tournament Name",
+        ["Tournament_System"] = "Tournament System",
+        ["Tournament_SwissDutch"] = "Swiss Dutch System (FIDE C.04)",
+        ["Tournament_RoundRobin"] = "Round Robin (Berger Tables)",
+        ["Tournament_TimeControl"] = "Time Control Category",
+        ["Tournament_TimeControlSpec"] = "Time Control Specification",
+        ["Tournament_TotalRounds"] = "Total Rounds",
+        ["Tournament_ChiefArbiter"] = "Chief Arbiter",
+        ["Tournament_Venue"] = "Venue / Location",
+        ["Tournament_Federation"] = "Federation",
+        ["Tournament_FideRated"] = "FIDE Rated Event",
+        ["Tournament_SeedingPrecedence"] = "Seeding Precedence",
+        ["Tournament_FideFirst"] = "FIDE Rating First",
+        ["Tournament_NationalFirst"] = "National Rating First",
+        ["Tournament_Organizer"] = "Organizer",
+        ["Tournament_DeputyArbiter"] = "Deputy Arbiter",
+        ["Tournament_Dates"] = "Tournament Dates",
+        ["Tournament_StartDate"] = "Start Date",
+        ["Tournament_EndDate"] = "End Date",
+        ["Tournament_MinRoundsNotice"] = "Minimum allowed: {0} ({1} finished round(s))",
+        ["Tournament_MinRoundsError"] = "Total rounds cannot be less than {0} because {0} round(s) have finished or have recorded results.",
+        ["Tournament_DetailsSaved"] = "Tournament details saved successfully.",
+        ["Tournament_EditTitle"] = "Edit Tournament Details",
+        ["Dashboard_EditTournamentTooltip"] = "Edit tournament details",
+        ["Tournament_CreateBtn"] = "Create Tournament",
+
+        // Time Control Categories
+        ["TimeControl_Standard"] = "Standard",
+        ["TimeControl_Rapid"] = "Rapid",
+        ["TimeControl_Blitz"] = "Blitz",
+
+        // Workbench Tabs & Common
+        ["Workbench_Loading"] = "Loading tournament data...",
+        ["Workbench_NotFoundTitle"] = "Tournament Not Found",
+        ["Workbench_NotFoundDesc"] = "The requested tournament could not be loaded or no longer exists.",
+        ["Workbench_CloseTab"] = "Close Tab",
+        ["Workbench_PlayersTab"] = "Players ({0})",
+        ["Workbench_RoundsTab"] = "Rounds & Pairings ({0})",
+        ["Workbench_PrintReports"] = "Print & Reports",
+        ["Workbench_TotalRounds"] = "{0} Rounds",
+        ["Workbench_ArbiterLabel"] = "Arbiter: {0}",
+        ["Workbench_StatusActive"] = "Tournament in progress",
+        ["Workbench_StatusFinished"] = "Tournament finished & archived",
+        ["Workbench_MarkFinishedBtn"] = "Mark Finished & Archive",
+        ["Workbench_RestoreActiveBtn"] = "Restore Tournament to Active",
+        ["Workbench_LifecycleTitle"] = "Tournament Lifecycle & Status",
+        ["Workbench_LifecycleDesc"] = "Manage completion and archiving for this tournament",
+        ["Workbench_FinishedBadge"] = "Finished",
+
+        // Roster View
+        ["Roster_Title"] = "Starting Player Roster",
+        ["Roster_Count"] = "{0} players registered",
+        ["Roster_AttendanceByes"] = "Attendance & Byes",
+        ["Roster_Reseed"] = "Reseed Starting Ranks",
+        ["Roster_RegisterPlayer"] = "Register Player",
+        ["Roster_EmptyTitle"] = "No Players Registered Yet",
+        ["Roster_EmptyDesc"] = "Register players manually or use the FIDE auto-lookup tool.",
+        ["Roster_AddFirstPlayer"] = "Add First Player",
+        ["Roster_FideAutoLookup"] = "FIDE ID Auto-Lookup",
+        ["Roster_Fetch"] = "Fetch",
+        ["Roster_FideElo"] = "FIDE Elo",
+        ["Roster_NatElo"] = "Nat Elo",
+        ["Roster_BirthYear"] = "Birth Year",
+        ["Roster_AddPlayerBtn"] = "Add Player",
+        ["Roster_SearchingFide"] = "Searching FIDE profile...",
+        ["Roster_EditPlayer"] = "Edit Player",
+        ["Roster_EditPlayerBtn"] = "Save Changes",
+        ["Roster_FideId"] = "FIDE ID",
+        ["Roster_FideLookupPrompt"] = "Enter FIDE ID or Full Name...",
+        ["Roster_SyncFideBtn"] = "Update All from FIDE",
+        ["Roster_SyncFideTooltip"] = "Refresh current FIDE ratings and titles for all registered players",
+        ["Roster_SyncingFideProgress"] = "Syncing with FIDE ({0}/{1})...",
+        ["Roster_SyncSuccess"] = "Successfully updated {0} of {1} player(s) from FIDE.",
+        ["Roster_FideLookupSuccess"] = "FIDE data loaded for {0}",
+        ["Roster_FideLookupNotFound"] = "Player not found on ratings.fide.com",
+        ["Roster_FideLookupEmptyQuery"] = "Please enter a FIDE ID or Name to look up",
+
+        // Pairings View
+        ["Pairings_Title"] = "Rounds & Pairings",
+        ["Pairings_ClickToEnter"] = "Click on any match result to enter score or arbiter remarks",
+        ["Pairings_Engine"] = "Engine: {0}",
+        ["Pairings_ArbiterMode"] = "Arbiter Mode",
+        ["Pairings_ArbiterModeOn"] = "Arbiter Mode ON",
+        ["Pairings_ManualBoard"] = "Manual Board",
+        ["Pairings_Generate"] = "Generate Pairings",
+        ["Pairings_GenerateNow"] = "Generate Pairings Now",
+        ["Pairings_PairRound"] = "Pair Round {0}",
+        ["Pairings_Pending"] = "{0} pending",
+        ["Pairings_ResetRegenerate"] = "Reset & Regenerate",
+        ["Pairings_ResetRound"] = "Reset Round {0}",
+        ["Pairings_DeleteRound"] = "Delete Round {0}",
+        ["Pairings_SwapColors"] = "Swap White and Black colors",
+        ["Pairings_EditBoard"] = "Edit board pairing",
+        ["Pairings_DeleteBoard"] = "Delete board",
+        ["Pairings_EmptyTitle"] = "No Pairings Generated Yet",
+        ["Pairings_EmptySwiss"] = "Ready to generate Round 1 pairings for your player roster.",
+        ["Pairings_EmptyRR"] = "Ready to generate official FIDE Berger tables for your player roster.",
+        ["Pairings_Remarks"] = "Remarks",
+        ["Pairings_ManualBadge"] = "Manual Arbiter Override",
+        ["Pairings_WhitePlayer"] = "White Player",
+        ["Pairings_BlackPlayer"] = "Black Player",
+        ["Pairings_RoundNum"] = "Round {0}",
+
+        // Warning Modal (Pending Games)
+        ["Warning_CannotPairTitle"] = "Cannot Pair Round {0} — Games Pending",
+        ["Warning_CannotPairDesc"] = "Round {0} still has {1} match(es) with no result entered. All match results must be confirmed before next round pairings can be generated.",
+        ["Warning_EnterInstruction"] = "Click Enter to record a match score (1-0, ½-½, 0-1, or forfeit).",
+        ["Warning_GoToBoardTable"] = "Go to Round {0} Board Table",
+        ["Warning_Enter"] = "Enter",
+
+        // Standings View
+        ["Standings_Title"] = "Tournament Standings",
+        ["Standings_Subtitle"] = "Real-time points updated automatically from match results",
+        ["Standings_Leaderboard"] = "Leaderboard",
+        ["Standings_CrossTable"] = "Cross-Table (Berger)",
+
+        // Tournament Settings View
+        ["Settings_Config"] = "Tournament Configuration",
+        ["Settings_General"] = "General Info",
+        ["Settings_Tiebreaks"] = "FIDE Tiebreak Stack",
+        ["Settings_TiebreakDesc"] = "Select an official FIDE preset or customize the tiebreak priority order",
+        ["Settings_PresetSwiss"] = "Standard Swiss (FIDE)",
+        ["Settings_PresetRR"] = "Round Robin (Berger)",
+        ["Settings_PresetChampionship"] = "FIDE Championship",
+        ["Settings_ActivePriority"] = "Active Priority Chain",
+        ["Settings_EngineProvider"] = "Swiss Pairing Engine Provider",
+        ["Settings_EngineDesc"] = "Select the backend engine used to compute FIDE Dutch pairings",
+        ["Settings_DataExchange"] = "Data Exchange & Export",
+        ["Settings_DataExchangeDesc"] = "Export this tournament for official FIDE rating calculation, backup archives, or transfer to another arbiter workstation.",
+        ["Settings_ExportTrf"] = "Export FIDE TRF (.trf)",
+        ["Settings_ExportCdesk"] = "Export Standalone (.cdesk)",
+
+        // Tiebreak Criteria
+        ["Tiebreak_DirectEncounter"] = "Direct Encounter",
+        ["Tiebreak_BuchholzCut1"] = "Buchholz (Cut 1)",
+        ["Tiebreak_Buchholz"] = "Buchholz (Full)",
+        ["Tiebreak_BuchholzCut2"] = "Buchholz (Cut 2)",
+        ["Tiebreak_MedianBuchholz"] = "Median Buchholz",
+        ["Tiebreak_SonnebornBerger"] = "Sonneborn-Berger",
+        ["Tiebreak_MostWins"] = "Greater Number of Wins",
+        ["Tiebreak_MostBlack"] = "Games with Black",
+        ["Tiebreak_Aroc"] = "Average Rating of Opponents (AROC)",
+        ["Tiebreak_Aroc1"] = "Average Rating of Opponents Cut 1 (AROC-1)",
+        ["Tiebreak_Koya"] = "Koya System",
+        ["Tiebreak_ExtendedKoya"] = "Extended Koya System",
+        ["Tiebreak_Add"] = "Add Criterion",
+        ["Tiebreak_MoveUp"] = "Move Up",
+        ["Tiebreak_MoveDown"] = "Move Down",
+        ["Tiebreak_Remove"] = "Remove",
+        ["Tiebreak_SelectToAdd"] = "Select tiebreak to add...",
+        ["Tiebreak_Empty"] = "No tiebreak criteria configured. Players will be ranked strictly by points and seed.",
+
+        // Settings Control Center - Tournament Defaults & Pairing Engines
+        ["Settings_Title"] = "Control Center",
+        ["Settings_Subtitle"] = "System preferences, tournament defaults, pairing engines and cloud sync",
+        ["Settings_Nav_General"] = "Language & Region",
+        ["Settings_Nav_General_Desc"] = "UI language & regional settings",
+        ["Settings_Nav_Defaults"] = "Tournament Defaults",
+        ["Settings_Nav_Defaults_Desc"] = "Arbiter, venue & structure presets",
+        ["Settings_Nav_Engines"] = "Pairing Engines",
+        ["Settings_Nav_Engines_Desc"] = "FIDE Swiss engines & installer",
+        ["Settings_Nav_Sync"] = "CaissaResults Cloud",
+        ["Settings_Nav_Sync_Desc"] = "Live web broadcast & sync link",
+        ["Settings_Nav_About"] = "About CaissaDesk",
+        ["Settings_Nav_About_Desc"] = "Version, standards & license",
+        ["Settings_TournamentDefaults"] = "Tournament Defaults",
+        ["Settings_TournamentDefaultsDesc"] = "Configure default values automatically applied when creating new tournaments.",
+        ["Settings_PairingEngines"] = "Pairing Engines",
+        ["Settings_PairingEnginesDesc"] = "Manage Swiss pairing engines, customize executable paths, and test pairing generation.",
+        ["Settings_DefaultArbiterVenueCard"] = "Default Arbiter & Venue",
+        ["Settings_DefaultTournamentStructureCard"] = "Default Tournament Structure",
+        ["Settings_EngineNativeTitle"] = "Native Dutch (FIDE C.04)",
+        ["Settings_EngineNativeDesc"] = "Built-in 100% C# pairing engine, zero external dependencies. Always available.",
+        ["Settings_EngineBbpTitle"] = "bbpPairings (FIDE Certified C++)",
+        ["Settings_EngineBbpDesc"] = "Official FIDE certified pairing engine by Guillaume Gautier. Requires bbpPairings binary.",
+        ["Settings_EngineJaVaFoTitle"] = "JaVaFo (FIDE Reference Engine)",
+        ["Settings_EngineJaVaFoDesc"] = "FIDE reference Swiss engine by Roberto Ricca. Requires Java JRE and javafo.jar.",
+        ["Settings_TestEngineBtn"] = "Test Engine",
+        ["Settings_TestingEngine"] = "Testing engine...",
+        ["Settings_TestSuccess"] = "Test Passed: Successfully generated {0} pairings ({1} ms)",
+        ["Settings_TestFailed"] = "Test Failed: {0}",
+        ["Settings_EngineStatusReady"] = "Ready",
+        ["Settings_EngineStatusMissing"] = "Executable Missing",
+        ["Settings_EnginePathDetected"] = "Detected Path: {0}",
+        ["Settings_EnginePathCustom"] = "Custom Executable Path",
+        ["Settings_EngineJavaPathCustom"] = "Custom Java Path (java/javaw)",
+        ["Settings_EngineJarPathCustom"] = "Custom javafo.jar Path",
+        ["Settings_DefaultSwissEngine"] = "Default Swiss Engine",
+        ["Settings_SaveDefaults"] = "Save Defaults",
+        ["Settings_SaveEngines"] = "Save Engine Settings",
+        ["Settings_DefaultsSaved"] = "Tournament default settings saved successfully.",
+        ["Settings_EnginesSaved"] = "Pairing engine configuration saved successfully.",
+        ["Settings_EngineNotInstalled"] = "Engine is not installed. Download or configure it before selecting.",
+        ["Settings_DownloadInstallBtn"] = "Download & Install",
+        ["Settings_Downloading"] = "Downloading...",
+        ["Settings_Installing"] = "Installing...",
+        ["Settings_InstallSuccess"] = "{0} installed successfully and is ready to use!",
+        ["Settings_InstallFailed"] = "Installation failed: {0}",
+        ["Settings_SelectDisabledTooltip"] = "Cannot select an engine that is not installed on this system.",
+        ["Settings_EngineGuideTitle"] = "Which Pairing Engine Should You Pick?",
+        ["Settings_EngineGuideSubtitle"] = "Practical advice for arbiters to pick the right engine for their tournament tier and requirements.",
+        ["Settings_EngineNativeBadge"] = "Built-in • Zero Setup",
+        ["Settings_EngineNativeAdvise"] = "Best for club championships, weekend rapid/blitz tournaments, and immediate setup without external dependencies. Complies with FIDE Dutch rules (Section C.04).",
+        ["Settings_EngineBbpBadge"] = "FIDE Certified • High Speed",
+        ["Settings_EngineBbpAdvise"] = "Best for official FIDE rated tournaments, large open festivals (100+ players), and arbiters wanting maximum pairing speed. Certified by FIDE SPP Commission.",
+        ["Settings_EngineJaVaFoBadge"] = "FIDE Reference • Swiss-Manager Standard",
+        ["Settings_EngineJaVaFoAdvise"] = "Best for FIDE title norm tournaments and events requiring identical pairing choices to Swiss-Manager / Chess-Results. Requires Java JRE.",
+        ["Settings_EngineWhenToPick"] = "When to pick:",
+        ["Settings_EnginePros"] = "Key Advantages:",
+        ["Settings_EnginePrereqs"] = "Prerequisites:",
+        ["Settings_EnginePrereqNone"] = "None (ready to run anywhere)",
+        ["Settings_EnginePrereqBbp"] = "bbpPairings binary (can be installed with 1-click above)",
+        ["Settings_EnginePrereqJaVaFo"] = "Java Runtime (JRE 8+) + javafo.jar",
+
+        // Attendance & Byes Modal
+        ["Attendance_Title"] = "Attendance, Byes & Player Status",
+        ["Attendance_Subtitle"] = "Schedule advance ½-point or 0-point byes per round, or withdraw players who left the event.",
+        ["Attendance_LateReg"] = "Late Player Registration",
+        ["Attendance_HideLateReg"] = "Hide Late Registration",
+        ["Attendance_LateRegTitle"] = "Register Late Player Mid-Tournament",
+        ["Attendance_MissedRounds"] = "Award for Past Missed Rounds:",
+        ["Attendance_AddLateBtn"] = "Add Player to Tournament",
+        ["Attendance_Withdraw"] = "Withdraw",
+        ["Attendance_Reactivate"] = "Reactivate",
+        ["Bye_HalfPerRound"] = "½-Point Bye per round",
+        ["Bye_ZeroPerRound"] = "0-Point Bye per round",
+        ["Bye_NoByes"] = "No Byes",
+
+        // Match Result Dialog
+        ["Result_DialogTitle"] = "Round {0} • Board {1}",
+        ["Result_WhiteWin"] = "1 - 0 (White Wins)",
+        ["Result_Draw"] = "½ - ½ (Draw)",
+        ["Result_BlackWin"] = "0 - 1 (Black Wins)",
+        ["Result_WhiteWinShort"] = "White Wins",
+        ["Result_DrawShort"] = "Draw",
+        ["Result_BlackWinShort"] = "Black Wins",
+        ["Result_Forfeits"] = "Forfeits & Penalties",
+        ["Result_WhiteForfeit"] = "1F - 0 (White Forfeit Win)",
+        ["Result_BlackForfeit"] = "0 - 1F (Black Forfeit Win)",
+        ["Result_DoubleForfeit"] = "0F - 0F (Double Forfeit)",
+        ["Result_ByesTitle"] = "Byes & Unplayed Results",
+        ["Result_FullBye"] = "1 - 0 (Full Point Bye)",
+        ["Result_HalfBye"] = "½ (Half Point Bye)",
+        ["Result_ZeroBye"] = "0 (Zero Point Bye)",
+        ["Result_ResetNotPlayed"] = "Reset to Not Played",
+        ["Result_ArbiterRemarks"] = "Arbiter Remarks",
+        ["Result_RemarksPlaceholder"] = "e.g. Time forfeit, arbiter ruling, phone violation",
+        ["Result_ConfirmBtn"] = "Confirm Result",
+
+        // Manual Pairing Modal
+        ["Manual_TitleAdd"] = "Add Manual Board Pairing",
+        ["Manual_TitleEdit"] = "Edit Board {0} (Round {1})",
+        ["Manual_BoardNumber"] = "Board Number",
+        ["Manual_WhitePlayer"] = "White Player",
+        ["Manual_BlackPlayer"] = "Black Player (Leave empty for Bye)",
+        ["Manual_SelectWhite"] = "-- Select White Player --",
+        ["Manual_NoneBye"] = "[ None / BYE ]",
+        ["Manual_DeleteBoard"] = "Delete Board",
+        ["Manual_SavePairing"] = "Save Pairing",
+
+        // Print Sheets & TRF Export Modal
+        ["Print_Title"] = "Official Tournament Print Sheets & TRF Export",
+        ["Print_PairingsBoard"] = "Pairings (Board)",
+        ["Print_PairingsAlpha"] = "Pairings (Alphabetical)",
+        ["Print_BergerTable"] = "Berger Cross-Table",
+        ["Print_MatchSlips"] = "Match Score Slips",
+        ["Print_FideTrf"] = "FIDE TRF (Rating)",
+        ["Print_Round"] = "Round:",
+        ["Print_PrintPdf"] = "Print / Save PDF",
+        ["Print_DownloadTrf"] = "Download .TRF",
+        ["Print_PairingsForRound"] = "Pairings for Round {0}",
+        ["Print_AlphaForRound"] = "Alphabetical Pairings for Round {0} (Tournament Hall Wall Board)",
+        ["Print_OfficialStandings"] = "Official Tournament Standings",
+        ["Print_BergerMatrix"] = "Berger Cross-Table (N x N Matrix)",
+        ["Print_MatchCardsTitle"] = "Table Match Result Cards / Placards (Round {0})",
+        ["Print_TrfTitle"] = "Official FIDE Tournament Report File (132-Column TRF)",
+        ["Print_TrfSubtitle"] = "Conforms to FIDE rating server specifications. Can be saved as a .trf file and uploaded directly to rating.fide.com.",
+        ["Print_ArbiterSig"] = "Arbiter Signature: ____________________________",
+        ["Print_ChiefArbiterSig"] = "Chief Arbiter: ____________________________",
+        ["Print_GeneratedBy"] = "Official pairing generated by CaissaDesk Tournament Workstation",
+        ["Print_WhiteSig"] = "White Sig: ______________",
+        ["Print_BlackSig"] = "Black Sig: ______________",
+        ["Print_WhitePlayerName"] = "White Player Name",
+        ["Print_BlackPlayerName"] = "Black Player Name",
+        ["Print_Opponent"] = "Opponent",
+        ["Print_OppElo"] = "Opp Elo",
+        ["Print_BoardCard"] = "BOARD {0}",
+        ["Print_NoPairings"] = "No pairings generated for Round {0}",
+        ["Print_Date"] = "Date: {0}",
+
+        // Settings Control Center
+        ["Settings_CenterSubtitle"] = "System preferences and arbiter defaults",
+        ["Settings_LangRegional"] = "Language & Regional",
+        ["Settings_InterfaceLang"] = "Interface Language",
+        ["Settings_InterfaceLangDesc"] = "Select the language for arbiter menus and reports",
+    };
+
+    private static Dictionary<string, string> GetSlovakStrings() => new()
+    {
+        // App & Navigation
+        ["App_Title"] = "CaissaDesk - Správa šachových turnajov",
+        ["Nav_Tournaments"] = "Turnaje",
+        ["Nav_NewTournament"] = "Nový turnaj",
+        ["Nav_Standings"] = "Poradie",
+        ["Nav_Pairings"] = "Nalosovania",
+        ["Nav_Players"] = "Hráči",
+        ["Nav_Settings"] = "Nastavenia",
+        ["Nav_Dashboard"] = "Prehľad",
+        ["Nav_CloseTab"] = "Zavrieť",
+        ["Nav_Export"] = "Export",
+        ["Nav_TRFExport"] = "FIDE TRF Export",
+        ["Nav_ChessResults"] = "Odoslať na Chess-Results",
+        ["Nav_Print"] = "Tlač / PDF",
+
+        // Common
+        ["Common_Save"] = "Uložiť",
+        ["Common_Cancel"] = "Zrušiť",
+        ["Common_Delete"] = "Zmazať",
+        ["Common_Edit"] = "Upraviť",
+        ["Common_Search"] = "Hľadať...",
+        ["Common_Round"] = "Kolo",
+        ["Common_White"] = "Biely",
+        ["Common_Black"] = "Čierny",
+        ["Common_Result"] = "Výsledok",
+        ["Common_Score"] = "Skóre",
+        ["Common_Rank"] = "Poradie",
+        ["Common_Seed"] = "Nas.",
+        ["Common_Name"] = "Meno",
+        ["Common_FullName"] = "Celé meno",
+        ["Common_FirstName"] = "Meno",
+        ["Common_LastName"] = "Priezvisko",
+        ["Common_Club"] = "Klub / Oddiel",
+        ["Common_Federation"] = "Federácia",
+        ["Common_Rating"] = "Rating",
+        ["Common_NationalRating"] = "Národný rating",
+        ["Common_Title"] = "Titul",
+        ["Common_FideId"] = "FIDE ID",
+        ["Common_NationalId"] = "Národné ID",
+        ["Common_Points"] = "Body",
+        ["Common_Games"] = "Partie",
+        ["Common_Buchholz"] = "Buchholz",
+        ["Common_SonnebornBerger"] = "Sonneborn-Berger",
+        ["Common_Open"] = "Otvoriť",
+        ["Common_Arbiter"] = "Rozhodca",
+        ["Common_Venue"] = "Miesto",
+        ["Common_Status"] = "Stav",
+        ["Common_Actions"] = "Akcie",
+        ["Common_Board"] = "Šachovnica",
+        ["Common_Born"] = "Rok",
+        ["Common_Dismiss"] = "Zavrieť",
+        ["Common_Done"] = "Hotovo",
+        ["Common_Close"] = "Zavrieť",
+        ["Common_SaveChanges"] = "Uložiť zmeny",
+        ["Common_Gender"] = "Pohlavie",
+        ["Common_Male"] = "Muž",
+        ["Common_Female"] = "Žena",
+        ["Common_Confirm"] = "Potvrdiť",
+
+        // Confirmations
+        ["Confirm_DeleteTournamentTitle"] = "Zmazať turnaj",
+        ["Confirm_DeleteTournamentMsg"] = "Naozaj chcete natrvalo zmazať turnaj \"{0}\"? Všetky kolá, nasadenia a výsledky budú stratené.",
+        ["Confirm_ArchiveTournamentTitle"] = "Archivovať turnaj",
+        ["Confirm_ArchiveTournamentMsg"] = "Naozaj chcete archivovať turnaj \"{0}\"? Bude označený ako ukončený a presunutý do archívu.",
+        ["Confirm_UnarchiveTournamentTitle"] = "Obnoviť turnaj",
+        ["Confirm_UnarchiveTournamentMsg"] = "Naozaj chcete obnoviť turnaj \"{0}\" medzi aktívne turnaje?",
+        ["Confirm_DeletePlayerTitle"] = "Odstrániť hráča",
+        ["Confirm_DeletePlayerMsg"] = "Naozaj chcete odstrániť hráča \"{0}\" zo štartovej listiny?",
+        ["Confirm_DeletePairingTitle"] = "Zmazať šachovnicu",
+        ["Confirm_DeletePairingMsg"] = "Naozaj chcete zmazať šachovnicu {0} ({1} vs {2})?",
+        ["Confirm_RegeneratePairingsTitle"] = "Resetovať a znova nalosovať turnaj",
+        ["Confirm_RegeneratePairingsMsg"] = "Naozaj chcete resetovať a znovu vygenerovať kolá? Všetky existujúce kolá a zadané výsledky budú vymazané.",
+        ["Confirm_ResetRoundTitle"] = "Resetovať {0}. kolo",
+        ["Confirm_ResetRoundMsg"] = "Naozaj chcete resetovať {0}. kolo? Všetky losovania a zadané výsledky {0}. kola budú vymazané a znova vygenerované.",
+        ["Confirm_DeleteRoundTitle"] = "Zmazať {0}. kolo",
+        ["Confirm_DeleteRoundMsg"] = "Naozaj chcete zmazať {0}. kolo? Všetky losovania a výsledky tohto kola budú odstránené.",
+        ["Confirm_CannotUndo"] = "Túto akciu nie je možné vrátiť späť.",
+
+        // Dashboard
+        ["Dashboard_Subtitle"] = "Moderná pracovná stanica pre švajčiarsky systém a turnaje každého s každým",
+        ["Dashboard_LoadSample"] = "Nahrať vzorový turnaj",
+        ["Dashboard_ImportCdesk"] = "Importovať .cdesk",
+        ["Dashboard_StatTournaments"] = "Spravovaných turnajov",
+        ["Dashboard_StatPlayers"] = "Registrovaných hráčov",
+        ["Dashboard_StatFideRated"] = "FIDE započítaných turnajov",
+        ["Dashboard_EmptyTitle"] = "Zatiaľ žiadne turnaje",
+        ["Dashboard_EmptyDesc"] = "Vytvorte svoj prvý turnaj vo švajčiarskom systéme alebo systémom každý s každým, alebo nahrajte vzorový turnaj pre preskúmanie funkcií.",
+        ["Dashboard_ExportCdeskTooltip"] = "Exportovať turnajový súbor (.cdesk)",
+        ["Dashboard_ExportSuccess"] = "Turnaj bol úspešne exportovaný do {0}",
+        ["Dashboard_ExportError"] = "Export turnaja zlyhal: {0}",
+        ["Export_CdeskDialogTitle"] = "Exportovať turnaj (.cdesk)",
+        ["Export_CdeskFilterName"] = "Turnajový súbor CaissaDesk (*.cdesk)",
+        ["Export_TrfDialogTitle"] = "Exportovať FIDE TRF (.trf)",
+        ["Export_TrfFilterName"] = "Turnajový report FIDE (*.trf)",
+        ["Dashboard_DeleteTooltip"] = "Zmazať turnaj",
+        ["Dashboard_TabActive"] = "Aktívne ({0})",
+        ["Dashboard_TabArchived"] = "Archivované ({0})",
+        ["Dashboard_ArchiveTournament"] = "Archivovať turnaj",
+        ["Dashboard_UnarchiveTournament"] = "Obnoviť medzi aktívne",
+        ["Dashboard_ArchivedBadge"] = "Archivovaný",
+        ["Dashboard_FinishedBadge"] = "Ukončený",
+        ["Dashboard_EmptyArchivedTitle"] = "Zatiaľ žiadne archivované turnaje",
+        ["Dashboard_EmptyArchivedDesc"] = "Ukončené turnaje, ktoré označíte ako ukončené, sa zobrazia tu vo vašom archíve.",
+        ["Dashboard_EmptyActiveTitle"] = "Žiadne aktívne turnaje",
+        ["Dashboard_EmptyActiveDesc"] = "Všetky turnaje sú momentálne archivované, alebo vytvorte nový turnaj.",
+        ["Dashboard_NoMatchTitle"] = "Žiadne zodpovedajúce turnaje",
+        ["Dashboard_NoMatchDesc"] = "Skúste upraviť hľadaný výraz alebo filtre.",
+        ["Dashboard_ResetFilters"] = "Resetovať filtre",
+        ["Dashboard_FilterAllSystems"] = "Všetky systémy",
+        ["Dashboard_FilterAllRatings"] = "Všetky turnaje",
+        ["Dashboard_FilterFideOnly"] = "Iba FIDE započítané",
+        ["Dashboard_SortBy"] = "Zoradiť podľa...",
+        ["Dashboard_SortDateDesc"] = "Dátum: Najnovšie",
+        ["Dashboard_SortDateAsc"] = "Dátum: Najstaršie",
+        ["Dashboard_SortNameAsc"] = "Názov: A - Z",
+        ["Dashboard_SortNameDesc"] = "Názov: Z - A",
+        ["Dashboard_SortPlayersDesc"] = "Počet hráčov: Najviac",
+        ["Dashboard_SortRoundsDesc"] = "Počet kôl: Najviac",
+        ["Dashboard_FilterCount"] = "{0} z {1} turnajov",
+
+        // Create Tournament Modal
+        ["Tournament_Name"] = "Názov turnaja",
+        ["Tournament_System"] = "Turnajový systém",
+        ["Tournament_SwissDutch"] = "Švajčiarsky systém Dutch (FIDE C.04)",
+        ["Tournament_RoundRobin"] = "Každý s každým (Bergerove tabuľky)",
+        ["Tournament_TimeControl"] = "Kategória tempa hry",
+        ["Tournament_TimeControlSpec"] = "Špecifikácia tempa hry",
+        ["Tournament_TotalRounds"] = "Počet kôl",
+        ["Tournament_ChiefArbiter"] = "Hlavný rozhodca",
+        ["Tournament_Venue"] = "Miesto konania",
+        ["Tournament_Federation"] = "Federácia",
+        ["Tournament_FideRated"] = "Započítaný na FIDE rating",
+        ["Tournament_SeedingPrecedence"] = "Priorita nasadzovania",
+        ["Tournament_FideFirst"] = "FIDE rating prednostne",
+        ["Tournament_NationalFirst"] = "Národný rating prednostne",
+        ["Tournament_Organizer"] = "Organizátor",
+        ["Tournament_DeputyArbiter"] = "Zástupca rozhodcu",
+        ["Tournament_Dates"] = "Termín turnaja",
+        ["Tournament_StartDate"] = "Dátum začiatku",
+        ["Tournament_EndDate"] = "Dátum konca",
+        ["Tournament_MinRoundsNotice"] = "Minimálny povolený počet: {0} (ukončených kôl: {1})",
+        ["Tournament_MinRoundsError"] = "Počet kôl nemôže byť menší ako {0}, pretože {0} kôl už bolo ukončených alebo má zapísané výsledky.",
+        ["Tournament_DetailsSaved"] = "Podrobnosti turnaja boli úspešne uložené.",
+        ["Tournament_EditTitle"] = "Upraviť podrobnosti turnaja",
+        ["Dashboard_EditTournamentTooltip"] = "Upraviť podrobnosti turnaja",
+        ["Tournament_CreateBtn"] = "Vytvoriť turnaj",
+
+        // Time Control Categories
+        ["TimeControl_Standard"] = "Vážny šach",
+        ["TimeControl_Rapid"] = "Rapid",
+        ["TimeControl_Blitz"] = "Bleskový šach",
+
+        // Workbench Tabs & Common
+        ["Workbench_Loading"] = "Načítavanie údajov o turnaji...",
+        ["Workbench_NotFoundTitle"] = "Turnaj sa nenašiel",
+        ["Workbench_NotFoundDesc"] = "Požadovaný turnaj sa nepodarilo načítať alebo už neexistuje.",
+        ["Workbench_CloseTab"] = "Zavrieť kartu",
+        ["Workbench_PlayersTab"] = "Hráči ({0})",
+        ["Workbench_RoundsTab"] = "Kolá a nalosovania ({0})",
+        ["Workbench_PrintReports"] = "Tlač a výstupy",
+        ["Workbench_TotalRounds"] = "{0} kôl",
+        ["Workbench_ArbiterLabel"] = "Rozhodca: {0}",
+        ["Workbench_StatusActive"] = "Turnaj prebieha",
+        ["Workbench_StatusFinished"] = "Turnaj ukončený a archivovaný",
+        ["Workbench_MarkFinishedBtn"] = "Označiť ako ukončený a archivovať",
+        ["Workbench_RestoreActiveBtn"] = "Obnoviť turnaj medzi aktívne",
+        ["Workbench_LifecycleTitle"] = "Stav a životný cyklus turnaja",
+        ["Workbench_LifecycleDesc"] = "Správa ukončenia a archivácie tohto turnaja",
+        ["Workbench_FinishedBadge"] = "Ukončený",
+
+        // Roster View
+        ["Roster_Title"] = "Štartová listina hráčov",
+        ["Roster_Count"] = "{0} registrovaných hráčov",
+        ["Roster_AttendanceByes"] = "Prezencia a voľná (byes)",
+        ["Roster_Reseed"] = "Prepočítať štartové čísla",
+        ["Roster_RegisterPlayer"] = "Zaregistrovať hráča",
+        ["Roster_EmptyTitle"] = "Zatiaľ žiadni hráči",
+        ["Roster_EmptyDesc"] = "Zaregistrujte hráčov manuálne alebo použite nástroj automatického vyhľadania vo FIDE.",
+        ["Roster_AddFirstPlayer"] = "Pridať prvého hráča",
+        ["Roster_FideAutoLookup"] = "Automatické vyhľadanie podľa FIDE ID",
+        ["Roster_Fetch"] = "Vyhľadať",
+        ["Roster_FideElo"] = "FIDE Elo",
+        ["Roster_NatElo"] = "Nár Elo",
+        ["Roster_BirthYear"] = "Rok nar.",
+        ["Roster_AddPlayerBtn"] = "Pridať hráča",
+        ["Roster_SearchingFide"] = "Vyhľadávanie profilu vo FIDE...",
+        ["Roster_EditPlayer"] = "Upraviť hráča",
+        ["Roster_EditPlayerBtn"] = "Uložiť zmeny",
+        ["Roster_FideId"] = "FIDE ID",
+        ["Roster_FideLookupPrompt"] = "Zadajte FIDE ID alebo celé meno...",
+        ["Roster_SyncFideBtn"] = "Aktualizovať všetkých z FIDE",
+        ["Roster_SyncFideTooltip"] = "Obnoviť aktuálne FIDE ratingy a tituly pre všetkých registrovaných hráčov",
+        ["Roster_SyncingFideProgress"] = "Synchronizácia s FIDE ({0}/{1})...",
+        ["Roster_SyncSuccess"] = "Úspešne aktualizovaných {0} z {1} hráčov z FIDE databázy.",
+        ["Roster_FideLookupSuccess"] = "FIDE údaje úspešne načítané pre {0}",
+        ["Roster_FideLookupNotFound"] = "Hráč nebol nájdený na ratings.fide.com",
+        ["Roster_FideLookupEmptyQuery"] = "Pre vyhľadanie zadajte FIDE ID alebo celé meno",
+
+        // Pairings View
+        ["Pairings_Title"] = "Kolá a nalosovania",
+        ["Pairings_ClickToEnter"] = "Kliknite na výsledok pre zadanie skóre alebo poznámky rozhodcu",
+        ["Pairings_Engine"] = "Párovací motor: {0}",
+        ["Pairings_ArbiterMode"] = "Režim rozhodcu",
+        ["Pairings_ArbiterModeOn"] = "Režim rozhodcu ZAP",
+        ["Pairings_ManualBoard"] = "Ručná šachovnica",
+        ["Pairings_Generate"] = "Nalosovať",
+        ["Pairings_GenerateNow"] = "Nalosovať teraz",
+        ["Pairings_PairRound"] = "Nalosovať {0}. kolo",
+        ["Pairings_Pending"] = "{0} neukončené",
+        ["Pairings_ResetRegenerate"] = "Resetovať a znovu nalosovať",
+        ["Pairings_ResetRound"] = "Resetovať {0}. kolo",
+        ["Pairings_DeleteRound"] = "Zmazať {0}. kolo",
+        ["Pairings_SwapColors"] = "Vymeniť farby biely a čierny",
+        ["Pairings_EditBoard"] = "Upraviť šachovnicu",
+        ["Pairings_DeleteBoard"] = "Zmazať šachovnicu",
+        ["Pairings_EmptyTitle"] = "Zatiaľ žiadne nalosovania",
+        ["Pairings_EmptySwiss"] = "Pripravené na nalosovanie 1. kola pre štartovú listinu.",
+        ["Pairings_EmptyRR"] = "Pripravené na vytvorenie oficiálnych Bergerových tabuliek pre štartovú listinu.",
+        ["Pairings_Remarks"] = "Poznámky",
+        ["Pairings_ManualBadge"] = "Ručný zásah rozhodcu",
+        ["Pairings_WhitePlayer"] = "Biely hráč",
+        ["Pairings_BlackPlayer"] = "Čierny hráč",
+        ["Pairings_RoundNum"] = "{0}. kolo",
+
+        // Warning Modal (Pending Games)
+        ["Warning_CannotPairTitle"] = "Nemožno nalosovať {0}. kolo — neukončené partie",
+        ["Warning_CannotPairDesc"] = "V {0}. kole je stále {1} partií bez zadaného výsledku. Pred nalosovaním ďalšieho kola musia byť potvrdené všetky výsledky.",
+        ["Warning_EnterInstruction"] = "Kliknite na Zadať pre zaznamenanie výsledku partie (1-0, ½-½, 0-1 alebo kontumácia).",
+        ["Warning_GoToBoardTable"] = "Prejsť na šachovnice {0}. kola",
+        ["Warning_Enter"] = "Zadať",
+
+        // Standings View
+        ["Standings_Title"] = "Poradie v turnaji",
+        ["Standings_Subtitle"] = "Aktuálne body automaticky prepočítavané z výsledkov partií",
+        ["Standings_Leaderboard"] = "Tabuľka poradia",
+        ["Standings_CrossTable"] = "Krížová tabuľka (Berger)",
+
+        // Tournament Settings View
+        ["Settings_Config"] = "Nastavenia turnaja",
+        ["Settings_General"] = "Všeobecné informácie",
+        ["Settings_Tiebreaks"] = "Kritériá pomocného hodnotenia FIDE",
+        ["Settings_TiebreakDesc"] = "Zvoľte oficiálnu predvoľbu FIDE alebo prispôsobte poradie pomocných hodnotení",
+        ["Settings_PresetSwiss"] = "Štandardný švajčiarsky (FIDE)",
+        ["Settings_PresetRR"] = "Každý s každým (Berger)",
+        ["Settings_PresetChampionship"] = "Majstrovstvá FIDE",
+        ["Settings_ActivePriority"] = "Aktívne poradie kritérií",
+        ["Settings_EngineProvider"] = "Poskytovateľ párovacieho motora",
+        ["Settings_EngineDesc"] = "Zvoľte motor používaný na výpočet FIDE Dutch nalosovaní",
+        ["Settings_DataExchange"] = "Výmena a export údajov",
+        ["Settings_DataExchangeDesc"] = "Exportujte turnaj pre oficiálny zápočet na FIDE rating, zálohu alebo prenos na iný počítač.",
+        ["Settings_ExportTrf"] = "Export FIDE TRF (.trf)",
+        ["Settings_ExportCdesk"] = "Export turnaja (.cdesk)",
+
+        // Tiebreak Criteria
+        ["Tiebreak_DirectEncounter"] = "Vzájomná partia",
+        ["Tiebreak_BuchholzCut1"] = "Buchholz (škrtnutie 1)",
+        ["Tiebreak_Buchholz"] = "Plný Buchholz",
+        ["Tiebreak_BuchholzCut2"] = "Buchholz (škrtnutie 2)",
+        ["Tiebreak_MedianBuchholz"] = "Stredný Buchholz (Median)",
+        ["Tiebreak_SonnebornBerger"] = "Sonneborn-Berger",
+        ["Tiebreak_MostWins"] = "Vyšší počet výhier",
+        ["Tiebreak_MostBlack"] = "Počet partií s čiernymi",
+        ["Tiebreak_Aroc"] = "Priemerný rating súperov (AROC)",
+        ["Tiebreak_Aroc1"] = "Priemerný rating súperov škrt. 1 (AROC-1)",
+        ["Tiebreak_Koya"] = "Systém Koya",
+        ["Tiebreak_ExtendedKoya"] = "Rozšírený systém Koya",
+        ["Tiebreak_Add"] = "Pridať kritérium",
+        ["Tiebreak_MoveUp"] = "Posunúť nahor",
+        ["Tiebreak_MoveDown"] = "Posunúť nadol",
+        ["Tiebreak_Remove"] = "Odstrániť",
+        ["Tiebreak_SelectToAdd"] = "Vyberte kritérium na pridanie...",
+        ["Tiebreak_Empty"] = "Nie sú nastavené žiadne kritériá. Poradie bude určené výlučne bodmi a nasadením.",
+
+        // Settings Control Center - Tournament Defaults & Pairing Engines
+        ["Settings_Title"] = "Riadiace centrum",
+        ["Settings_Subtitle"] = "Nastavenia systému, predvoľby turnajov, losovacie motory a cloud",
+        ["Settings_Nav_General"] = "Jazyk a región",
+        ["Settings_Nav_General_Desc"] = "Jazyk rozhrania a regionálne voľby",
+        ["Settings_Nav_Defaults"] = "Predvoľby turnajov",
+        ["Settings_Nav_Defaults_Desc"] = "Predvolený rozhodca, miesto a systém",
+        ["Settings_Nav_Engines"] = "Losovacie motory",
+        ["Settings_Nav_Engines_Desc"] = "FIDE motory a inštalátor",
+        ["Settings_Nav_Sync"] = "CaissaResults Cloud",
+        ["Settings_Nav_Sync_Desc"] = "Živé online prenosy a prepojenie",
+        ["Settings_Nav_About"] = "O aplikácii CaissaDesk",
+        ["Settings_Nav_About_Desc"] = "Verzia, FIDE štandardy a licencia",
+        ["Settings_TournamentDefaults"] = "Predvolené hodnoty turnaja",
+        ["Settings_TournamentDefaultsDesc"] = "Nastavenie predvolených hodnôt, ktoré sa automaticky použijú pri vytváraní nových turnajov.",
+        ["Settings_PairingEngines"] = "Správa losovacích motorov",
+        ["Settings_PairingEnginesDesc"] = "Správa švajčiarskych losovacích motorov, nastavenie ciest k spustiteľným súborom a testovanie losovania.",
+        ["Settings_DefaultArbiterVenueCard"] = "Predvolený rozhodca a miesto",
+        ["Settings_DefaultTournamentStructureCard"] = "Predvolená štruktúra turnaja",
+        ["Settings_EngineNativeTitle"] = "Natívny Dutch (FIDE C.04)",
+        ["Settings_EngineNativeDesc"] = "Vstavaný 100% C# losovací motor bez externých závislostí. Vždy dostupný.",
+        ["Settings_EngineBbpTitle"] = "bbpPairings (FIDE certifikovaný C++)",
+        ["Settings_EngineBbpDesc"] = "Oficiálny FIDE certifikovaný losovací motor (Guillaume Gautier). Vyžaduje binárny súbor bbpPairings.",
+        ["Settings_EngineJaVaFoTitle"] = "JaVaFo (FIDE referenčný motor)",
+        ["Settings_EngineJaVaFoDesc"] = "FIDE referenčný švajčiarsky motor (Roberto Ricca). Vyžaduje Java JRE a javafo.jar.",
+        ["Settings_TestEngineBtn"] = "Otestovať motor",
+        ["Settings_TestingEngine"] = "Testovanie motora...",
+        ["Settings_TestSuccess"] = "Test úspešný: Vygenerované {0} dvojice ({1} ms)",
+        ["Settings_TestFailed"] = "Test zlyhal: {0}",
+        ["Settings_EngineStatusReady"] = "Pripravený",
+        ["Settings_EngineStatusMissing"] = "Program nenájdený",
+        ["Settings_EnginePathDetected"] = "Zistená cesta: {0}",
+        ["Settings_EnginePathCustom"] = "Vlastná cesta k spustiteľnému súboru",
+        ["Settings_EngineJavaPathCustom"] = "Vlastná cesta k Java (java/javaw)",
+        ["Settings_EngineJarPathCustom"] = "Vlastná cesta k javafo.jar",
+        ["Settings_DefaultSwissEngine"] = "Predvolený švajčiarsky motor",
+        ["Settings_SaveDefaults"] = "Uložiť predvolené hodnoty",
+        ["Settings_SaveEngines"] = "Uložiť nastavenia motorov",
+        ["Settings_DefaultsSaved"] = "Predvolené hodnoty turnaja boli úspešne uložené.",
+        ["Settings_EnginesSaved"] = "Nastavenie losovacích motorov bolo úspešne uložené.",
+        ["Settings_EngineNotInstalled"] = "Motor nie je nainštalovaný. Pred výberom ho stiahnite alebo nastavte cestu.",
+        ["Settings_DownloadInstallBtn"] = "Stiahnuť a nainštalovať",
+        ["Settings_Downloading"] = "Sťahovanie...",
+        ["Settings_Installing"] = "Inštalácia...",
+        ["Settings_InstallSuccess"] = "{0} bol úspešne nainštalovaný a je pripravený na použitie!",
+        ["Settings_InstallFailed"] = "Inštalácia zlyhala: {0}",
+        ["Settings_SelectDisabledTooltip"] = "Nemožno vybrať motor, ktorý nie je nainštalovaný v systéme.",
+        ["Settings_EngineGuideTitle"] = "Ktorý losovací motor si vybrať?",
+        ["Settings_EngineGuideSubtitle"] = "Praktické odporúčania pre rozhodcov na výber správneho motora podľa typu turnaja a požiadaviek.",
+        ["Settings_EngineNativeBadge"] = "Vstavaný • Bez inštalácie",
+        ["Settings_EngineNativeAdvise"] = "Ideálny pre klubové turnaje, víkendové rapid/blesk podujatia a okamžité losovanie bez externých závislostí. Plne spĺňa pravidlá FIDE Dutch (kapitola C.04).",
+        ["Settings_EngineBbpBadge"] = "FIDE certifikovaný • Vysoká rýchlosť",
+        ["Settings_EngineBbpAdvise"] = "Ideálny pre oficiálne FIDE zápočtové turnaje, veľké otvorené turnaje (100+ hráčov) a maximálnu rýchlosť výpočtu. Certifikovaný komisiou FIDE SPP.",
+        ["Settings_EngineJaVaFoBadge"] = "FIDE referenčný • Štandard Swiss-Manager",
+        ["Settings_EngineJaVaFoAdvise"] = "Ideálny pre normové turnaje FIDE a podujatia vyžadujúce identické nalosovania s programom Swiss-Manager / Chess-Results. Vyžaduje Java JRE.",
+        ["Settings_EngineWhenToPick"] = "Kedy vybrať:",
+        ["Settings_EnginePros"] = "Kľúčové výhody:",
+        ["Settings_EnginePrereqs"] = "Predpoklady:",
+        ["Settings_EnginePrereqNone"] = "Žiadne (pripravený na okamžité použitie)",
+        ["Settings_EnginePrereqBbp"] = "Binárny program bbpPairings (inštalácia na 1 kliknutie vyššie)",
+        ["Settings_EnginePrereqJaVaFo"] = "Java Runtime (JRE 8+) + javafo.jar",
+
+        // Attendance & Byes Modal
+        ["Attendance_Title"] = "Prezencia, voľná (byes) a stav hráčov",
+        ["Attendance_Subtitle"] = "Naplánujte vopred ½-bodové alebo 0-bodové voľná (byes) na jednotlivé kolá, alebo označte odstúpenie hráčov.",
+        ["Attendance_LateReg"] = "Oneskorená registrácia hráča",
+        ["Attendance_HideLateReg"] = "Skryť oneskorenú registráciu",
+        ["Attendance_LateRegTitle"] = "Zaregistrovať nového hráča počas turnaja",
+        ["Attendance_MissedRounds"] = "Prideliť za predošlé zmeškané kolá:",
+        ["Attendance_AddLateBtn"] = "Pridať hráča do turnaja",
+        ["Attendance_Withdraw"] = "Odstúpiť",
+        ["Attendance_Reactivate"] = "Znovu aktivovať",
+        ["Bye_HalfPerRound"] = "½-bodové voľno (bye) za kolo",
+        ["Bye_ZeroPerRound"] = "0-bodové voľno (bye) za kolo",
+        ["Bye_NoByes"] = "Bez voľna (bez bodov)",
+
+        // Match Result Dialog
+        ["Result_DialogTitle"] = "{0}. kolo • {1}. šachovnica",
+        ["Result_WhiteWin"] = "1 - 0 (Výhra bieleho)",
+        ["Result_Draw"] = "½ - ½ (Remíza)",
+        ["Result_BlackWin"] = "0 - 1 (Výhra čierneho)",
+        ["Result_WhiteWinShort"] = "Výhra bieleho",
+        ["Result_DrawShort"] = "Remíza",
+        ["Result_BlackWinShort"] = "Výhra čierneho",
+        ["Result_Forfeits"] = "Kontumácie a penalizácie",
+        ["Result_WhiteForfeit"] = "1F - 0 (Kontumácia v prospech bieleho)",
+        ["Result_BlackForfeit"] = "0 - 1F (Kontumácia v prospech čierneho)",
+        ["Result_DoubleForfeit"] = "0F - 0F (Obojstranná kontumácia)",
+        ["Result_ByesTitle"] = "Voľná (byes) a neodohrané výsledky",
+        ["Result_FullBye"] = "1 - 0 (Plnobodové voľno)",
+        ["Result_HalfBye"] = "½ (Polbodové voľno)",
+        ["Result_ZeroBye"] = "0 (Nulabodové voľno)",
+        ["Result_ResetNotPlayed"] = "Vynulovať (Neodohrané)",
+        ["Result_ArbiterRemarks"] = "Poznámky rozhodcu",
+        ["Result_RemarksPlaceholder"] = "napr. Prekročenie času, verdikt rozhodcu, zvonenie mobilu",
+        ["Result_ConfirmBtn"] = "Potvrdiť výsledok",
+
+        // Manual Pairing Modal
+        ["Manual_TitleAdd"] = "Pridať ručné nalosovanie šachovnice",
+        ["Manual_TitleEdit"] = "Upraviť {0}. šachovnicu ({1}. kolo)",
+        ["Manual_BoardNumber"] = "Číslo šachovnice",
+        ["Manual_WhitePlayer"] = "Biely hráč",
+        ["Manual_BlackPlayer"] = "Čierny hráč (nechajte prázdne pre voľno/bye)",
+        ["Manual_SelectWhite"] = "-- Vyberte bieleho hráča --",
+        ["Manual_NoneBye"] = "[ Žiaden / VOĽNO (BYE) ]",
+        ["Manual_DeleteBoard"] = "Zmazať šachovnicu",
+        ["Manual_SavePairing"] = "Uložiť nalosovanie",
+
+        // Print Sheets & TRF Export Modal
+        ["Print_Title"] = "Oficiálne tlačové zostavy a FIDE TRF export",
+        ["Print_PairingsBoard"] = "Nalosovanie (šachovnice)",
+        ["Print_PairingsAlpha"] = "Nalosovanie (abecedné)",
+        ["Print_BergerTable"] = "Bergerova krížová tabuľka",
+        ["Print_MatchSlips"] = "Výsledkové lístky šachovníc",
+        ["Print_FideTrf"] = "FIDE TRF (Zápočet)",
+        ["Print_Round"] = "Kolo:",
+        ["Print_PrintPdf"] = "Tlačiť / Uložiť ako PDF",
+        ["Print_DownloadTrf"] = "Stiahnuť .TRF",
+        ["Print_PairingsForRound"] = "Nalosovanie pre {0}. kolo",
+        ["Print_AlphaForRound"] = "Abecedné nalosovanie pre {0}. kolo (výveska v hracej sále)",
+        ["Print_OfficialStandings"] = "Oficiálne poradie v turnaji",
+        ["Print_BergerMatrix"] = "Bergerova krížová tabuľka (matica N x N)",
+        ["Print_MatchCardsTitle"] = "Výsledkové lístky na šachovnice ({0}. kolo)",
+        ["Print_TrfTitle"] = "Oficiálny turnajový súbor FIDE (132-stĺpcový TRF)",
+        ["Print_TrfSubtitle"] = "Zodpovedá špecifikáciám servera FIDE pre zápočet ratingu. Súbor možno uložiť a priamo nahrať na rating.fide.com.",
+        ["Print_ArbiterSig"] = "Podpis rozhodcu: ____________________________",
+        ["Print_ChiefArbiterSig"] = "Hlavný rozhodca: ____________________________",
+        ["Print_GeneratedBy"] = "Oficiálne nalosovanie vygenerované systémom CaissaDesk",
+        ["Print_WhiteSig"] = "Podpis bieleho: ______________",
+        ["Print_BlackSig"] = "Podpis čierneho: ______________",
+        ["Print_WhitePlayerName"] = "Meno bieleho hráča",
+        ["Print_BlackPlayerName"] = "Meno čierneho hráča",
+        ["Print_Opponent"] = "Súper",
+        ["Print_OppElo"] = "Elo súpera",
+        ["Print_BoardCard"] = "ŠACHOVNICA {0}",
+        ["Print_NoPairings"] = "Pre {0}. kolo nie sú vygenerované žiadne nalosovania",
+        ["Print_Date"] = "Dátum: {0}",
+
+        // Settings Control Center
+        ["Settings_CenterSubtitle"] = "Predvoľby systému a predvolené hodnoty rozhodcu",
+        ["Settings_LangRegional"] = "Jazyk a región",
+        ["Settings_InterfaceLang"] = "Jazyk rozhrania",
+        ["Settings_InterfaceLangDesc"] = "Vyberte jazyk pre ponuky rozhodcu a výstupy",
+    };
+}

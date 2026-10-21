@@ -1,0 +1,522 @@
+@namespace CaissaDesk.Components.Tournament
+@using Caissa.Shared.Models
+@using Caissa.Shared.Tiebreak
+@using CaissaDesk.Core.PairingEngine
+@using CaissaDesk.Components.Icons
+@using CaissaDesk.Localization
+@using CaissaDesk.Data
+@inject ITiebreakService TiebreakService
+@inject IJSRuntime JS
+@inject ILocalizationService Loc
+@inject IFileExportService FileExport
+@implements IDisposable
+
+@if (IsOpen && Tournament != null)
+{
+	<div class="modal-overlay" @onclick="CloseAsync">
+		<div class="modal-content" style="max-width: 980px; max-height: 92vh;" @onclick:stopPropagation="true">
+			<div class="modal-header no-print">
+				<div class="modal-title">
+					<span style="color: var(--brand-gold);"><AppIcon Name="printer" Size="18" /></span>
+					<span>@Loc["Print_Title"]</span>
+				</div>
+				<button class="modal-close-btn" @onclick="CloseAsync" type="button" title="@Loc["Common_Close"]">
+					<AppIcon Name="x" Size="15" />
+				</button>
+			</div>
+
+			<div class="modal-body" style="display: flex; flex-direction: column; gap: 14px; overflow-y: auto;">
+				<!-- Print Toolbar: Sheet Selector & Round Selector -->
+				<div class="no-print" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; background-color: var(--bg-surface-elevated); padding: 12px; border-radius: 8px; border: 1px solid var(--border-subtle);">
+					<!-- Sheet Type Pills -->
+					<div style="display: flex; flex-wrap: wrap; gap: 6px;">
+						<button type="button" class="@GetSheetTabClass(PrintSheetType.PairingsBoard)" @onclick="() => _sheetType = PrintSheetType.PairingsBoard">
+							<span>@Loc["Print_PairingsBoard"]</span>
+						</button>
+						<button type="button" class="@GetSheetTabClass(PrintSheetType.PairingsAlphabetical)" @onclick="() => _sheetType = PrintSheetType.PairingsAlphabetical">
+							<span>@Loc["Print_PairingsAlpha"]</span>
+						</button>
+						<button type="button" class="@GetSheetTabClass(PrintSheetType.Standings)" @onclick="() => _sheetType = PrintSheetType.Standings">
+							<span>@Loc["Nav_Standings"]</span>
+						</button>
+						@if (Tournament.System == TournamentSystem.RoundRobin)
+						{
+							<button type="button" class="@GetSheetTabClass(PrintSheetType.CrossTable)" @onclick="() => _sheetType = PrintSheetType.CrossTable">
+								<span>@Loc["Print_BergerTable"]</span>
+							</button>
+						}
+						<button type="button" class="@GetSheetTabClass(PrintSheetType.MatchSlips)" @onclick="() => _sheetType = PrintSheetType.MatchSlips">
+							<span>@Loc["Print_MatchSlips"]</span>
+						</button>
+						<button type="button" class="@GetSheetTabClass(PrintSheetType.FideTrf)" @onclick="() => _sheetType = PrintSheetType.FideTrf">
+							<span>@Loc["Print_FideTrf"]</span>
+						</button>
+					</div>
+
+					<!-- Options per Sheet Type -->
+					<div style="display: flex; align-items: center; gap: 10px;">
+						@if (_sheetType == PrintSheetType.PairingsBoard || _sheetType == PrintSheetType.PairingsAlphabetical || _sheetType == PrintSheetType.MatchSlips)
+						{
+							<div style="display: flex; align-items: center; gap: 6px;">
+								<span style="font-size: 12px; color: var(--text-secondary);">@Loc["Print_Round"]</span>
+								<select class="form-select form-select-sm" style="width: auto;" @bind="_selectedRound">
+									@foreach (var r in Tournament.Rounds.OrderBy(r => r.RoundNumber))
+									{
+										<option value="@r.RoundNumber">@Loc["Common_Round"] @r.RoundNumber</option>
+									}
+								</select>
+							</div>
+						}
+
+						@if (_sheetType == PrintSheetType.FideTrf)
+						{
+							<button class="btn-primary" style="padding: 6px 12px; font-size: 12px;" @onclick="DownloadTrfAsync">
+								<AppIcon Name="download" Size="13" />
+								<span>@Loc["Print_DownloadTrf"]</span>
+							</button>
+						}
+						else
+						{
+							<button class="btn-primary" style="padding: 6px 14px; font-size: 12px;" @onclick="PrintSheetAsync">
+								<AppIcon Name="printer" Size="13" />
+								<span>@Loc["Print_PrintPdf"]</span>
+							</button>
+						}
+					</div>
+				</div>
+
+				<!-- Printable Content Preview Area -->
+				<div class="printable-sheet-preview">
+					<!-- Header Section for all printed sheets -->
+					<div style="border-bottom: 2px solid #222222; padding-bottom: 8px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: flex-end;">
+						<div>
+							<h2 style="font-size: 18pt; font-weight: 800; margin: 0; color: #111111; line-height: 1.2;">
+								@Tournament.Name
+							</h2>
+							<div style="font-size: 10pt; color: #555555; margin-top: 4px;">
+								@Tournament.Venue • @(Tournament.System == TournamentSystem.SwissDutch ? Loc["Tournament_SwissDutch"] : Loc["Tournament_RoundRobin"]) • @Loc["Workbench_TotalRounds", Tournament.TotalRounds]
+							</div>
+						</div>
+						<div style="text-align: right; font-size: 9pt; color: #666666;">
+							@if (!string.IsNullOrEmpty(Tournament.ChiefArbiter))
+							{
+								<div>@Loc["Tournament_ChiefArbiter"]: <strong>@Tournament.ChiefArbiter</strong></div>
+							}
+							<div>@Loc["Print_Date", DateTime.Now.ToString("yyyy-MM-dd")]</div>
+						</div>
+					</div>
+
+					@if (_sheetType == PrintSheetType.PairingsBoard)
+					{
+						<!-- PAIRINGS BY BOARD PRINT SHEET -->
+						var round = Tournament.Rounds.FirstOrDefault(r => r.RoundNumber == _selectedRound);
+						<div style="margin-bottom: 10px;">
+							<h3 style="font-size: 14pt; font-weight: 700; margin: 0; color: #222222;">
+								@Loc["Print_PairingsForRound", _selectedRound]
+							</h3>
+						</div>
+
+						@if (round != null && round.Pairings.Count > 0)
+						{
+							<table class="printable-table">
+								<thead>
+									<tr>
+										<th style="width: 45px; text-align: center;">Bd</th>
+										<th style="width: 65px; text-align: center;">@Loc["Common_White"]</th>
+										<th>@Loc["Print_WhitePlayerName"]</th>
+										<th style="width: 45px; text-align: center;">Fed</th>
+										<th style="width: 55px; text-align: right;">Elo</th>
+										<th style="width: 80px; text-align: center;">@Loc["Common_Result"]</th>
+										<th style="width: 55px; text-align: right;">Elo</th>
+										<th style="width: 45px; text-align: center;">Fed</th>
+										<th>@Loc["Print_BlackPlayerName"]</th>
+										<th style="width: 65px; text-align: center;">@Loc["Common_Black"]</th>
+									</tr>
+								</thead>
+								<tbody>
+									@foreach (var pairing in round.Pairings.OrderBy(p => p.BoardNumber))
+									{
+										var white = Tournament.GetPlayer(pairing.WhitePlayerId);
+										var black = Tournament.GetPlayer(pairing.BlackPlayerId);
+
+										<tr>
+											<td style="text-align: center; font-weight: 700;">@pairing.BoardNumber</td>
+											<td style="text-align: center; font-size: 9pt; color: #666;">@(white != null ? $"#{white.StartRank}" : "-")</td>
+											<td style="font-weight: 600;">
+												@(white != null ? (!string.IsNullOrEmpty(white.Title) ? $"[{white.Title}] " : "") + white.FullName : "BYE")
+											</td>
+											<td style="text-align: center; font-size: 9pt;">@(white?.Federation ?? "-")</td>
+											<td style="text-align: right; font-family: monospace;">@(white?.FideRating > 0 ? white.FideRating.ToString() : "-")</td>
+
+											<!-- Result Box -->
+											<td style="text-align: center; font-weight: 700; font-family: monospace; font-size: 11pt; border-left: 2px solid #222; border-right: 2px solid #222; background-color: #fafafa;">
+												@(pairing.Result == MatchResult.NotPlayed ? "   -   " : pairing.Result.ToDisplayString())
+											</td>
+
+											<td style="text-align: right; font-family: monospace;">@(black?.FideRating > 0 ? black.FideRating.ToString() : "-")</td>
+											<td style="text-align: center; font-size: 9pt;">@(black?.Federation ?? "-")</td>
+											<td style="font-weight: 600;">
+												@(black != null ? (!string.IsNullOrEmpty(black.Title) ? $"[{black.Title}] " : "") + black.FullName : "BYE")
+											</td>
+											<td style="text-align: center; font-size: 9pt; color: #666;">@(black != null ? $"#{black.StartRank}" : "-")</td>
+										</tr>
+									}
+								</tbody>
+							</table>
+
+							<div style="margin-top: 24px; display: flex; justify-content: space-between; font-size: 9pt; color: #555;">
+								<div>@Loc["Print_GeneratedBy"]</div>
+								<div>@Loc["Print_ArbiterSig"]</div>
+							</div>
+						}
+						else
+						{
+							<div style="padding: 30px; text-align: center; color: #666;">@Loc["Print_NoPairings", _selectedRound]</div>
+						}
+					}
+					else if (_sheetType == PrintSheetType.PairingsAlphabetical)
+					{
+						<!-- ALPHABETICAL PAIRINGS SHEET (FOR WALL BOARDS) -->
+						var round = Tournament.Rounds.FirstOrDefault(r => r.RoundNumber == _selectedRound);
+						<div style="margin-bottom: 10px;">
+							<h3 style="font-size: 14pt; font-weight: 700; margin: 0; color: #222222;">
+								@Loc["Print_AlphaForRound", _selectedRound]
+							</h3>
+						</div>
+
+						@if (round != null && round.Pairings.Count > 0)
+						{
+							var alphaList = new List<(Player Player, int Board, string Color, string OpponentName, int OpponentElo)>();
+
+							foreach (var pairing in round.Pairings)
+							{
+								var white = Tournament.GetPlayer(pairing.WhitePlayerId);
+								var black = Tournament.GetPlayer(pairing.BlackPlayerId);
+
+								if (white != null)
+								{
+									alphaList.Add((white, pairing.BoardNumber, "White", black != null ? black.FullName : "BYE", black?.FideRating ?? 0));
+								}
+								if (black != null)
+								{
+									alphaList.Add((black, pairing.BoardNumber, "Black", white != null ? white.FullName : "BYE", white?.FideRating ?? 0));
+								}
+							}
+
+							<table class="printable-table">
+								<thead>
+									<tr>
+										<th style="width: 40px; text-align: center;">@Loc["Common_Seed"]</th>
+										<th>@Loc["Common_Name"]</th>
+										<th style="width: 50px; text-align: center;">Fed</th>
+										<th style="width: 60px; text-align: right;">Elo</th>
+										<th style="width: 50px; text-align: center;">@Loc["Common_Board"]</th>
+										<th style="width: 60px; text-align: center;">Color</th>
+										<th>@Loc["Print_Opponent"]</th>
+										<th style="width: 60px; text-align: right;">@Loc["Print_OppElo"]</th>
+									</tr>
+								</thead>
+								<tbody>
+									@foreach (var entry in alphaList.OrderBy(e => e.Player.FullName, StringComparer.OrdinalIgnoreCase))
+									{
+										<tr>
+											<td style="text-align: center; color: #666; font-size: 9pt;">@entry.Player.StartRank</td>
+											<td style="font-weight: 600;">
+												@(!string.IsNullOrEmpty(entry.Player.Title) ? $"[{entry.Player.Title}] " : "")@entry.Player.FullName
+											</td>
+											<td style="text-align: center; font-size: 9pt;">@entry.Player.Federation</td>
+											<td style="text-align: right; font-family: monospace;">@(entry.Player.FideRating > 0 ? entry.Player.FideRating.ToString() : "-")</td>
+											<td style="text-align: center; font-weight: 800; font-size: 11pt;">@entry.Board</td>
+											<td style="text-align: center; font-weight: 600;">@(entry.Color == "White" ? Loc["Common_White"] : Loc["Common_Black"])</td>
+											<td>@entry.OpponentName</td>
+											<td style="text-align: right; font-family: monospace;">@(entry.OpponentElo > 0 ? entry.OpponentElo.ToString() : "-")</td>
+										</tr>
+									}
+								</tbody>
+							</table>
+						}
+					}
+					else if (_sheetType == PrintSheetType.Standings)
+					{
+						<!-- STANDINGS PRINT SHEET -->
+						var standings = TiebreakService.CalculateStandings(Tournament);
+						var tiebreaks = Tournament.TiebreakOrder.Take(4).ToList();
+
+						<div style="margin-bottom: 10px;">
+							<h3 style="font-size: 14pt; font-weight: 700; margin: 0; color: #222222;">
+								@Loc["Print_OfficialStandings"]
+							</h3>
+						</div>
+
+						<table class="printable-table">
+							<thead>
+								<tr>
+									<th style="width: 45px; text-align: center;">Rk</th>
+									<th style="width: 45px; text-align: center;">@Loc["Common_Seed"]</th>
+									<th style="width: 45px; text-align: center;">@Loc["Common_Title"]</th>
+									<th>@Loc["Common_Name"]</th>
+									<th style="width: 45px; text-align: center;">Fed</th>
+									<th style="width: 60px; text-align: right;">Elo</th>
+									<th style="width: 50px; text-align: center;">@Loc["Common_Games"]</th>
+									<th style="width: 65px; text-align: right;">@Loc["Common_Points"]</th>
+									@foreach (var tb in tiebreaks)
+									{
+										<th style="width: 65px; text-align: right;">@tb.ToShortName()</th>
+									}
+								</tr>
+							</thead>
+							<tbody>
+								@foreach (var s in standings)
+								{
+									<tr>
+										<td style="text-align: center; font-weight: 800;">@s.Rank</td>
+										<td style="text-align: center; color: #666; font-size: 9pt;">@s.Player.StartRank</td>
+										<td style="text-align: center; font-weight: 600;">@(s.Player.Title ?? "")</td>
+										<td style="font-weight: 600;">@s.Player.FullName</td>
+										<td style="text-align: center; font-size: 9pt;">@s.Player.Federation</td>
+										<td style="text-align: right; font-family: monospace;">@s.Player.EffectiveRating(Tournament.SeedingPrecedence)</td>
+										<td style="text-align: center;">@s.GamesPlayed</td>
+										<td style="text-align: right; font-weight: 800; font-family: monospace;">@s.Points.ToString("0.0")</td>
+										@foreach (var tb in tiebreaks)
+										{
+											<td style="text-align: right; font-family: monospace; font-size: 9.5pt;">
+												@s.FormatTiebreak(tb)
+											</td>
+										}
+									</tr>
+								}
+							</tbody>
+						</table>
+
+						<div style="margin-top: 24px; display: flex; justify-content: space-between; font-size: 9pt; color: #555;">
+							<div>Tiebreaks: @string.Join(" • ", tiebreaks.Select(t => t.ToFullName()))</div>
+							<div>@Loc["Print_ChiefArbiterSig"]</div>
+						</div>
+					}
+					else if (_sheetType == PrintSheetType.CrossTable && Tournament.System == TournamentSystem.RoundRobin)
+					{
+						<!-- BERGER CROSS-TABLE PRINT SHEET -->
+						var standings = TiebreakService.CalculateStandings(Tournament);
+						var sortedPlayers = Tournament.Players.OrderBy(p => p.StartRank).ToList();
+
+						<div style="margin-bottom: 10px;">
+							<h3 style="font-size: 14pt; font-weight: 700; margin: 0; color: #222222;">
+								@Loc["Print_BergerMatrix"]
+							</h3>
+						</div>
+
+						<table class="printable-table" style="table-layout: fixed;">
+							<thead>
+								<tr>
+									<th style="width: 35px; text-align: center;">#</th>
+									<th style="width: 170px;">@Loc["Common_Name"]</th>
+									<th style="width: 50px; text-align: right;">Elo</th>
+									@foreach (var p in sortedPlayers)
+									{
+										<th style="width: 30px; text-align: center; font-family: monospace;">@p.StartRank</th>
+									}
+									<th style="width: 45px; text-align: right;">@Loc["Common_Points"]</th>
+								</tr>
+							</thead>
+							<tbody>
+								@foreach (var pRow in sortedPlayers)
+								{
+									var st = standings.FirstOrDefault(s => s.PlayerId == pRow.Id);
+									<tr>
+										<td style="text-align: center; font-weight: 700;">@pRow.StartRank</td>
+										<td style="font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">@pRow.FullName</td>
+										<td style="text-align: right; font-family: monospace; font-size: 9pt;">@(pRow.FideRating > 0 ? pRow.FideRating.ToString() : "-")</td>
+										@foreach (var pCol in sortedPlayers)
+										{
+											if (pRow.Id == pCol.Id)
+											{
+												<td style="text-align: center; background-color: #e5e5e5; font-size: 9pt;">✕</td>
+											}
+											else
+											{
+												string cellRes = GetHeadToHeadResult(pRow.Id, pCol.Id);
+												<td style="text-align: center; font-family: monospace; font-weight: 700; font-size: 9.5pt;">@cellRes</td>
+											}
+										}
+										<td style="text-align: right; font-weight: 800; font-family: monospace;">@(st != null ? st.Points.ToString("0.0") : "0.0")</td>
+									</tr>
+								}
+							</tbody>
+						</table>
+					}
+					else if (_sheetType == PrintSheetType.MatchSlips)
+					{
+						<!-- MATCH SCORE SLIPS (4 PER PAGE) -->
+						var round = Tournament.Rounds.FirstOrDefault(r => r.RoundNumber == _selectedRound);
+						<div style="margin-bottom: 14px;">
+							<h3 style="font-size: 13pt; font-weight: 700; margin: 0; color: #222222;">
+								@Loc["Print_MatchCardsTitle", _selectedRound]
+							</h3>
+						</div>
+
+						@if (round != null && round.Pairings.Count > 0)
+						{
+							<div class="slip-grid">
+								@foreach (var pairing in round.Pairings.Where(p => !p.IsBye).OrderBy(p => p.BoardNumber))
+								{
+									var white = Tournament.GetPlayer(pairing.WhitePlayerId);
+									var black = Tournament.GetPlayer(pairing.BlackPlayerId);
+
+									<div class="match-slip">
+										<div style="display: flex; justify-content: space-between; border-bottom: 1.5px solid #333; padding-bottom: 4px; margin-bottom: 8px;">
+											<span style="font-weight: 800; font-size: 13pt;">@Loc["Print_BoardCard", pairing.BoardNumber]</span>
+											<span style="font-size: 10pt; color: #555;">@Loc["Common_Round"] @_selectedRound</span>
+										</div>
+
+										<div style="font-size: 10pt; margin-bottom: 10px;">
+											<div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+												<span><strong>@Loc["Common_White"]:</strong> @(white?.FullName ?? "-")</span>
+												<span style="font-family: monospace;">(@(white?.FideRating > 0 ? white.FideRating.ToString() : "-"))</span>
+											</div>
+											<div style="display: flex; justify-content: space-between;">
+												<span><strong>@Loc["Common_Black"]:</strong> @(black?.FullName ?? "-")</span>
+												<span style="font-family: monospace;">(@(black?.FideRating > 0 ? black.FideRating.ToString() : "-"))</span>
+											</div>
+										</div>
+
+										<!-- Score Checkboxes -->
+										<div style="display: flex; justify-content: space-around; background: #f4f4f4; border: 1px solid #ccc; padding: 6px; border-radius: 4px; font-weight: 800; font-size: 11pt; margin-bottom: 10px;">
+											<span>[ &nbsp; ] 1 - 0</span>
+											<span>[ &nbsp; ] ½ - ½</span>
+											<span>[ &nbsp; ] 0 - 1</span>
+										</div>
+
+										<div style="display: flex; justify-content: space-between; font-size: 8.5pt; color: #555;">
+											<div>@Loc["Print_WhiteSig"]</div>
+											<div>@Loc["Print_BlackSig"]</div>
+										</div>
+									</div>
+								}
+							</div>
+						}
+					}
+					else if (_sheetType == PrintSheetType.FideTrf)
+					{
+						<!-- FIDE TRF VIEW -->
+						string trfText = TrfHandler.GenerateTrf(Tournament);
+
+						<div style="margin-bottom: 10px;">
+							<h3 style="font-size: 13pt; font-weight: 700; margin: 0; color: #222222;">
+								@Loc["Print_TrfTitle"]
+							</h3>
+							<p style="font-size: 9.5pt; color: #666; margin: 2px 0 0 0;">
+								@Loc["Print_TrfSubtitle"]
+							</p>
+						</div>
+
+						<pre style="background: #f8fafc; color: #0f172a; padding: 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-family: monospace; font-size: 11px; white-space: pre; overflow-x: auto; max-height: 480px;">@trfText</pre>
+					}
+				</div>
+			</div>
+
+			<div class="modal-footer no-print">
+				<button class="btn-secondary" @onclick="CloseAsync">@Loc["Common_Close"]</button>
+				@if (_sheetType == PrintSheetType.FideTrf)
+				{
+					<button class="btn-primary" @onclick="DownloadTrfAsync">
+						<AppIcon Name="download" Size="14" />
+						<span>@Loc["Print_DownloadTrf"]</span>
+					</button>
+				}
+				else
+				{
+					<button class="btn-primary" @onclick="PrintSheetAsync">
+						<AppIcon Name="printer" Size="14" />
+						<span>@Loc["Print_PrintPdf"]</span>
+					</button>
+				}
+			</div>
+		</div>
+	</div>
+}
+
+@code {
+	[Parameter] public bool IsOpen { get; set; }
+	[Parameter] public Tournament? Tournament { get; set; }
+	[Parameter] public EventCallback OnClose { get; set; }
+
+	private PrintSheetType _sheetType = PrintSheetType.PairingsBoard;
+	private int _selectedRound = 1;
+
+	public enum PrintSheetType
+	{
+		PairingsBoard,
+		PairingsAlphabetical,
+		Standings,
+		CrossTable,
+		MatchSlips,
+		FideTrf
+	}
+
+	protected override void OnInitialized()
+	{
+		Loc.OnLanguageChanged += StateHasChanged;
+	}
+
+	public void Dispose()
+	{
+		Loc.OnLanguageChanged -= StateHasChanged;
+	}
+
+	protected override void OnParametersSet()
+	{
+		if (Tournament != null && Tournament.Rounds.Count > 0)
+		{
+			_selectedRound = Tournament.Rounds.Last().RoundNumber;
+		}
+	}
+
+	private string GetSheetTabClass(PrintSheetType type) =>
+		_sheetType == type ? "workspace-tab tab-active" : "workspace-tab";
+
+	private async Task CloseAsync()
+	{
+		await OnClose.InvokeAsync();
+	}
+
+	private async Task PrintSheetAsync()
+	{
+		await JS.InvokeVoidAsync("window.printCurrentPage");
+	}
+
+	private async Task DownloadTrfAsync()
+	{
+		if (Tournament == null) return;
+		string trfContent = TrfHandler.GenerateTrf(Tournament);
+		string safeName = string.Join("_", Tournament.Name.Split(Path.GetInvalidFileNameChars())).Replace(" ", "_");
+		string filename = $"{safeName}_{DateTime.Now:yyyyMMdd}.trf";
+		await FileExport.SaveTextFileAsync(
+			Loc["Export_TrfDialogTitle"],
+			filename,
+			trfContent,
+			(Loc["Export_TrfFilterName"], new[] { ".trf" }));
+	}
+
+	private string GetHeadToHeadResult(string p1Id, string p2Id)
+	{
+		if (Tournament == null) return "-";
+		foreach (var round in Tournament.Rounds)
+		{
+			var match = round.Pairings.FirstOrDefault(p =>
+				(p.WhitePlayerId == p1Id && p.BlackPlayerId == p2Id) ||
+				(p.WhitePlayerId == p2Id && p.BlackPlayerId == p1Id));
+
+			if (match == null || match.Result == MatchResult.NotPlayed) continue;
+			var (wPts, bPts) = match.Result.ToPoints();
+			if (match.WhitePlayerId == p1Id)
+			{
+				return wPts switch { 1.0 => "1", 0.5 => "½", 0.0 => "0", _ => "-" };
+			}
+			else
+			{
+				return bPts switch { 1.0 => "1", 0.5 => "½", 0.0 => "0", _ => "-" };
+			}
+		}
+		return "-";
+	}
+}

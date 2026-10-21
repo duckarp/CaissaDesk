@@ -1,0 +1,195 @@
+@namespace CaissaDesk.Components.Dashboard
+@using Caissa.Shared.Models
+@using CaissaDesk.Data
+@using CaissaDesk.Localization
+@inject ITournamentRepository TournamentRepo
+@inject IAppSettingsService AppSettings
+@inject ILocalizationService Loc
+@implements IDisposable
+
+@if (IsOpen)
+{
+	<div class="modal-overlay" @onclick="Close">
+		<div class="modal-content" @onclick:stopPropagation="true">
+			<div class="modal-header">
+				<div class="modal-title">
+					<span style="color: var(--brand-gold);"><AppIcon Name="trophy" Size="18" /></span>
+					<span>@Loc["Nav_NewTournament"]</span>
+				</div>
+				<button class="modal-close-btn" @onclick="Close" type="button" title="@Loc["Common_Close"]">
+					<AppIcon Name="x" Size="15" />
+				</button>
+			</div>
+
+			<div class="modal-body">
+				<div class="form-group">
+					<label class="form-label">@Loc["Tournament_Name"]</label>
+					<input type="text" class="form-input" @bind="_name" placeholder="e.g. Autumn Open 2026" autofocus />
+				</div>
+
+				<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+					<div class="form-group">
+						<label class="form-label">@Loc["Tournament_System"]</label>
+						<select class="form-select" @bind="_system">
+							<option value="@TournamentSystem.SwissDutch">@Loc["Tournament_SwissDutch"]</option>
+							<option value="@TournamentSystem.RoundRobin">@Loc["Tournament_RoundRobin"]</option>
+						</select>
+					</div>
+
+					<div class="form-group">
+						<label class="form-label">@Loc["Tournament_TimeControl"]</label>
+						<select class="form-select" @bind="_timeControl">
+							<option value="@TimeControlCategory.Rapid">@Loc["TimeControl_Rapid"]</option>
+							<option value="@TimeControlCategory.Blitz">@Loc["TimeControl_Blitz"]</option>
+							<option value="@TimeControlCategory.Standard">@Loc["TimeControl_Standard"]</option>
+						</select>
+					</div>
+				</div>
+
+				<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+					<div class="form-group">
+						<label class="form-label">@Loc["Tournament_TimeControlSpec"]</label>
+						<input type="text" class="form-input" @bind="_timeControlSpec" placeholder="e.g. 15m + 10s" />
+					</div>
+
+					<div class="form-group">
+						<label class="form-label">@Loc["Tournament_TotalRounds"]</label>
+						<input type="number" class="form-input" @bind="_totalRounds" min="1" max="25" />
+					</div>
+				</div>
+
+				<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+					<div class="form-group">
+						<label class="form-label">@Loc["Tournament_ChiefArbiter"]</label>
+						<input type="text" class="form-input" @bind="_chiefArbiter" placeholder="e.g. IA Tomas K." />
+					</div>
+
+					<div class="form-group">
+						<label class="form-label">@Loc["Tournament_Venue"]</label>
+						<input type="text" class="form-input" @bind="_venue" placeholder="e.g. Chess Hall" />
+					</div>
+				</div>
+
+				<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+					<div class="form-group">
+						<label class="form-label">@Loc["Tournament_Federation"]</label>
+						<input type="text" class="form-input" @bind="_federation" placeholder="e.g. SVK" maxlength="3" />
+					</div>
+
+					<div class="form-group">
+						<label class="form-label">@Loc["Tournament_SeedingPrecedence"]</label>
+						<select class="form-select" @bind="_seeding">
+							<option value="@SeedingPrecedence.FideFirst">@Loc["Tournament_FideFirst"]</option>
+							<option value="@SeedingPrecedence.NationalFirst">@Loc["Tournament_NationalFirst"]</option>
+						</select>
+					</div>
+				</div>
+
+				<div style="display: flex; align-items: center; gap: 8px; margin-top: 6px;">
+					<input type="checkbox" id="fideRatedCheck" @bind="_fideRated" style="cursor: pointer; width: 16px; height: 16px; accent-color: var(--brand-gold);" />
+					<label for="fideRatedCheck" style="font-size: 13px; color: var(--text-primary); cursor: pointer; user-select: none;">
+						@Loc["Tournament_FideRated"]
+					</label>
+				</div>
+			</div>
+
+			<div class="modal-footer">
+				<button class="btn-secondary" @onclick="Close">@Loc["Common_Cancel"]</button>
+				<button class="btn-primary" @onclick="CreateAsync" disabled="@string.IsNullOrWhiteSpace(_name)">
+					<AppIcon Name="check" Size="14" />
+					<span>@Loc["Tournament_CreateBtn"]</span>
+				</button>
+			</div>
+		</div>
+	</div>
+}
+
+@code {
+	[Parameter] public bool IsOpen { get; set; }
+	[Parameter] public EventCallback OnClose { get; set; }
+	[Parameter] public EventCallback<Tournament> OnCreated { get; set; }
+
+	private bool _wasOpen = false;
+	private string _name = "Club Championship 2026";
+	private TournamentSystem _system = TournamentSystem.SwissDutch;
+	private TimeControlCategory _timeControl = TimeControlCategory.Rapid;
+	private string _timeControlSpec = "15m + 10s";
+	private int _totalRounds = 7;
+	private string _chiefArbiter = "Tomas K.";
+	private string _venue = "Chess Club";
+	private string _federation = "SVK";
+	private SeedingPrecedence _seeding = SeedingPrecedence.FideFirst;
+	private bool _fideRated = true;
+
+	protected override void OnInitialized()
+	{
+		Loc.OnLanguageChanged += StateHasChanged;
+		LoadDefaults();
+	}
+
+	protected override void OnParametersSet()
+	{
+		if (IsOpen && !_wasOpen)
+		{
+			LoadDefaults();
+		}
+		_wasOpen = IsOpen;
+	}
+
+	private void LoadDefaults()
+	{
+		var s = AppSettings.Settings;
+		_name = $"Open {DateTime.Today.Year}";
+		_system = s.DefaultSystem;
+		_timeControl = s.DefaultTimeControl;
+		_timeControlSpec = s.DefaultTimeControlDetails;
+		_totalRounds = s.DefaultTotalRounds;
+		_chiefArbiter = s.DefaultChiefArbiter;
+		_venue = s.DefaultVenue;
+		_federation = s.DefaultFederation;
+		_seeding = s.DefaultSeedingPrecedence;
+		_fideRated = s.DefaultFideRated;
+	}
+
+	public void Dispose()
+	{
+		Loc.OnLanguageChanged -= StateHasChanged;
+	}
+
+	private async Task Close()
+	{
+		await OnClose.InvokeAsync();
+	}
+
+	private async Task CreateAsync()
+	{
+		if (string.IsNullOrWhiteSpace(_name)) return;
+
+		var tournament = new Tournament
+		{
+			Id = Guid.NewGuid().ToString("N"),
+			Name = _name.Trim(),
+			System = _system,
+			TimeControl = _timeControl,
+			TimeControlDetails = _timeControlSpec,
+			TotalRounds = _totalRounds,
+			ChiefArbiter = _chiefArbiter.Trim(),
+			DeputyArbiter = string.IsNullOrWhiteSpace(AppSettings.Settings.DefaultDeputyArbiter) ? null : AppSettings.Settings.DefaultDeputyArbiter.Trim(),
+			Organizer = string.IsNullOrWhiteSpace(AppSettings.Settings.DefaultOrganizer) ? null : AppSettings.Settings.DefaultOrganizer.Trim(),
+			Venue = _venue.Trim(),
+			Federation = string.IsNullOrWhiteSpace(_federation) ? "SVK" : _federation.Trim().ToUpperInvariant(),
+			SeedingPrecedence = _seeding,
+			FideRated = _fideRated,
+			PairingEngineId = AppSettings.Settings.DefaultSwissEngineId,
+			TiebreakOrder = _system == TournamentSystem.RoundRobin
+				? TiebreakPreset.RoundRobin.GetDefaultList()
+				: TiebreakPreset.FideStandardSwiss.GetDefaultList(),
+			StartDate = DateTime.Today,
+			EndDate = DateTime.Today
+		};
+
+		await TournamentRepo.SaveAsync(tournament);
+		await OnCreated.InvokeAsync(tournament);
+		await Close();
+	}
+}

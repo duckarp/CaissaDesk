@@ -1,0 +1,137 @@
+using System.Security.Cryptography;
+using System.Text;
+
+namespace Caissa.Shared.Security;
+
+public static class CaissaSecurity
+{
+    public const string HeaderTimestamp = "X-Caissa-Timestamp";
+    public const string HeaderSignature = "X-Caissa-Signature";
+    public const string HeaderTournamentKey = "X-Caissa-Tournament-Key";
+
+    /// <summary>
+    /// Computes the SHA-256 hash of a string, returning a lowercase hex string.
+    /// </summary>
+    public static string ComputeSha256(string content)
+    {
+        var bytes = Encoding.UTF8.GetBytes(content ?? string.Empty);
+        return ComputeSha256(bytes);
+    }
+
+    /// <summary>
+    /// Computes the SHA-256 hash of a byte array, returning a lowercase hex string.
+    /// </summary>
+    public static string ComputeSha256(byte[] bytes)
+    {
+        var hash = SHA256.HashData(bytes);
+        return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// Computes the HMAC-SHA256 signature for a message using the given secret key.
+    /// </summary>
+    public static string ComputeHmacSha256(string secretKey, string message)
+    {
+        var keyBytes = Encoding.UTF8.GetBytes(secretKey ?? string.Empty);
+        var messageBytes = Encoding.UTF8.GetBytes(message ?? string.Empty);
+
+        using var hmac = new HMACSHA256(keyBytes);
+        var hash = hmac.ComputeHash(messageBytes);
+        return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// Constant-time comparison between two strings to prevent timing attacks.
+    /// </summary>
+    public static bool FixedTimeEquals(string? a, string? b)
+    {
+        if (a == null || b == null)
+        {
+            return a == b;
+        }
+
+        var bytesA = Encoding.UTF8.GetBytes(a);
+        var bytesB = Encoding.UTF8.GetBytes(b);
+
+        return CryptographicOperations.FixedTimeEquals(bytesA, bytesB);
+    }
+
+    /// <summary>
+    /// Constructs a standardized canonical string representation for HMAC request signing.
+    /// </summary>
+    public static string BuildStringToSign(string method, string pathAndQuery, string timestamp, string bodySha256)
+    {
+        var normalizedMethod = (method ?? "POST").Trim().ToUpperInvariant();
+        var normalizedPath = (pathAndQuery ?? string.Empty).Trim();
+        var normalizedTimestamp = (timestamp ?? string.Empty).Trim();
+        var normalizedHash = (bodySha256 ?? string.Empty).Trim().ToLowerInvariant();
+
+        return $"{normalizedTimestamp}\n{normalizedMethod}\n{normalizedPath}\n{normalizedHash}";
+    }
+
+    /// <summary>
+    /// Validates whether a provided key matches a stored key.
+    /// Supports both SHA-256 hashed keys (recommended) and legacy plaintext keys.
+    /// </summary>
+    public static bool VerifyTournamentKey(string storedKeyOrHash, string providedKey)
+    {
+        if (string.IsNullOrEmpty(storedKeyOrHash) || string.IsNullOrEmpty(providedKey))
+        {
+            return false;
+        }
+
+        // 1. Check against SHA-256 hash of provided key (standard)
+        var providedHash = ComputeSha256(providedKey);
+        if (FixedTimeEquals(storedKeyOrHash, providedHash))
+        {
+            return true;
+        }
+
+        // 2. Fallback check for legacy unhashed stored keys
+        return FixedTimeEquals(storedKeyOrHash, providedKey);
+    }
+
+    /// <summary>
+    /// Generates a cryptographically secure random alphanumeric hex key.
+    /// </summary>
+    public static string GenerateSecureKey(int byteLength = 16)
+    {
+        var bytes = RandomNumberGenerator.GetBytes(byteLength);
+        return Convert.ToHexString(bytes).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// Signs an outgoing HTTP request with timestamp, body hash, and HMAC-SHA256 signature.
+    /// </summary>
+    public static void SignRequest(
+        HttpRequestMessage request,
+        string pathAndQuery,
+        string? bodyJson,
+        string? apiKey,
+        string? tournamentKey = null)
+    {
+        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
+        var bodyHash = ComputeSha256(bodyJson ?? string.Empty);
+        var method = request.Method.Method;
+
+        request.Headers.Remove(HeaderTimestamp);
+        request.Headers.Add(HeaderTimestamp, timestamp);
+
+        if (!string.IsNullOrWhiteSpace(tournamentKey))
+        {
+            request.Headers.Remove(HeaderTournamentKey);
+            request.Headers.Add(HeaderTournamentKey, tournamentKey);
+        }
+
+        if (!string.IsNullOrWhiteSpace(apiKey))
+        {
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+
+            var stringToSign = BuildStringToSign(method, pathAndQuery, timestamp, bodyHash);
+            var signature = ComputeHmacSha256(apiKey, stringToSign);
+
+            request.Headers.Remove(HeaderSignature);
+            request.Headers.Add(HeaderSignature, signature);
+        }
+    }
+}

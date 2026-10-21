@@ -1,0 +1,588 @@
+@namespace CaissaDesk.Components.Dashboard
+@using Caissa.Shared.Models
+@using CaissaDesk.Data
+@using CaissaDesk.Localization
+@inject ITournamentRepository TournamentRepo
+@inject WorkspaceState Workspace
+@inject IJSRuntime JS
+@inject ILocalizationService Loc
+@inject IFileExportService FileExport
+@implements IDisposable
+
+<div class="dashboard-hub" style="padding: 24px 32px; max-width: 2200px; margin: 0 auto; width: 100%;">
+	<!-- Top Bar / Summary Header -->
+	<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; flex-wrap: wrap; gap: 16px;">
+		<div>
+			<h1 style="font-size: 24px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px; display: flex; align-items: center; gap: 10px;">
+				<span style="color: var(--brand-gold);"><AppIcon Name="trophy" Size="24" /></span>
+				<span>@Loc["Nav_Tournaments"]</span>
+			</h1>
+			<p style="color: var(--text-secondary); font-size: 13px;">
+				@Loc["Dashboard_Subtitle"]
+			</p>
+		</div>
+
+		<div style="display: flex; align-items: center; gap: 10px;">
+			<label class="btn-secondary" style="cursor: pointer; margin: 0;" title="@Loc["Dashboard_ImportCdesk"]">
+				<InputFile OnChange="ImportCdeskFileAsync" style="display: none;" accept=".cdesk,.json" />
+				<AppIcon Name="download" Size="14" />
+				<span>@Loc["Dashboard_ImportCdesk"]</span>
+			</label>
+			<button class="btn-secondary" title="@Loc["Dashboard_LoadSample"]" @onclick="CreateSampleAsync">
+				<AppIcon Name="users" Size="14" />
+				<span>@Loc["Dashboard_LoadSample"]</span>
+			</button>
+			<button class="btn-primary" @onclick="() => _showCreateModal = true">
+				<AppIcon Name="plus" Size="15" />
+				<span>@Loc["Nav_NewTournament"]</span>
+			</button>
+		</div>
+	</div>
+
+	<!-- Stats Row -->
+	@if (_tournaments != null && _tournaments.Count > 0)
+	{
+		<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
+			<div class="panel-card" style="display: flex; align-items: center; gap: 14px;">
+				<div style="width: 40px; height: 40px; border-radius: 8px; background: rgba(250, 204, 21, 0.15); display: flex; align-items: center; justify-content: center; color: var(--brand-gold);">
+					<AppIcon Name="trophy" Size="22" />
+				</div>
+				<div>
+					<div style="font-size: 22px; font-weight: 700; color: var(--text-primary); line-height: 1;">@_tournaments.Count</div>
+					<div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">@Loc["Dashboard_StatTournaments"]</div>
+				</div>
+			</div>
+
+			<div class="panel-card" style="display: flex; align-items: center; gap: 14px;">
+				<div style="width: 40px; height: 40px; border-radius: 8px; background: rgba(31, 111, 235, 0.15); display: flex; align-items: center; justify-content: center; color: var(--accent-blue-hover);">
+					<AppIcon Name="users" Size="22" />
+				</div>
+				<div>
+					<div style="font-size: 22px; font-weight: 700; color: var(--text-primary); line-height: 1;">@_tournaments.Sum(t => t.PlayerCount)</div>
+					<div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">@Loc["Dashboard_StatPlayers"]</div>
+				</div>
+			</div>
+
+			<div class="panel-card" style="display: flex; align-items: center; gap: 14px;">
+				<div style="width: 40px; height: 40px; border-radius: 8px; background: rgba(35, 134, 54, 0.15); display: flex; align-items: center; justify-content: center; color: var(--accent-primary-hover);">
+					<AppIcon Name="shield" Size="22" />
+				</div>
+				<div>
+					<div style="font-size: 22px; font-weight: 700; color: var(--text-primary); line-height: 1;">@_tournaments.Count(t => t.FideRated)</div>
+					<div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">@Loc["Dashboard_StatFideRated"]</div>
+				</div>
+			</div>
+		</div>
+	}
+
+	@if (!string.IsNullOrEmpty(_exportMessage))
+	{
+		<div class="panel-card" style="display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; margin-bottom: 20px; border-radius: 6px; font-size: 13px; background: @(_exportIsError ? "rgba(239, 68, 68, 0.1)" : "rgba(76, 175, 80, 0.1)"); border: 1px solid @(_exportIsError ? "rgba(239, 68, 68, 0.3)" : "rgba(76, 175, 80, 0.3)"); color: @(_exportIsError ? "var(--accent-danger-hover)" : "var(--accent-success)");">
+			<div style="display: flex; align-items: center; gap: 8px;">
+				<AppIcon Name="@(_exportIsError ? "warning" : "checkmark")" Size="14" />
+				<span>@_exportMessage</span>
+			</div>
+			<button class="modal-close-btn" @onclick="() => _exportMessage = null" style="font-size: 12px; color: var(--text-secondary);">
+				<AppIcon Name="x" Size="12" />
+			</button>
+		</div>
+	}
+
+	<!-- Tournaments Grid / List -->
+	@if (_isLoading)
+	{
+		<div style="text-align: center; padding: 60px 20px; color: var(--text-secondary);">
+			<div class="app-splash-spinner" style="margin: 0 auto 12px;"></div>
+			<div>Loading tournaments...</div>
+		</div>
+	}
+	else if (_tournaments == null || _tournaments.Count == 0)
+	{
+		<div class="panel-card" style="text-align: center; padding: 48px 24px;">
+			<div style="width: 56px; height: 56px; border-radius: 12px; background: rgba(250, 204, 21, 0.12); color: var(--brand-gold); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px;">
+				<AppIcon Name="trophy" Size="30" />
+			</div>
+			<h3 style="font-size: 18px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">@Loc["Dashboard_EmptyTitle"]</h3>
+			<p style="color: var(--text-secondary); font-size: 13px; max-width: 440px; margin: 0 auto 20px;">
+				@Loc["Dashboard_EmptyDesc"]
+			</p>
+			<div style="display: flex; justify-content: center; gap: 12px;">
+				<button class="btn-primary" @onclick="() => _showCreateModal = true">
+					<AppIcon Name="plus" Size="14" />
+					<span>@Loc["Nav_NewTournament"]</span>
+				</button>
+				<button class="btn-secondary" @onclick="CreateSampleAsync">
+					<AppIcon Name="users" Size="14" />
+					<span>@Loc["Dashboard_LoadSample"]</span>
+				</button>
+			</div>
+		</div>
+	}
+	else
+	{
+		<!-- Navigation Tabs: Active vs Archived -->
+		<div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 16px;">
+			<div style="display: flex; align-items: center; background-color: var(--bg-surface-elevated); padding: 3px; border-radius: 6px; border: 1px solid var(--border-subtle);">
+				<button class="@(!_showArchived ? "workspace-tab tab-active" : "workspace-tab")" @onclick="() => _showArchived = false">
+					<AppIcon Name="play" Size="12" />
+					<span>@Loc["Dashboard_TabActive", ActiveCount]</span>
+				</button>
+				<button class="@(_showArchived ? "workspace-tab tab-active" : "workspace-tab")" @onclick="() => _showArchived = true">
+					<AppIcon Name="archive" Size="12" />
+					<span>@Loc["Dashboard_TabArchived", ArchivedCount]</span>
+				</button>
+			</div>
+
+			<!-- Filter & Search Toolbar -->
+			<div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+				<!-- Search Box -->
+				<div style="position: relative; width: 210px; display: flex; align-items: center;">
+					<input type="text"
+						   class="form-input form-input-sm"
+						   style="padding-left: 30px; width: 100%;"
+						   placeholder="@Loc["Common_Search"]"
+						   @bind="_searchQuery"
+						   @bind:event="oninput" />
+					<span style="position: absolute; left: 10px; top: 0; bottom: 0; display: flex; align-items: center; justify-content: center; color: var(--text-muted); pointer-events: none;">
+						<AppIcon Name="search" Size="13" />
+					</span>
+				</div>
+
+				<!-- System Filter -->
+				<select class="form-select form-select-sm" style="width: auto;" @bind="_systemFilterString">
+					<option value="">@Loc["Dashboard_FilterAllSystems"]</option>
+					<option value="@((int)TournamentSystem.SwissDutch)">@Loc["Tournament_SwissDutch"]</option>
+					<option value="@((int)TournamentSystem.RoundRobin)">@Loc["Tournament_RoundRobin"]</option>
+				</select>
+
+				<!-- Rating Filter -->
+				<select class="form-select form-select-sm" style="width: auto;" @bind="_fideFilterString">
+					<option value="">@Loc["Dashboard_FilterAllRatings"]</option>
+					<option value="fide">@Loc["Dashboard_FilterFideOnly"]</option>
+				</select>
+
+				<!-- Sorting -->
+				<select class="form-select form-select-sm" style="width: auto;" @bind="_sortBy">
+					<option value="date_desc">@Loc["Dashboard_SortDateDesc"]</option>
+					<option value="date_asc">@Loc["Dashboard_SortDateAsc"]</option>
+					<option value="name_asc">@Loc["Dashboard_SortNameAsc"]</option>
+					<option value="name_desc">@Loc["Dashboard_SortNameDesc"]</option>
+					<option value="players_desc">@Loc["Dashboard_SortPlayersDesc"]</option>
+					<option value="rounds_desc">@Loc["Dashboard_SortRoundsDesc"]</option>
+				</select>
+			</div>
+		</div>
+
+		var filteredList = GetFilteredTournaments();
+
+		@if (_showArchived && ArchivedCount == 0)
+		{
+			<!-- Empty Archive State -->
+			<div class="panel-card" style="text-align: center; padding: 48px 24px;">
+				<div style="width: 52px; height: 52px; border-radius: 12px; background: rgba(148, 163, 184, 0.12); color: var(--text-secondary); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px;">
+					<AppIcon Name="archive" Size="26" />
+				</div>
+				<h3 style="font-size: 17px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px;">@Loc["Dashboard_EmptyArchivedTitle"]</h3>
+				<p style="color: var(--text-secondary); font-size: 13px; max-width: 440px; margin: 0 auto 16px;">
+					@Loc["Dashboard_EmptyArchivedDesc"]
+				</p>
+			</div>
+		}
+		else if (!_showArchived && ActiveCount == 0)
+		{
+			<!-- Empty Active State -->
+			<div class="panel-card" style="text-align: center; padding: 48px 24px;">
+				<div style="width: 52px; height: 52px; border-radius: 12px; background: rgba(250, 204, 21, 0.12); color: var(--brand-gold); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px;">
+					<AppIcon Name="trophy" Size="26" />
+				</div>
+				<h3 style="font-size: 17px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px;">@Loc["Dashboard_EmptyActiveTitle"]</h3>
+				<p style="color: var(--text-secondary); font-size: 13px; max-width: 440px; margin: 0 auto 16px;">
+					@Loc["Dashboard_EmptyActiveDesc"]
+				</p>
+				<button class="btn-primary" @onclick="() => _showCreateModal = true">
+					<AppIcon Name="plus" Size="14" />
+					<span>@Loc["Nav_NewTournament"]</span>
+				</button>
+			</div>
+		}
+		else if (filteredList.Count == 0)
+		{
+			<!-- No Match Filters State -->
+			<div class="panel-card" style="text-align: center; padding: 40px 20px;">
+				<div style="color: var(--text-muted); margin-bottom: 8px;"><AppIcon Name="search" Size="28" /></div>
+				<div style="font-weight: 600; font-size: 15px; color: var(--text-primary); margin-bottom: 4px;">@Loc["Dashboard_NoMatchTitle"]</div>
+				<div style="color: var(--text-secondary); font-size: 12px; margin-bottom: 16px;">@Loc["Dashboard_NoMatchDesc"]</div>
+				<button class="btn-secondary" @onclick="ResetFilters">
+					<span>@Loc["Dashboard_ResetFilters"]</span>
+				</button>
+			</div>
+		}
+		else
+		{
+			<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 16px;">
+				@foreach (var t in filteredList)
+				{
+					<div class="panel-card" style="display: flex; flex-direction: column; justify-content: space-between; gap: 14px; transition: border-color var(--transition-fast);">
+						<div>
+							<div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 8px;">
+								<h3 style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin: 0; line-height: 1.3;">
+									@t.Name
+								</h3>
+								<div style="display: flex; align-items: center; gap: 6px;">
+									@if (t.FideRated)
+									{
+										<span class="badge badge-gold" title="Official FIDE Rated Event">FIDE</span>
+									}
+									@if (t.IsFinished)
+									{
+										<span class="badge badge-gray" style="font-size: 10px;" title="@Loc["Dashboard_ArchivedBadge"]">
+											<AppIcon Name="archive" Size="10" />
+											<span>@Loc["Dashboard_ArchivedBadge"]</span>
+										</span>
+									}
+								</div>
+							</div>
+
+							<div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px;">
+								<span class="badge badge-blue">
+									@(t.System == TournamentSystem.SwissDutch ? "Swiss Dutch" : "Round Robin")
+								</span>
+								<span class="badge badge-gray">
+									@t.TimeControl
+								</span>
+								<span class="badge badge-gray">
+									@t.TotalRounds Rounds
+								</span>
+								<span class="badge badge-green">
+									<AppIcon Name="users" Size="11" />
+									@t.PlayerCount Players
+								</span>
+							</div>
+
+							@if (!string.IsNullOrEmpty(t.ChiefArbiter) || !string.IsNullOrEmpty(t.Venue))
+							{
+								<div style="font-size: 12px; color: var(--text-secondary); display: flex; flex-direction: column; gap: 4px;">
+									@if (!string.IsNullOrEmpty(t.ChiefArbiter))
+									{
+										<div style="display: flex; align-items: center; gap: 6px;">
+											<AppIcon Name="user" Size="12" />
+											<span>@Loc["Common_Arbiter"]: @t.ChiefArbiter</span>
+										</div>
+									}
+									@if (!string.IsNullOrEmpty(t.Venue))
+									{
+										<div style="display: flex; align-items: center; gap: 6px;">
+											<AppIcon Name="location" Size="12" />
+											<span>@t.Venue</span>
+										</div>
+									}
+								</div>
+							}
+						</div>
+
+						<div style="display: flex; align-items: center; justify-content: space-between; border-top: 1px solid var(--border-muted); padding-top: 12px; margin-top: 4px;">
+							<span style="font-size: 11px; color: var(--text-muted); font-family: var(--font-mono);">
+								@t.UpdatedAt.ToLocalTime().ToString("MMM dd, yyyy HH:mm")
+							</span>
+							<div style="display: flex; align-items: center; gap: 6px;">
+								@if (t.IsFinished)
+								{
+									<button class="btn-secondary" style="padding: 4px 8px; font-size: 11px;" title="@Loc["Dashboard_UnarchiveTournament"]" @onclick="() => RequestToggleArchive(t.Id, t.Name, false)">
+										<AppIcon Name="unarchive" Size="12" />
+									</button>
+								}
+								else
+								{
+									<button class="btn-secondary" style="padding: 4px 8px; font-size: 11px;" title="@Loc["Dashboard_ArchiveTournament"]" @onclick="() => RequestToggleArchive(t.Id, t.Name, true)">
+										<AppIcon Name="archive" Size="12" />
+									</button>
+								}
+								<button class="btn-secondary" style="padding: 4px 8px; font-size: 11px;" title="@Loc["Dashboard_EditTournamentTooltip"]" @onclick="() => OpenEditModalAsync(t.Id)">
+									<AppIcon Name="edit" Size="12" />
+								</button>
+								<button class="btn-secondary" style="padding: 4px 8px; font-size: 11px;" title="@Loc["Dashboard_ExportCdeskTooltip"]" @onclick="() => ExportCdeskAsync(t.Id, t.Name)">
+									<AppIcon Name="download" Size="12" />
+								</button>
+								<button class="btn-danger" style="padding: 4px 8px; font-size: 11px;" title="@Loc["Dashboard_DeleteTooltip"]" @onclick="() => RequestDeleteTournament(t.Id, t.Name)">
+									<AppIcon Name="trash" Size="12" />
+								</button>
+								<button class="btn-primary" style="padding: 5px 12px; font-size: 12px;" @onclick="() => OpenTournamentAsync(t.Id)">
+									<span>@Loc["Common_Open"]</span>
+									<AppIcon Name="play" Size="11" />
+								</button>
+							</div>
+						</div>
+					</div>
+				}
+			</div>
+		}
+	}
+</div>
+
+<CreateTournamentModal IsOpen="_showCreateModal"
+					   OnClose="() => _showCreateModal = false"
+					   OnCreated="HandleTournamentCreated" />
+
+<EditTournamentModal IsOpen="_showEditModal"
+					 Tournament="_editingTournament"
+					 TournamentId="_editingTournamentId"
+					 OnClose="CloseEditModal"
+					 OnSaved="HandleTournamentEdited" />
+
+<ConfirmModal IsOpen="_confirmIsOpen"
+			  Title="@_confirmTitle"
+			  Message="@_confirmMessage"
+			  Details="@_confirmDetails"
+			  ConfirmText="@_confirmConfirmText"
+			  HeaderIcon="@_confirmHeaderIcon"
+			  ConfirmIcon="@_confirmIcon"
+			  IsDestructive="@_confirmIsDestructive"
+			  OnConfirm="ExecuteConfirmAction"
+			  OnCancel="() => _confirmIsOpen = false" />
+
+@code {
+	private List<TournamentSummary>? _tournaments;
+	private bool _isLoading = true;
+	private bool _showCreateModal = false;
+	private bool _showEditModal = false;
+	private Tournament? _editingTournament;
+	private string? _editingTournamentId;
+	private bool _showArchived = false;
+	private string _searchQuery = "";
+	private string _systemFilterString = "";
+	private string _fideFilterString = "";
+	private string _sortBy = "date_desc";
+	private string? _exportMessage;
+	private bool _exportIsError;
+
+	private int ActiveCount => _tournaments?.Count(t => !t.IsFinished) ?? 0;
+	private int ArchivedCount => _tournaments?.Count(t => t.IsFinished) ?? 0;
+
+	protected override async Task OnInitializedAsync()
+	{
+		Loc.OnLanguageChanged += StateHasChanged;
+		Workspace.OnChange += HandleWorkspaceChanged;
+		await LoadTournamentsAsync();
+	}
+
+	private void HandleWorkspaceChanged()
+	{
+		_ = InvokeAsync(LoadTournamentsAsync);
+	}
+
+	private async Task LoadTournamentsAsync()
+	{
+		_isLoading = true;
+		try
+		{
+			var list = await TournamentRepo.GetAllSummariesAsync();
+			_tournaments = list.ToList();
+		}
+		finally
+		{
+			_isLoading = false;
+		}
+	}
+
+	private List<TournamentSummary> GetFilteredTournaments()
+	{
+		if (_tournaments == null) return [];
+
+		var query = _tournaments.Where(t => t.IsFinished == _showArchived);
+
+		if (!string.IsNullOrWhiteSpace(_searchQuery))
+		{
+			string q = _searchQuery.Trim();
+			query = query.Where(t =>
+				t.Name.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+				(!string.IsNullOrEmpty(t.Venue) && t.Venue.Contains(q, StringComparison.OrdinalIgnoreCase)) ||
+				(!string.IsNullOrEmpty(t.ChiefArbiter) && t.ChiefArbiter.Contains(q, StringComparison.OrdinalIgnoreCase)));
+		}
+
+		if (int.TryParse(_systemFilterString, out int sysVal))
+		{
+			query = query.Where(t => (int)t.System == sysVal);
+		}
+
+		if (_fideFilterString == "fide")
+		{
+			query = query.Where(t => t.FideRated);
+		}
+
+		query = _sortBy switch
+		{
+			"date_asc" => query.OrderBy(t => t.UpdatedAt),
+			"name_asc" => query.OrderBy(t => t.Name, StringComparer.OrdinalIgnoreCase),
+			"name_desc" => query.OrderByDescending(t => t.Name, StringComparer.OrdinalIgnoreCase),
+			"players_desc" => query.OrderByDescending(t => t.PlayerCount),
+			"rounds_desc" => query.OrderByDescending(t => t.TotalRounds),
+			_ => query.OrderByDescending(t => t.UpdatedAt)
+		};
+
+		return query.ToList();
+	}
+
+	private void ResetFilters()
+	{
+		_searchQuery = "";
+		_systemFilterString = "";
+		_fideFilterString = "";
+		_sortBy = "date_desc";
+	}
+
+	private async Task OpenTournamentAsync(string id)
+	{
+		var tournament = await TournamentRepo.GetByIdAsync(id);
+		if (tournament != null)
+		{
+			Workspace.OpenTournament(tournament);
+		}
+	}
+
+	private bool _confirmIsOpen;
+	private string _confirmTitle = "";
+	private string _confirmMessage = "";
+	private string? _confirmDetails;
+	private string? _confirmConfirmText;
+	private string? _confirmHeaderIcon;
+	private string? _confirmIcon;
+	private bool _confirmIsDestructive = true;
+	private Func<Task>? _confirmAction;
+
+	private void RequestDeleteTournament(string id, string name)
+	{
+		_confirmTitle = Loc["Confirm_DeleteTournamentTitle"];
+		_confirmMessage = Loc["Confirm_DeleteTournamentMsg", name];
+		_confirmDetails = Loc["Confirm_CannotUndo"];
+		_confirmConfirmText = Loc["Common_Delete"];
+		_confirmHeaderIcon = "trash";
+		_confirmIcon = "trash";
+		_confirmIsDestructive = true;
+		_confirmAction = () => ExecuteDeleteTournamentAsync(id);
+		_confirmIsOpen = true;
+	}
+
+	private void RequestToggleArchive(string id, string name, bool isFinished)
+	{
+		_confirmTitle = isFinished ? Loc["Confirm_ArchiveTournamentTitle"] : Loc["Confirm_UnarchiveTournamentTitle"];
+		_confirmMessage = isFinished ? Loc["Confirm_ArchiveTournamentMsg", name] : Loc["Confirm_UnarchiveTournamentMsg", name];
+		_confirmDetails = null;
+		_confirmConfirmText = isFinished ? Loc["Dashboard_ArchiveTournament"] : Loc["Dashboard_UnarchiveTournament"];
+		_confirmHeaderIcon = isFinished ? "archive" : "unarchive";
+		_confirmIcon = isFinished ? "archive" : "unarchive";
+		_confirmIsDestructive = false;
+		_confirmAction = () => ExecuteToggleArchiveAsync(id, isFinished);
+		_confirmIsOpen = true;
+	}
+
+	private async Task ExecuteConfirmAction()
+	{
+		_confirmIsOpen = false;
+		if (_confirmAction != null)
+		{
+			await _confirmAction.Invoke();
+			_confirmAction = null;
+		}
+	}
+
+	private async Task ExecuteDeleteTournamentAsync(string id)
+	{
+		await TournamentRepo.DeleteAsync(id);
+		await LoadTournamentsAsync();
+	}
+
+	private async Task ExecuteToggleArchiveAsync(string id, bool isFinished)
+	{
+		await TournamentRepo.SetFinishedAsync(id, isFinished);
+		await LoadTournamentsAsync();
+	}
+
+	private async Task CreateSampleAsync()
+	{
+		var sample = await TournamentRepo.CreateDemoTournamentAsync();
+		await LoadTournamentsAsync();
+		Workspace.OpenTournament(sample);
+	}
+
+	private async Task ExportCdeskAsync(string id, string name)
+	{
+		try
+		{
+			string json = await TournamentRepo.ExportJsonAsync(id);
+			string safeName = string.Join("_", name.Split(Path.GetInvalidFileNameChars())).Replace(" ", "_");
+			string filename = $"{safeName}.cdesk";
+
+			string? savedPath = await FileExport.SaveTextFileAsync(
+				Loc["Export_CdeskDialogTitle"],
+				filename,
+				json,
+				(Loc["Export_CdeskFilterName"], new[] { ".cdesk" }));
+
+			if (!string.IsNullOrEmpty(savedPath))
+			{
+				_exportMessage = Loc["Dashboard_ExportSuccess", Path.GetFileName(savedPath)];
+				_exportIsError = false;
+			}
+		}
+		catch (Exception ex)
+		{
+			_exportMessage = Loc["Dashboard_ExportError", ex.Message];
+			_exportIsError = true;
+		}
+	}
+
+	private async Task ImportCdeskFileAsync(InputFileChangeEventArgs e)
+	{
+		try
+		{
+			using var stream = e.File.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+			using var reader = new StreamReader(stream);
+			string json = await reader.ReadToEndAsync();
+			var tournament = await TournamentRepo.ImportJsonAsync(json);
+			await LoadTournamentsAsync();
+			Workspace.OpenTournament(tournament);
+		}
+		catch (Exception ex)
+		{
+			Console.WriteLine($"Import failed: {ex.Message}");
+		}
+	}
+
+	private void HandleTournamentCreated(Tournament tournament)
+	{
+		_ = LoadTournamentsAsync();
+		Workspace.OpenTournament(tournament);
+	}
+
+	private async Task OpenEditModalAsync(string id)
+	{
+		_editingTournamentId = id;
+		_editingTournament = await TournamentRepo.GetByIdAsync(id);
+		_showEditModal = true;
+	}
+
+	private void CloseEditModal()
+	{
+		_showEditModal = false;
+		_editingTournament = null;
+		_editingTournamentId = null;
+	}
+
+	private async Task HandleTournamentEdited(Tournament savedTournament)
+	{
+		await LoadTournamentsAsync();
+
+		var openTab = Workspace.Tabs.OfType<TournamentTab>().FirstOrDefault(t => t.TournamentId == savedTournament.Id);
+		if (openTab != null)
+		{
+			openTab.Tournament = savedTournament;
+			openTab.NotifyChanged();
+		}
+	}
+
+	public void Dispose()
+	{
+		Loc.OnLanguageChanged -= StateHasChanged;
+		Workspace.OnChange -= HandleWorkspaceChanged;
+	}
+}

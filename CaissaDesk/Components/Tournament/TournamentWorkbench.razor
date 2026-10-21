@@ -1,0 +1,2869 @@
+@namespace CaissaDesk.Components.Tournament
+@using Caissa.Shared.Models
+@using CaissaDesk.Core.PairingEngine
+@using Caissa.Shared.Tiebreak
+@using CaissaDesk.Core.Arbiter
+@using CaissaDesk.Data
+@using CaissaDesk.Localization
+@inject ITournamentRepository TournamentRepo
+@inject IFideScoutingService FideService
+@inject INationalScoutingService NationalService
+@inject ITiebreakService TiebreakService
+@inject IPairingEngineRegistry EngineRegistry
+@inject IEngineInstallerService EngineInstaller
+@inject IArbiterService ArbiterService
+@inject IJSRuntime JS
+@inject ILocalizationService Loc
+@inject WorkspaceState Workspace
+@inject IFileExportService FileExport
+@inject ICaissaResultsSyncService CaissaResultsSync
+@inject IAppSettingsService AppSettingsService
+@implements IDisposable
+
+<div class="tournament-workbench" style="display: flex; flex-direction: column; height: 100%; width: 100%; overflow: hidden; background-color: var(--bg-canvas);">
+	@if (_isLoading)
+	{
+		<div style="text-align: center; padding: 60px 20px; color: var(--text-secondary);">
+			<div class="app-splash-spinner" style="margin: 0 auto 12px;"></div>
+			<div>@Loc["Workbench_Loading"]</div>
+		</div>
+	}
+	else if (_tournament == null)
+	{
+		<div class="panel-card" style="text-align: center; padding: 48px 24px; max-width: 480px; margin: 40px auto;">
+			<div style="color: var(--accent-danger-hover); margin-bottom: 12px;"><AppIcon Name="warning" Size="32" /></div>
+			<div style="font-weight: 700; font-size: 16px; color: var(--text-primary); margin-bottom: 8px;">@Loc["Workbench_NotFoundTitle"]</div>
+			<div style="color: var(--text-secondary); font-size: 13px; margin-bottom: 20px;">@Loc["Workbench_NotFoundDesc"]</div>
+			<button class="btn-primary" @onclick="() => Workspace.CloseTab(Tab.Id)">
+				<span>@Loc["Workbench_CloseTab"]</span>
+			</button>
+		</div>
+	}
+	else
+	{
+		<!-- Workbench Top Control Bar -->
+		<header style="background-color: var(--bg-surface); border-bottom: 1px solid var(--border-subtle); padding: 12px 20px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; flex-wrap: wrap; gap: 12px;">
+			<div style="display: flex; align-items: center; gap: 14px;">
+				<div style="width: 38px; height: 38px; border-radius: 8px; background: rgba(250, 204, 21, 0.15); color: var(--brand-gold); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+					<AppIcon Name="trophy" Size="20" />
+				</div>
+				<div>
+					<div style="display: flex; align-items: center; gap: 10px;">
+						<h2 style="font-size: 18px; font-weight: 700; color: var(--text-primary); margin: 0; line-height: 1.2;">
+							@_tournament.Name
+						</h2>
+						@if (_tournament.FideRated)
+						{
+							<span class="badge badge-gold" title="FIDE Rated Tournament">FIDE</span>
+						}
+						@if (_tournament.IsFinished)
+						{
+							<span class="badge badge-gray" style="font-size: 11px; display: inline-flex; align-items: center; gap: 4px;">
+								<AppIcon Name="archive" Size="11" />
+								<span>@Loc["Workbench_FinishedBadge"]</span>
+							</span>
+						}
+					</div>
+					<div style="display: flex; align-items: center; gap: 12px; margin-top: 3px; font-size: 12px; color: var(--text-secondary);">
+						<span>@(_tournament.System == TournamentSystem.SwissDutch ? Loc["Tournament_SwissDutch"] : Loc["Tournament_RoundRobin"])</span>
+						<span>•</span>
+						<span>@_tournament.TimeControl (@_tournament.TimeControlDetails)</span>
+						<span>•</span>
+						<span>@Loc["Workbench_TotalRounds", _tournament.TotalRounds]</span>
+						@if (!string.IsNullOrEmpty(_tournament.ChiefArbiter))
+						{
+							<span>•</span>
+							<span>@Loc["Workbench_ArbiterLabel", _tournament.ChiefArbiter]</span>
+						}
+					</div>
+				</div>
+			</div>
+
+			<!-- Sub-view Navigation Pills -->
+			<div style="display: flex; align-items: center; gap: 10px;">
+				<div style="display: flex; align-items: center; background-color: var(--bg-surface-elevated); padding: 3px; border-radius: 6px; border: 1px solid var(--border-subtle);">
+					<button class="@GetNavButtonClass(TournamentView.Roster)" @onclick="() => SetView(TournamentView.Roster)">
+						<AppIcon Name="users" Size="13" />
+						<span>@Loc["Workbench_PlayersTab", _tournament.Players.Count]</span>
+					</button>
+					<button class="@GetNavButtonClass(TournamentView.Pairings)" @onclick="() => SetView(TournamentView.Pairings)">
+						<AppIcon Name="pairings" Size="13" />
+						<span>@Loc["Workbench_RoundsTab", _tournament.Rounds.Count]</span>
+					</button>
+					<button class="@GetNavButtonClass(TournamentView.Standings)" @onclick="() => SetView(TournamentView.Standings)">
+						<AppIcon Name="medal" Size="13" />
+						<span>@Loc["Nav_Standings"]</span>
+					</button>
+					<button class="@GetNavButtonClass(TournamentView.Settings)" @onclick="() => SetView(TournamentView.Settings)">
+						<AppIcon Name="settings" Size="13" />
+						<span>@Loc["Nav_Settings"]</span>
+					</button>
+				</div>
+
+				<button class="btn-secondary" style="height: 34px; padding: 0 12px; gap: 6px;" title="@Loc["Workbench_PrintReports"]" @onclick="() => _showPrintModal = true">
+					<AppIcon Name="printer" Size="14" />
+					<span>@Loc["Workbench_PrintReports"]</span>
+				</button>
+
+				@{
+					bool isSyncEnabled = CaissaResultsSync.IsSyncConfigured;
+				}
+				<button class="btn-secondary" 
+						style="height: 34px; padding: 0 12px; gap: 6px; @(isSyncEnabled ? "border-color: rgba(16, 185, 129, 0.4); color: #34d399;" : "opacity: 0.6; color: var(--text-muted);")" 
+						title="@(isSyncEnabled ? "Publish to CaissaResults Web Portal" : "Syncing disabled: Configure API key in Settings")" 
+						@onclick="PublishToCaissaResultsAsync" 
+						disabled="@(_isSyncingToWeb || !isSyncEnabled)">
+					@if (_isSyncingToWeb)
+					{
+						<span class="app-splash-spinner" style="width: 12px; height: 12px; margin: 0;"></span>
+						<span>Syncing...</span>
+					}
+					else
+					{
+						<AppIcon Name="cloud" Size="14" />
+						<span>Publish to Web</span>
+					}
+				</button>
+
+				@if (_hasPublishedToWeb)
+				{
+					<button class="btn-secondary" style="height: 34px; padding: 0 10px; gap: 6px; color: var(--accent-info-hover);" title="Open in CaissaResults Web Portal" @onclick="OpenWebPortal">
+						<AppIcon Name="globe" Size="14" />
+						<span>View Web</span>
+					</button>
+				}
+			</div>
+		</header>
+
+		@if (!string.IsNullOrEmpty(_webSyncStatusMessage))
+		{
+			<div style="margin: 12px 20px 0 20px; padding: 8px 14px; border-radius: 6px; font-size: 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; @(_hasPublishedToWeb ? "background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.3); color: #34d399;" : "background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171;")">
+				<div style="display: flex; align-items: center; gap: 8px;">
+					<AppIcon Name="@(_hasPublishedToWeb ? "check" : "alert")" Size="14" />
+					<span>@_webSyncStatusMessage</span>
+				</div>
+				<button style="background: none; border: none; cursor: pointer; color: inherit; opacity: 0.7; padding: 2px;" @onclick="() => _webSyncStatusMessage = null">✕</button>
+			</div>
+		}
+
+		<!-- Sub-view Content Body -->
+		<div style="flex: 1; overflow-y: auto; padding: 20px;">
+			@if (Tab.CurrentView == TournamentView.Roster)
+			{
+				<!-- ROSTER VIEW -->
+				<div style="display: flex; flex-direction: column; gap: 16px;">
+					<div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+						<div>
+							<h3 style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin: 0;">@Loc["Roster_Title"]</h3>
+							<div style="font-size: 12px; color: var(--text-secondary);">@Loc["Roster_Count", _tournament.Players.Count]</div>
+						</div>
+
+						<div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+							<button class="btn-secondary" @onclick="SyncAllPlayersFromFideAsync" disabled="@(_isSyncingAllFide || _tournament.Players.Count == 0)" title="@Loc["Roster_SyncFideTooltip"]">
+								<AppIcon Name="refresh" Size="13" />
+								<span>@(_isSyncingAllFide ? Loc["Roster_SyncingFideProgress", _syncProgressCurrent, _syncProgressTotal] : Loc["Roster_SyncFideBtn"])</span>
+							</button>
+							<button class="btn-secondary" @onclick="() => _showAttendanceModal = true" title="@Loc["Roster_AttendanceByes"]">
+								<AppIcon Name="checklist" Size="13" />
+								<span>@Loc["Roster_AttendanceByes"]</span>
+							</button>
+							<button class="btn-secondary" @onclick="ReseedPlayersAsync" title="@Loc["Roster_Reseed"]">
+								<AppIcon Name="refresh" Size="13" />
+								<span>@Loc["Roster_Reseed"]</span>
+							</button>
+							<button class="btn-primary" @onclick="() => { ResetNewPlayerForm(); _showAddPlayerModal = true; }">
+								<AppIcon Name="plus" Size="14" />
+								<span>@Loc["Roster_RegisterPlayer"]</span>
+							</button>
+						</div>
+					</div>
+
+					@if (!string.IsNullOrEmpty(_syncResultMessage))
+					{
+						<div class="panel-card" style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: rgba(76, 175, 80, 0.1); border: 1px solid rgba(76, 175, 80, 0.3); border-radius: 6px; font-size: 13px; color: var(--accent-success);">
+							<div style="display: flex; align-items: center; gap: 8px;">
+								<AppIcon Name="checkmark" Size="14" />
+								<span>@_syncResultMessage</span>
+							</div>
+							<button class="modal-close-btn" @onclick="() => _syncResultMessage = null" style="font-size: 12px; color: var(--text-secondary);">
+								<AppIcon Name="x" Size="12" />
+							</button>
+						</div>
+					}
+
+					@if (_tournament.Players.Count == 0)
+					{
+						<div class="panel-card" style="text-align: center; padding: 40px 20px;">
+							<div style="color: var(--brand-gold); margin-bottom: 8px;"><AppIcon Name="users" Size="32" /></div>
+							<div style="font-weight: 600; font-size: 15px; color: var(--text-primary); margin-bottom: 4px;">@Loc["Roster_EmptyTitle"]</div>
+							<div style="color: var(--text-secondary); font-size: 12px; margin-bottom: 16px;">@Loc["Roster_EmptyDesc"]</div>
+							<button class="btn-primary" @onclick="() => { ResetNewPlayerForm(); _showAddPlayerModal = true; }">
+								<AppIcon Name="plus" Size="13" />
+								<span>@Loc["Roster_AddFirstPlayer"]</span>
+							</button>
+						</div>
+					}
+					else
+					{
+						<div class="data-table-container">
+							<table class="data-table">
+								<thead>
+									<tr>
+										<th style="width: 45px; text-align: center;">#</th>
+										<th style="width: 60px;">@Loc["Common_Title"]</th>
+										<th>@Loc["Common_Name"]</th>
+										<th style="width: 60px; text-align: center;">Fed</th>
+										<th>@Loc["Common_Club"]</th>
+										<th style="width: 80px; text-align: right;">@Loc["Roster_FideElo"]</th>
+										<th style="width: 80px; text-align: right;">@Loc["Roster_NatElo"]</th>
+										<th style="width: 65px; text-align: center;">@Loc["Common_Born"]</th>
+										<th style="width: 85px; text-align: center;">@Loc["Common_Status"]</th>
+										<th style="width: 85px; text-align: center;">@Loc["Common_Actions"]</th>
+									</tr>
+								</thead>
+								<tbody>
+									@foreach (var player in _tournament.Players.OrderBy(p => p.StartRank))
+									{
+										<tr>
+											<td style="text-align: center; font-weight: 700; color: var(--text-secondary); font-family: var(--font-mono);">
+												@player.StartRank
+											</td>
+											<td>
+												@if (!string.IsNullOrEmpty(player.Title))
+												{
+													<span class="badge badge-gold">@player.Title</span>
+												}
+											</td>
+											<td style="font-weight: 600;">
+												<div>@player.FullName</div>
+												@if (!string.IsNullOrEmpty(player.FideId))
+												{
+													<div style="font-size: 10px; font-family: var(--font-mono); color: var(--text-secondary); font-weight: normal;">
+														FIDE: @player.FideId
+													</div>
+												}
+											</td>
+											<td style="text-align: center; font-family: var(--font-mono); font-size: 11px;">
+												<span class="badge badge-gray">@player.Federation</span>
+											</td>
+											<td style="color: var(--text-secondary);">
+												@(string.IsNullOrEmpty(player.Club) ? "-" : player.Club)
+											</td>
+											<td style="text-align: right; font-family: var(--font-mono); font-weight: 600;">
+												@(player.FideRating > 0 ? player.FideRating.ToString() : "-")
+											</td>
+											<td style="text-align: right; font-family: var(--font-mono); color: var(--text-secondary);">
+												@(player.NationalRating > 0 ? player.NationalRating.ToString() : "-")
+											</td>
+											<td style="text-align: center; color: var(--text-secondary); font-family: var(--font-mono); font-size: 12px;">
+												@(player.BirthYear.HasValue ? player.BirthYear.Value.ToString() : "-")
+											</td>
+											<td style="text-align: center;">
+												<span class="@(player.Status == PlayerStatus.Active ? "badge badge-green" : "badge badge-gray")">
+													@player.Status
+												</span>
+											</td>
+											<td style="text-align: center; white-space: nowrap;">
+												<button class="btn-secondary" style="padding: 3px 6px; font-size: 11px; margin-right: 4px;" title="@Loc["Common_Edit"]" @onclick="() => OpenEditPlayerModal(player)">
+													<AppIcon Name="edit" Size="11" />
+												</button>
+												<button class="btn-danger" style="padding: 3px 6px; font-size: 11px;" title="@Loc["Common_Delete"]" @onclick="() => RequestRemovePlayer(player.Id, player.FullName)">
+													<AppIcon Name="trash" Size="11" />
+												</button>
+											</td>
+										</tr>
+									}
+								</tbody>
+							</table>
+						</div>
+					}
+				</div>
+			}
+			else if (Tab.CurrentView == TournamentView.Pairings)
+			{
+				<!-- PAIRINGS VIEW -->
+				<div style="display: flex; flex-direction: column; gap: 16px;">
+					<div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+						<div>
+							<h3 style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin: 0;">@Loc["Pairings_Title"]</h3>
+							<div style="font-size: 12px; color: var(--text-secondary);">@Loc["Pairings_ClickToEnter"]</div>
+						</div>
+
+						<div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+							<span class="badge badge-gray" style="font-size: 11px;">
+								@Loc["Pairings_Engine", GetActiveEngineName()]
+							</span>
+
+							<button class="@(_arbiterMode ? "btn-primary" : "btn-secondary")" @onclick="() => _arbiterMode = !_arbiterMode" title="@Loc["Pairings_ArbiterMode"]">
+								<AppIcon Name="edit" Size="13" />
+								<span>@(_arbiterMode ? Loc["Pairings_ArbiterModeOn"] : Loc["Pairings_ArbiterMode"])</span>
+							</button>
+
+							@if (_arbiterMode && _tournament.Rounds.Count > 0)
+							{
+								<button class="btn-secondary" @onclick="OpenAddManualPairingModal" title="@Loc["Pairings_ManualBoard"]">
+									<AppIcon Name="plus" Size="13" />
+									<span>@Loc["Pairings_ManualBoard"]</span>
+								</button>
+							}
+
+							@if (_tournament.Rounds.Count == 0)
+							{
+								<button class="btn-primary" @onclick="GeneratePairingsAsync" disabled="@(_tournament.Players.Count < 2)">
+									<AppIcon Name="pairings" Size="14" />
+									<span>@Loc["Pairings_Generate"]</span>
+								</button>
+							}
+							else
+							{
+								@if (_tournament.System == TournamentSystem.SwissDutch && _tournament.Rounds.Count < _tournament.TotalRounds)
+								{
+									var latestRound = _tournament.Rounds.OrderBy(r => r.RoundNumber).LastOrDefault();
+									int unplayedCount = latestRound?.Pairings.Count(p => p.Result == MatchResult.NotPlayed) ?? 0;
+									bool isPending = latestRound != null && unplayedCount > 0;
+
+									<button class="@(isPending ? "btn-secondary" : "btn-primary")"
+											@onclick="GenerateNextRoundAsync"
+											title="@(isPending ? $"Round {latestRound?.RoundNumber} has {unplayedCount} match(es) in progress. Click to view pending games." : $"Generate FIDE Dutch pairings for Round {_tournament.Rounds.Count + 1}")">
+										@if (isPending)
+										{
+											<span style="color: var(--brand-gold);"><AppIcon Name="warning" Size="13" /></span>
+										}
+										else
+										{
+											<AppIcon Name="plus" Size="13" />
+										}
+										<span>@Loc["Pairings_PairRound", _tournament.Rounds.Count + 1]</span>
+										@if (isPending)
+										{
+											<span class="badge badge-gray" style="font-size: 10px; margin-left: 2px;">@Loc["Pairings_Pending", unplayedCount]</span>
+										}
+									</button>
+								}
+								@if (!HasAnyResultsEntered())
+								{
+									<button class="btn-secondary" @onclick="RequestRegeneratePairings" title="@Loc["Pairings_ResetRegenerate"]">
+										<AppIcon Name="refresh" Size="13" />
+										<span>@Loc["Pairings_ResetRegenerate"]</span>
+									</button>
+								}
+								else
+								{
+									int currentRoundNumber = GetCurrentRoundNumber();
+									<button class="btn-secondary" @onclick="() => RequestResetRound(currentRoundNumber)" title="@Loc["Pairings_ResetRound", currentRoundNumber]">
+										<AppIcon Name="refresh" Size="13" />
+										<span>@Loc["Pairings_ResetRound", currentRoundNumber]</span>
+									</button>
+									@if (_arbiterMode && _tournament.System == TournamentSystem.SwissDutch && _tournament.Rounds.Count > 1)
+									{
+										<button class="btn-secondary" style="color: var(--accent-danger);" @onclick="() => RequestDeleteRound(currentRoundNumber)" title="@Loc["Pairings_DeleteRound", currentRoundNumber]">
+											<AppIcon Name="trash" Size="13" />
+											<span>@Loc["Pairings_DeleteRound", currentRoundNumber]</span>
+										</button>
+									}
+								}
+							}
+						</div>
+					</div>
+
+					@if (!string.IsNullOrEmpty(_pairingErrorMessage))
+					{
+						<div class="panel-card" style="background: rgba(218, 54, 51, 0.15); border: 1px solid var(--accent-danger-hover); padding: 10px 14px; display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+							<div style="display: flex; align-items: center; gap: 8px; color: #f87171; font-size: 13px;">
+								<AppIcon Name="warning" Size="16" />
+								<span>@_pairingErrorMessage</span>
+							</div>
+							<button class="modal-close-btn" style="color: #f87171; width: 24px; height: 24px;" @onclick="() => _pairingErrorMessage = null" type="button" title="@Loc["Common_Dismiss"]">
+								<AppIcon Name="x" Size="13" />
+							</button>
+						</div>
+					}
+
+					@if (_tournament.Rounds.Count == 0)
+					{
+						<div class="panel-card" style="text-align: center; padding: 48px 24px;">
+							<div style="width: 48px; height: 48px; border-radius: 10px; background: rgba(31, 111, 235, 0.12); color: var(--accent-blue-hover); display: flex; align-items: center; justify-content: center; margin: 0 auto 14px;">
+								<AppIcon Name="pairings" Size="26" />
+							</div>
+							<h4 style="font-size: 16px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px;">@Loc["Pairings_EmptyTitle"]</h4>
+							<p style="color: var(--text-secondary); font-size: 13px; max-width: 460px; margin: 0 auto 16px;">
+								@(_tournament.System == TournamentSystem.RoundRobin
+									? Loc["Pairings_EmptyRR"]
+									: Loc["Pairings_EmptySwiss"])
+							</p>
+							<button class="btn-primary" @onclick="GeneratePairingsAsync" disabled="@(_tournament.Players.Count < 2)">
+								<AppIcon Name="pairings" Size="14" />
+								<span>@Loc["Pairings_GenerateNow"]</span>
+							</button>
+						</div>
+					}
+					else
+					{
+						<!-- Round Selector Bar -->
+						<div style="display: flex; align-items: center; gap: 6px; overflow-x: auto; padding-bottom: 4px;">
+							@foreach (var round in _tournament.Rounds.OrderBy(r => r.RoundNumber))
+							{
+								bool isActiveRound = round.RoundNumber == _activeRoundNumber;
+								int completedMatches = round.Pairings.Count(p => p.Result != MatchResult.NotPlayed);
+								<button class="@(isActiveRound ? "workspace-tab tab-active" : "workspace-tab")"
+										style="font-size: 13px; height: 32px;"
+										@onclick="() => _activeRoundNumber = round.RoundNumber">
+									<span>@Loc["Pairings_RoundNum", round.RoundNumber]</span>
+									<span class="badge @(completedMatches == round.Pairings.Count ? "badge-green" : "badge-gray")" style="font-size: 10px; padding: 0 4px;">
+										@completedMatches/@round.Pairings.Count
+									</span>
+								</button>
+							}
+						</div>
+
+						<!-- Pairings Board Table for Active Round -->
+						var activeRound = _tournament.Rounds.FirstOrDefault(r => r.RoundNumber == _activeRoundNumber);
+						if (activeRound != null)
+						{
+							<div class="data-table-container">
+								<table class="data-table">
+									<thead>
+										<tr>
+											<th style="width: 65px; text-align: center;">@Loc["Common_Board"]</th>
+											<th style="text-align: right; width: 36%;">@Loc["Pairings_WhitePlayer"]</th>
+											<th style="width: 130px; text-align: center;">@Loc["Common_Result"]</th>
+											<th style="width: 36%;">@Loc["Pairings_BlackPlayer"]</th>
+											<th>@Loc["Pairings_Remarks"]</th>
+											@if (_arbiterMode)
+											{
+												<th style="width: 100px; text-align: center;">@Loc["Common_Arbiter"]</th>
+											}
+										</tr>
+									</thead>
+									<tbody>
+										@foreach (var pairing in activeRound.Pairings.OrderBy(p => p.BoardNumber))
+										{
+											var white = _tournament.GetPlayer(pairing.WhitePlayerId);
+											var black = _tournament.GetPlayer(pairing.BlackPlayerId);
+
+											<tr>
+												<td style="text-align: center; font-weight: 700; color: var(--text-secondary); font-family: var(--font-mono);">
+													<span>@pairing.BoardNumber</span>
+													@if (pairing.IsManualOverride)
+													{
+														<span class="badge badge-gold" style="font-size: 9px; padding: 1px 3px; margin-left: 3px;" title="Manual Arbiter Override">M</span>
+													}
+												</td>
+
+												<!-- White Player Cell -->
+												<td style="text-align: right;">
+													@if (white != null)
+													{
+														<div style="display: inline-flex; align-items: center; gap: 8px;">
+															@if (!string.IsNullOrEmpty(white.Title))
+															{
+																<span class="badge badge-gold">@white.Title</span>
+															}
+															<span style="font-weight: 600;">@white.FullName</span>
+															<span style="font-size: 12px; color: var(--text-secondary); font-family: var(--font-mono);">
+																(@(white.FideRating > 0 ? white.FideRating.ToString() : "-"))
+															</span>
+															<span style="color: #ffffff; font-size: 14px;" title="White">♔</span>
+														</div>
+													}
+													else
+													{
+														<span style="color: var(--text-muted); font-style: italic;">BYE</span>
+													}
+												</td>
+
+												<!-- Result Button Cell -->
+												<td style="text-align: center;">
+													<button class="@GetMatchResultBadgeClass(pairing.Result)"
+															style="cursor: pointer; min-width: 80px; justify-content: center;"
+															title="Click to enter or change score"
+															@onclick="() => OpenResultDialog(pairing)">
+														<span style="font-size: 13px; font-weight: 700; font-family: var(--font-mono);">
+															@pairing.Result.ToDisplayString()
+														</span>
+													</button>
+												</td>
+
+												<!-- Black Player Cell -->
+												<td>
+													@if (black != null)
+													{
+														<div style="display: inline-flex; align-items: center; gap: 8px;">
+															<span style="color: #64748b; font-size: 14px;" title="Black">♚</span>
+															<span style="font-weight: 600;">@black.FullName</span>
+															@if (!string.IsNullOrEmpty(black.Title))
+															{
+																<span class="badge badge-gold">@black.Title</span>
+															}
+															<span style="font-size: 12px; color: var(--text-secondary); font-family: var(--font-mono);">
+																(@(black.FideRating > 0 ? black.FideRating.ToString() : "-"))
+															</span>
+														</div>
+													}
+													else
+													{
+														<span style="color: var(--text-muted); font-style: italic;">BYE</span>
+													}
+												</td>
+
+												<!-- Remarks -->
+												<td style="font-size: 11px; color: var(--text-muted);">
+													@(pairing.Remarks ?? "")
+												</td>
+
+												@if (_arbiterMode)
+												{
+													<td style="text-align: center; white-space: nowrap;">
+														@if (!pairing.IsBye)
+														{
+															<button class="btn-secondary" style="padding: 2px 5px; font-size: 11px; margin-right: 3px;" title="@Loc["Pairings_SwapColors"]" @onclick="() => SwapColorsAsync(activeRound, pairing.BoardNumber)">
+																<AppIcon Name="swap" Size="11" />
+															</button>
+														}
+														<button class="btn-secondary" style="padding: 2px 5px; font-size: 11px; margin-right: 3px;" title="@Loc["Pairings_EditBoard"]" @onclick="() => OpenEditPairingModal(pairing)">
+															<AppIcon Name="edit" Size="11" />
+														</button>
+														<button class="btn-danger" style="padding: 2px 5px; font-size: 11px;" title="@Loc["Pairings_DeleteBoard"]" @onclick="() => RequestDeletePairing(activeRound, pairing)">
+															<AppIcon Name="trash" Size="11" />
+														</button>
+													</td>
+												}
+											</tr>
+										}
+									</tbody>
+								</table>
+							</div>
+						}
+					}
+				</div>
+			}
+			else if (Tab.CurrentView == TournamentView.Standings)
+			{
+				<!-- STANDINGS VIEW -->
+				var playerScores = CalculateScores();
+
+				<div style="display: flex; flex-direction: column; gap: 16px;">
+					<div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+						<div>
+							<h3 style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin: 0;">@Loc["Standings_Title"]</h3>
+							<div style="font-size: 12px; color: var(--text-secondary);">@Loc["Standings_Subtitle"]</div>
+						</div>
+
+						@if (_tournament.System == TournamentSystem.RoundRobin)
+						{
+							<div style="display: flex; align-items: center; background-color: var(--bg-surface-elevated); padding: 3px; border-radius: 6px; border: 1px solid var(--border-subtle);">
+								<button class="@(!_showCrossTable ? "workspace-tab tab-active" : "workspace-tab")" @onclick="() => _showCrossTable = false">
+									@Loc["Standings_Leaderboard"]
+								</button>
+								<button class="@(_showCrossTable ? "workspace-tab tab-active" : "workspace-tab")" @onclick="() => _showCrossTable = true">
+									@Loc["Standings_CrossTable"]
+								</button>
+							</div>
+						}
+					</div>
+
+					@if (_showCrossTable && _tournament.System == TournamentSystem.RoundRobin)
+					{
+						<!-- Berger Cross-Table Matrix N x N -->
+						<div class="data-table-container">
+							<table class="data-table" style="table-layout: fixed;">
+								<thead>
+									<tr>
+										<th style="width: 40px; text-align: center;">#</th>
+										<th style="width: 180px;">@Loc["Common_Name"]</th>
+										@foreach (var p in _tournament.Players.OrderBy(p => p.StartRank))
+										{
+											<th style="width: 36px; text-align: center; font-family: var(--font-mono);">@p.StartRank</th>
+										}
+										<th style="width: 55px; text-align: right;">@Loc["Common_Points"]</th>
+									</tr>
+								</thead>
+								<tbody>
+									@foreach (var pRow in _tournament.Players.OrderBy(p => p.StartRank))
+									{
+										var score = playerScores.GetValueOrDefault(pRow.Id, (Points: 0.0, Games: 0));
+										<tr>
+											<td style="text-align: center; font-weight: 700; color: var(--text-secondary); font-family: var(--font-mono);">
+												@pRow.StartRank
+											</td>
+											<td style="font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+												@pRow.FullName
+											</td>
+											@foreach (var pCol in _tournament.Players.OrderBy(p => p.StartRank))
+											{
+												if (pRow.Id == pCol.Id)
+												{
+													<td style="text-align: center; background-color: var(--bg-surface-active); color: var(--text-muted); font-size: 11px;">✕</td>
+												}
+												else
+												{
+													string cellResult = GetHeadToHeadResult(pRow.Id, pCol.Id);
+													<td style="text-align: center; font-family: var(--font-mono); font-weight: 700; font-size: 12px; color: @GetCellColor(cellResult);">
+														@cellResult
+													</td>
+												}
+											}
+											<td style="text-align: right; font-weight: 800; color: var(--brand-gold); font-family: var(--font-mono);">
+												@score.Points.ToString("0.0")
+											</td>
+										</tr>
+									}
+								</tbody>
+							</table>
+						</div>
+					}
+					else
+					{
+						<!-- Leaderboard Table with Dynamic FIDE Tiebreaks -->
+						var standings = TiebreakService.CalculateStandings(_tournament);
+						var tiebreaksToShow = _tournament.TiebreakOrder;
+
+						<div class="data-table-container">
+							<table class="data-table">
+								<thead>
+									<tr>
+										<th style="width: 50px; text-align: center;">@Loc["Common_Rank"]</th>
+										<th style="width: 50px; text-align: center;">@Loc["Common_Seed"]</th>
+										<th style="width: 60px;">@Loc["Common_Title"]</th>
+										<th>@Loc["Common_Name"]</th>
+										<th style="width: 65px; text-align: center;">Fed</th>
+										<th style="width: 75px; text-align: right;">@Loc["Common_Rating"]</th>
+										<th style="width: 65px; text-align: center;">@Loc["Common_Games"]</th>
+										<th style="width: 75px; text-align: right;">@Loc["Common_Points"]</th>
+										@foreach (var tb in tiebreaksToShow)
+										{
+											<th style="width: 75px; text-align: right;" title="@(Loc[$"Tiebreak_{tb}"] != $"Tiebreak_{tb}" ? Loc[$"Tiebreak_{tb}"] : tb.ToFullName())">@tb.ToShortName()</th>
+										}
+									</tr>
+								</thead>
+								<tbody>
+									@foreach (var standing in standings)
+									{
+										<tr>
+											<td style="text-align: center; font-weight: 800; color: var(--brand-gold); font-family: var(--font-mono);">
+												@standing.Rank
+											</td>
+											<td style="text-align: center; color: var(--text-secondary); font-family: var(--font-mono);">
+												@standing.Player.StartRank
+											</td>
+											<td>
+												@if (!string.IsNullOrEmpty(standing.Player.Title))
+												{
+													<span class="badge badge-gold">@standing.Player.Title</span>
+												}
+											</td>
+											<td style="font-weight: 600;">@standing.Player.FullName</td>
+											<td style="text-align: center;"><span class="badge badge-gray">@standing.Player.Federation</span></td>
+											<td style="text-align: right; font-family: var(--font-mono);">@standing.Player.EffectiveRating(_tournament.SeedingPrecedence)</td>
+											<td style="text-align: center; color: var(--text-secondary); font-family: var(--font-mono);">@standing.GamesPlayed</td>
+											<td style="text-align: right; font-weight: 800; color: var(--brand-gold); font-family: var(--font-mono); font-size: 14px;">
+												@standing.Points.ToString("0.0")
+											</td>
+											@foreach (var tb in tiebreaksToShow)
+											{
+												<td style="text-align: right; font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary);">
+													@standing.FormatTiebreak(tb)
+												</td>
+											}
+										</tr>
+									}
+								</tbody>
+							</table>
+						</div>
+					}
+				</div>
+			}
+			else if (Tab.CurrentView == TournamentView.Settings)
+			{
+				<!-- SETTINGS VIEW -->
+				<div style="max-width: 1720px; width: 100%; display: flex; flex-direction: column; gap: 18px;">
+					<div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+						<h3 style="font-size: 18px; font-weight: 700; color: var(--text-primary); margin: 0;">@Loc["Settings_Config"]</h3>
+						<button class="btn-primary" @onclick="SaveSettingsAsync">
+							<AppIcon Name="save" Size="14" />
+							<span>@Loc["Common_SaveChanges"]</span>
+						</button>
+					</div>
+
+					@if (!string.IsNullOrEmpty(_settingsErrorMessage))
+					{
+						<div style="background-color: rgba(218, 54, 51, 0.12); border: 1px solid var(--accent-danger); border-radius: 6px; padding: 10px 14px; color: var(--accent-danger); font-size: 13px; display: flex; align-items: center; gap: 8px;">
+							<AppIcon Name="alert" Size="16" />
+							<span>@_settingsErrorMessage</span>
+						</div>
+					}
+					@if (!string.IsNullOrEmpty(_settingsSuccessMessage))
+					{
+						<div style="background-color: rgba(35, 134, 54, 0.12); border: 1px solid var(--accent-primary); border-radius: 6px; padding: 10px 14px; color: var(--accent-primary); font-size: 13px; display: flex; align-items: center; gap: 8px;">
+							<AppIcon Name="check" Size="16" />
+							<span>@_settingsSuccessMessage</span>
+						</div>
+					}
+
+					<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(480px, 1fr)); gap: 20px; align-items: start;">
+						<!-- Left Column: Lifecycle & General Info -->
+						<div style="display: flex; flex-direction: column; gap: 18px;">
+							<!-- Tournament Lifecycle & Status Card -->
+							<div class="panel-card" style="display: flex; flex-direction: column; gap: 14px;">
+								<div style="display: flex; align-items: center; justify-content: space-between;">
+									<div>
+										<div class="panel-title" style="margin-bottom: 2px;">@Loc["Workbench_LifecycleTitle"]</div>
+										<div style="font-size: 12px; color: var(--text-secondary);">@Loc["Workbench_LifecycleDesc"]</div>
+									</div>
+									<span class="badge @(_tournament.IsFinished ? "badge-gray" : "badge-green")" style="font-size: 12px; padding: 4px 10px;">
+										@(_tournament.IsFinished ? Loc["Workbench_StatusFinished"] : Loc["Workbench_StatusActive"])
+									</span>
+								</div>
+
+								<div style="display: flex; align-items: center; justify-content: space-between; border-top: 1px solid var(--border-subtle); padding-top: 12px; margin-top: 2px;">
+									<div style="font-size: 12px; color: var(--text-secondary);">
+										@if (_tournament.IsFinished && _tournament.FinishedAt.HasValue)
+										{
+											<span>Finished on @_tournament.FinishedAt.Value.ToLocalTime().ToString("MMM dd, yyyy HH:mm")</span>
+										}
+										else
+										{
+											<span>@Loc["Workbench_StatusActive"]</span>
+										}
+									</div>
+									@if (_tournament.IsFinished)
+									{
+										<button type="button" class="btn-secondary" @onclick="RequestToggleWorkbenchFinished">
+											<AppIcon Name="unarchive" Size="13" />
+											<span>@Loc["Workbench_RestoreActiveBtn"]</span>
+										</button>
+									}
+									else
+									{
+										<button type="button" class="btn-secondary" @onclick="RequestToggleWorkbenchFinished">
+											<AppIcon Name="archive" Size="13" />
+											<span>@Loc["Workbench_MarkFinishedBtn"]</span>
+										</button>
+									}
+								</div>
+							</div>
+
+							<!-- General Tournament Information Card -->
+							<div class="panel-card" style="display: flex; flex-direction: column; gap: 14px;">
+								<div class="panel-title">@Loc["Settings_General"]</div>
+
+								<div class="form-group">
+									<label class="form-label">@Loc["Tournament_Name"]</label>
+									<input type="text" class="form-input" @bind="_tournament.Name" />
+								</div>
+
+								<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+									<div class="form-group">
+										<label class="form-label">@Loc["Tournament_TotalRounds"]</label>
+										<input type="number"
+											   class="form-input"
+											   style="@(_tournament.TotalRounds < _tournament.MinAllowedRounds ? "border-color: var(--accent-danger);" : "")"
+											   @bind="_tournament.TotalRounds"
+											   min="@_tournament.MinAllowedRounds"
+											   max="50" />
+										<div style="font-size: 11px; color: @(_tournament.TotalRounds < _tournament.MinAllowedRounds ? "var(--accent-danger)" : "var(--text-secondary)"); margin-top: 4px;">
+											@Loc["Tournament_MinRoundsNotice", _tournament.MinAllowedRounds, _tournament.FinishedRoundsCount]
+										</div>
+									</div>
+									<div class="form-group">
+										<label class="form-label">@Loc["Tournament_Venue"]</label>
+										<input type="text" class="form-input" @bind="_tournament.Venue" placeholder="e.g. Chess Hall" />
+									</div>
+								</div>
+
+								<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+									<div class="form-group">
+										<label class="form-label">@Loc["Tournament_ChiefArbiter"]</label>
+										<input type="text" class="form-input" @bind="_tournament.ChiefArbiter" placeholder="e.g. IA Tomas K." />
+									</div>
+									<div class="form-group">
+										<label class="form-label">@Loc["Tournament_DeputyArbiter"]</label>
+										<input type="text" class="form-input" @bind="_tournament.DeputyArbiter" placeholder="e.g. FA John D." />
+									</div>
+								</div>
+
+								<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+									<div class="form-group">
+										<label class="form-label">@Loc["Tournament_Organizer"]</label>
+										<input type="text" class="form-input" @bind="_tournament.Organizer" placeholder="e.g. Chess Club" />
+									</div>
+									<div class="form-group">
+										<label class="form-label">@Loc["Tournament_Federation"]</label>
+										<input type="text" class="form-input" @bind="_tournament.Federation" placeholder="e.g. SVK" maxlength="3" />
+									</div>
+								</div>
+
+								<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+									<div class="form-group">
+										<label class="form-label">@Loc["Tournament_TimeControl"]</label>
+										<select class="form-select" @bind="_tournament.TimeControl">
+											<option value="@TimeControlCategory.Rapid">@Loc["TimeControl_Rapid"]</option>
+											<option value="@TimeControlCategory.Blitz">@Loc["TimeControl_Blitz"]</option>
+											<option value="@TimeControlCategory.Standard">@Loc["TimeControl_Standard"]</option>
+										</select>
+									</div>
+									<div class="form-group">
+										<label class="form-label">@Loc["Tournament_TimeControlSpec"]</label>
+										<input type="text" class="form-input" @bind="_tournament.TimeControlDetails" placeholder="e.g. 15m + 5s" />
+									</div>
+								</div>
+
+								<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+									<div class="form-group">
+										<label class="form-label">@Loc["Tournament_StartDate"]</label>
+										<input type="date" class="form-input" value="@_tournament.StartDate.ToString("yyyy-MM-dd")" @onchange="OnStartDateChanged" />
+									</div>
+									<div class="form-group">
+										<label class="form-label">@Loc["Tournament_EndDate"]</label>
+										<input type="date" class="form-input" value="@_tournament.EndDate.ToString("yyyy-MM-dd")" @onchange="OnEndDateChanged" />
+									</div>
+								</div>
+
+								<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+									<div class="form-group">
+										<label class="form-label">@Loc["Tournament_SeedingPrecedence"]</label>
+										<select class="form-select" @bind="_tournament.SeedingPrecedence">
+											<option value="@SeedingPrecedence.FideFirst">@Loc["Tournament_FideFirst"]</option>
+											<option value="@SeedingPrecedence.NationalFirst">@Loc["Tournament_NationalFirst"]</option>
+										</select>
+									</div>
+									<div class="form-group" style="display: flex; align-items: flex-end; padding-bottom: 8px;">
+										<div style="display: flex; align-items: center; gap: 8px;">
+											<input type="checkbox" id="wbFideRated" @bind="_tournament.FideRated" style="cursor: pointer; width: 16px; height: 16px; accent-color: var(--brand-gold);" />
+											<label for="wbFideRated" style="font-size: 13px; color: var(--text-primary); cursor: pointer; user-select: none;">
+												@Loc["Tournament_FideRated"]
+											</label>
+										</div>
+									</div>
+								</div>
+							</div>
+						</div>
+
+						<!-- Right Column: Engine Provider, Tiebreaks, Data Exchange -->
+						<div style="display: flex; flex-direction: column; gap: 18px;">
+							@if (_tournament.System == TournamentSystem.SwissDutch)
+							{
+								<!-- Pairing Engine Provider Card -->
+								<div class="panel-card" style="display: flex; flex-direction: column; gap: 14px;">
+									<div>
+										<div class="panel-title" style="margin-bottom: 2px;">@Loc["Settings_EngineProvider"]</div>
+										<div style="font-size: 12px; color: var(--text-secondary);">@Loc["Settings_EngineDesc"]</div>
+									</div>
+
+									@if (!string.IsNullOrEmpty(_engineDownloadMessage))
+									{
+										<div style="font-size: 12px; padding: 8px 12px; border-radius: 6px; background-color: rgba(218, 54, 51, 0.12); color: var(--accent-danger); margin-bottom: 8px;">
+											@_engineDownloadMessage
+										</div>
+									}
+
+									<div style="background-color: var(--bg-surface-elevated); border: 1px solid var(--border-subtle); border-radius: 6px; padding: 10px 12px; font-size: 12px; color: var(--text-secondary); display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px;">
+										<span style="color: var(--brand-gold); margin-top: 1px;"><AppIcon Name="lightbulb" Size="14" /></span>
+										<div>
+											<strong style="color: var(--text-primary);">@Loc["Settings_EngineGuideTitle"]:</strong>
+											<span style="margin-left: 4px;">@Loc["Settings_EngineGuideSubtitle"]</span>
+										</div>
+									</div>
+
+									<div style="display: flex; flex-direction: column; gap: 8px;">
+										@foreach (var engine in EngineRegistry.SwissEngines)
+										{
+											bool isSelected = _tournament.PairingEngineId.Equals(engine.Id, StringComparison.OrdinalIgnoreCase);
+											bool isAvailable = engine.IsAvailable;
+											<div class="panel-card"
+												 style="display: flex; align-items: center; justify-content: space-between; padding: 12px; background-color: var(--bg-surface-elevated); cursor: @(isAvailable ? "pointer" : "not-allowed"); opacity: @(isAvailable ? "1" : "0.65"); border-color: @(isSelected ? "var(--brand-gold)" : "var(--border-subtle)");"
+												 title="@(!isAvailable ? Loc["Settings_SelectDisabledTooltip"] : "")"
+												 @onclick="async () => { if (isAvailable) await SelectPairingEngine(engine.Id); }">
+												<div>
+													<div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+														<span style="font-weight: 700; color: var(--text-primary); font-size: 13px;">@engine.DisplayName</span>
+														<span class="badge @(engine.Id == "native_dutch" ? "badge-blue" : engine.Id == "bbp" ? "badge-gold" : "badge-purple")" style="font-size: 10px;">
+															@(engine.Id == "native_dutch" ? Loc["Settings_EngineNativeBadge"] :
+															  engine.Id == "bbp" ? Loc["Settings_EngineBbpBadge"] :
+															  Loc["Settings_EngineJaVaFoBadge"])
+														</span>
+														@if (isSelected)
+														{
+															<span class="badge badge-gold">Active</span>
+														}
+													</div>
+													<div style="font-size: 11px; color: var(--text-secondary); margin-top: 3px;">
+														@(engine.Id == "native_dutch" ? Loc["Settings_EngineNativeAdvise"] :
+														  engine.Id == "bbp" ? Loc["Settings_EngineBbpAdvise"] :
+														  Loc["Settings_EngineJaVaFoAdvise"])
+													</div>
+													@if (!isAvailable)
+													{
+														<div style="font-size: 11px; color: var(--accent-danger); margin-top: 2px;">
+															@Loc["Settings_EngineNotInstalled"]
+														</div>
+													}
+												</div>
+
+												<div style="display: flex; align-items: center; gap: 8px;">
+													@if (isAvailable)
+													{
+														<span class="badge badge-green">@Loc["Settings_EngineStatusReady"]</span>
+													}
+													else
+													{
+														<span class="badge badge-gray" title="Engine executable not detected">@Loc["Settings_EngineStatusMissing"]</span>
+														@if (engine.Id == "bbp" || engine.Id == "javafo")
+														{
+															<button type="button" class="btn-primary" style="font-size: 11px; padding: 3px 8px;"
+																	disabled="@_isDownloadingEngine"
+																	@onclick:stopPropagation="true"
+																	@onclick="() => DownloadEngineWorkbenchAsync(engine.Id)">
+																<AppIcon Name="download" Size="11" />
+																<span>@(_isDownloadingEngine && _downloadingEngineId == engine.Id ? Loc["Settings_Downloading"] : Loc["Settings_DownloadInstallBtn"])</span>
+															</button>
+														}
+													}
+												</div>
+											</div>
+										}
+									</div>
+								</div>
+							}
+
+							<!-- Tiebreak Configuration Card -->
+							<div class="panel-card" style="display: flex; flex-direction: column; gap: 14px;">
+								<div style="display: flex; align-items: center; justify-content: space-between;">
+									<div>
+										<div class="panel-title" style="margin-bottom: 2px;">@Loc["Settings_Tiebreaks"]</div>
+										<div style="font-size: 12px; color: var(--text-secondary);">@Loc["Settings_TiebreakDesc"]</div>
+									</div>
+								</div>
+
+								<!-- Preset Selection Buttons -->
+								<div style="display: flex; flex-wrap: wrap; gap: 8px;">
+									<button type="button" class="btn-secondary" @onclick="() => ApplyTiebreakPreset(TiebreakPreset.FideStandardSwiss)">
+										<span>@Loc["Settings_PresetSwiss"]</span>
+									</button>
+									<button type="button" class="btn-secondary" @onclick="() => ApplyTiebreakPreset(TiebreakPreset.RoundRobin)">
+										<span>@Loc["Settings_PresetRR"]</span>
+									</button>
+									<button type="button" class="btn-secondary" @onclick="() => ApplyTiebreakPreset(TiebreakPreset.FideChampionship)">
+										<span>@Loc["Settings_PresetChampionship"]</span>
+									</button>
+								</div>
+
+								<!-- Active Priority Stack (Interactive list) -->
+								<div style="margin-top: 6px;">
+									<label class="form-label" style="margin-bottom: 8px;">@Loc["Settings_ActivePriority"]</label>
+									@if (_tournament.TiebreakOrder.Count == 0)
+									{
+										<div style="padding: 12px; background: rgba(255,255,255,0.02); border: 1px dashed var(--border-color); border-radius: 6px; font-size: 12px; color: var(--text-muted); text-align: center;">
+											@Loc["Tiebreak_Empty"]
+										</div>
+									}
+									else
+									{
+										<div style="display: flex; flex-direction: column; gap: 6px;">
+											@for (int i = 0; i < _tournament.TiebreakOrder.Count; i++)
+											{
+												var tb = _tournament.TiebreakOrder[i];
+												int idx = i;
+												<div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; background: var(--bg-hover); border: 1px solid var(--border-color); border-radius: 6px; font-size: 13px;">
+													<div style="display: flex; align-items: center; gap: 8px;">
+														<span style="font-family: var(--font-mono); font-weight: 700; color: var(--brand-gold); width: 22px;">@(idx + 1).</span>
+														<span style="font-weight: 600;">@(Loc[$"Tiebreak_{tb}"] != $"Tiebreak_{tb}" ? Loc[$"Tiebreak_{tb}"] : tb.ToFullName())</span>
+														<span class="badge badge-gold" style="font-family: var(--font-mono); font-size: 11px; padding: 1px 6px;">@tb.ToShortName()</span>
+													</div>
+													<div style="display: flex; align-items: center; gap: 4px;">
+														<button type="button" class="btn-icon" style="padding: 3px 6px; font-size: 11px;" title="@Loc["Tiebreak_MoveUp"]" disabled="@(idx == 0)" @onclick="() => MoveTiebreakUp(idx)">
+															▲
+														</button>
+														<button type="button" class="btn-icon" style="padding: 3px 6px; font-size: 11px;" title="@Loc["Tiebreak_MoveDown"]" disabled="@(idx == _tournament.TiebreakOrder.Count - 1)" @onclick="() => MoveTiebreakDown(idx)">
+															▼
+														</button>
+														<button type="button" class="btn-icon" style="padding: 3px 6px; font-size: 11px; color: var(--accent-danger);" title="@Loc["Tiebreak_Remove"]" @onclick="() => RemoveTiebreak(idx)">
+															<AppIcon Name="x" Size="12" />
+														</button>
+													</div>
+												</div>
+											}
+										</div>
+									}
+								</div>
+
+								<!-- Add Criterion Section -->
+								@{
+									var availableToAdd = Enum.GetValues<TiebreakType>()
+										.Where(t => !_tournament.TiebreakOrder.Contains(t))
+										.ToList();
+								}
+								@if (availableToAdd.Count > 0)
+								{
+									<div style="display: flex; gap: 8px; align-items: center; margin-top: 4px;">
+										<select class="form-select" style="flex: 1; font-size: 13px;" @bind="_selectedTiebreakToAdd">
+											<option value="">-- @Loc["Tiebreak_SelectToAdd"] --</option>
+											@foreach (var avail in availableToAdd)
+											{
+												<option value="@avail">
+													@(Loc[$"Tiebreak_{avail}"] != $"Tiebreak_{avail}" ? Loc[$"Tiebreak_{avail}"] : avail.ToFullName()) (@avail.ToShortName())
+												</option>
+											}
+										</select>
+										<button type="button" class="btn-secondary" style="white-space: nowrap;" disabled="@(!_selectedTiebreakToAdd.HasValue)" @onclick="AddSelectedTiebreak">
+											<AppIcon Name="plus" Size="14" />
+											<span>@Loc["Tiebreak_Add"]</span>
+										</button>
+									</div>
+								}
+							</div>
+
+							<!-- Data Exchange Card -->
+							<div class="panel-card" style="display: flex; flex-direction: column; gap: 14px;">
+								<div class="panel-title">@Loc["Settings_DataExchange"]</div>
+								<div style="font-size: 12px; color: var(--text-secondary);">
+									@Loc["Settings_DataExchangeDesc"]
+								</div>
+
+								<div style="display: flex; flex-wrap: wrap; gap: 10px;">
+									<button type="button" class="btn-secondary" @onclick="DownloadTrfAsync">
+										<AppIcon Name="download" Size="14" />
+										<span>@Loc["Settings_ExportTrf"]</span>
+									</button>
+									<button type="button" class="btn-secondary" @onclick="DownloadCdeskAsync">
+										<AppIcon Name="download" Size="14" />
+										<span>@Loc["Settings_ExportCdesk"]</span>
+									</button>
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px;">
+						<button class="btn-primary" @onclick="SaveSettingsAsync">
+							<AppIcon Name="save" Size="14" />
+							<span>@Loc["Common_SaveChanges"]</span>
+						</button>
+					</div>
+				</div>
+			}
+		</div>
+	}
+</div>
+
+<!-- Modal: Add New Player -->
+@if (_showAddPlayerModal)
+{
+	<div class="modal-overlay" @onclick="() => _showAddPlayerModal = false">
+		<div class="modal-content" style="max-width: 620px;" @onclick:stopPropagation="true">
+			<div class="modal-header">
+				<div class="modal-title">
+					<span style="color: var(--brand-gold);"><AppIcon Name="users" Size="18" /></span>
+					<span>@Loc["Roster_RegisterPlayer"]</span>
+				</div>
+				<button class="modal-close-btn" @onclick="() => _showAddPlayerModal = false" type="button" title="@Loc["Common_Close"]">
+					<AppIcon Name="x" Size="15" />
+				</button>
+			</div>
+
+			<div class="modal-body">
+				<!-- Instant FIDE ID lookup tool -->
+				<div class="panel-card" style="margin-bottom: 16px; background-color: var(--bg-surface-elevated);">
+					<label class="form-label" style="display: flex; align-items: center; justify-content: space-between;">
+						<span>@Loc["Roster_FideAutoLookup"]</span>
+						@if (_isSearchingFide)
+						{
+							<span style="color: var(--brand-gold); font-size: 11px;">@Loc["Roster_SearchingFide"]</span>
+						}
+					</label>
+					<div style="display: flex; gap: 8px;">
+						<input type="text" class="form-input" style="flex: 1;" placeholder="@Loc["Roster_FideLookupPrompt"]" @bind="_lookupFideId" @bind:event="oninput" />
+						<button class="btn-secondary" @onclick="LookupFidePlayerAsync" disabled="@(_isSearchingFide || (string.IsNullOrWhiteSpace(_lookupFideId) && string.IsNullOrWhiteSpace(_newLastName) && string.IsNullOrWhiteSpace(_newFirstName)))">
+							<AppIcon Name="search" Size="13" />
+							<span>@Loc["Roster_Fetch"]</span>
+						</button>
+					</div>
+					@if (!string.IsNullOrEmpty(_fideLookupSuccessMessage))
+					{
+						<div style="color: var(--accent-success); font-size: 11px; margin-top: 6px;">@_fideLookupSuccessMessage</div>
+					}
+					@if (!string.IsNullOrEmpty(_fideLookupError))
+					{
+						<div style="color: var(--accent-danger-hover); font-size: 11px; margin-top: 6px;">@_fideLookupError</div>
+					}
+				</div>
+
+				<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+					<div class="form-group">
+						<label class="form-label">@Loc["Common_LastName"] <span style="color: #ef4444;">*</span></label>
+						<input type="text" class="form-input" @bind="_newLastName" placeholder="e.g. Kasparov" />
+					</div>
+					<div class="form-group">
+						<label class="form-label">@Loc["Common_FirstName"]</label>
+						<input type="text" class="form-input" @bind="_newFirstName" placeholder="e.g. Garry" />
+					</div>
+				</div>
+
+				<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+					<div class="form-group">
+						<label class="form-label">@Loc["Common_Title"]</label>
+						<select class="form-select" @bind="_newTitle">
+							<option value="">None</option>
+							<option value="GM">GM (Grandmaster)</option>
+							<option value="IM">IM (International Master)</option>
+							<option value="FM">FM (FIDE Master)</option>
+							<option value="CM">CM (Candidate Master)</option>
+							<option value="WGM">WGM (Woman Grandmaster)</option>
+							<option value="WIM">WIM (Woman Int. Master)</option>
+							<option value="WFM">WFM (Woman FIDE Master)</option>
+							<option value="WCM">WCM (Woman Cand. Master)</option>
+							<option value="AGM">AGM (Arena Grandmaster)</option>
+							<option value="AIM">AIM (Arena Int. Master)</option>
+							<option value="AFM">AFM (Arena FIDE Master)</option>
+							<option value="ACM">ACM (Arena Cand. Master)</option>
+						</select>
+					</div>
+
+					<div class="form-group">
+						<label class="form-label">@Loc["Common_Federation"]</label>
+						<input type="text" class="form-input" @bind="_newFed" placeholder="e.g. SVK" maxlength="3" />
+					</div>
+				</div>
+
+				<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+					<div class="form-group">
+						<label class="form-label">@Loc["Roster_FideElo"]</label>
+						<input type="number" class="form-input" @bind="_newFideRating" min="0" max="3000" />
+					</div>
+
+					<div class="form-group">
+						<label class="form-label">@Loc["Common_NationalRating"]</label>
+						<input type="number" class="form-input" @bind="_newNationalRating" min="0" max="3000" />
+					</div>
+				</div>
+
+				<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+					<div class="form-group">
+						<label class="form-label">@Loc["Common_Club"]</label>
+						<input type="text" class="form-input" @bind="_newClub" placeholder="e.g. ŠK Slovan Bratislava" />
+					</div>
+
+					<div class="form-group">
+						<label class="form-label">@Loc["Roster_BirthYear"]</label>
+						<input type="number" class="form-input" @bind="_newBirthYear" min="1900" max="2026" />
+					</div>
+				</div>
+
+				<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+					<div class="form-group">
+						<label class="form-label">@Loc["Common_Gender"]</label>
+						<select class="form-select" @bind="_newGender">
+							<option value="M">@Loc["Common_Male"]</option>
+							<option value="F">@Loc["Common_Female"]</option>
+						</select>
+					</div>
+
+					<div class="form-group">
+						<label class="form-label">@Loc["Common_NationalId"]</label>
+						<input type="text" class="form-input" @bind="_newNationalId" placeholder="e.g. 12345" />
+					</div>
+				</div>
+			</div>
+
+			<div class="modal-footer">
+				<button class="btn-secondary" @onclick="() => _showAddPlayerModal = false">@Loc["Common_Cancel"]</button>
+				<button class="btn-primary" @onclick="AddPlayerAsync" disabled="@(string.IsNullOrWhiteSpace(_newLastName) && string.IsNullOrWhiteSpace(_newFirstName))">
+					<AppIcon Name="plus" Size="14" />
+					<span>@Loc["Roster_AddPlayerBtn"]</span>
+				</button>
+			</div>
+		</div>
+	</div>
+}
+
+<!-- Modal: Edit Player -->
+@if (_showEditPlayerModal && _editingPlayer != null)
+{
+	<div class="modal-overlay" @onclick="() => _showEditPlayerModal = false">
+		<div class="modal-content" style="max-width: 620px;" @onclick:stopPropagation="true">
+			<div class="modal-header">
+				<div class="modal-title">
+					<span style="color: var(--brand-gold);"><AppIcon Name="edit" Size="18" /></span>
+					<span>@Loc["Roster_EditPlayer"] - @_editingPlayer.FullName</span>
+				</div>
+				<button class="modal-close-btn" @onclick="() => _showEditPlayerModal = false" type="button" title="@Loc["Common_Close"]">
+					<AppIcon Name="x" Size="15" />
+				</button>
+			</div>
+
+			<div class="modal-body">
+				<!-- FIDE lookup tool for edit -->
+				<div class="panel-card" style="margin-bottom: 16px; background-color: var(--bg-surface-elevated);">
+					<label class="form-label" style="display: flex; align-items: center; justify-content: space-between;">
+						<span>@Loc["Roster_FideAutoLookup"]</span>
+						@if (_isEditingFideSearching)
+						{
+							<span style="color: var(--brand-gold); font-size: 11px;">@Loc["Roster_SearchingFide"]</span>
+						}
+					</label>
+					<div style="display: flex; gap: 8px;">
+						<input type="text" class="form-input" style="flex: 1;" placeholder="@Loc["Roster_FideLookupPrompt"]" @bind="_editFideId" @bind:event="oninput" />
+						<button class="btn-secondary" @onclick="LookupFideForEditAsync" disabled="@(_isEditingFideSearching || (string.IsNullOrWhiteSpace(_editFideId) && string.IsNullOrWhiteSpace(_editLastName) && string.IsNullOrWhiteSpace(_editFirstName)))">
+							<AppIcon Name="search" Size="13" />
+							<span>@Loc["Roster_Fetch"]</span>
+						</button>
+					</div>
+					@if (!string.IsNullOrEmpty(_editFideMessage))
+					{
+						<div style="color: @(_editFideIsError ? "var(--accent-danger-hover)" : "var(--accent-success)"); font-size: 11px; margin-top: 6px;">
+							@_editFideMessage
+						</div>
+					}
+				</div>
+
+				<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+					<div class="form-group">
+						<label class="form-label">@Loc["Common_LastName"] <span style="color: #ef4444;">*</span></label>
+						<input type="text" class="form-input" @bind="_editLastName" placeholder="e.g. Kasparov" />
+					</div>
+					<div class="form-group">
+						<label class="form-label">@Loc["Common_FirstName"]</label>
+						<input type="text" class="form-input" @bind="_editFirstName" placeholder="e.g. Garry" />
+					</div>
+				</div>
+
+				<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+					<div class="form-group">
+						<label class="form-label">@Loc["Common_Title"]</label>
+						<select class="form-select" @bind="_editTitle">
+							<option value="">None</option>
+							<option value="GM">GM (Grandmaster)</option>
+							<option value="IM">IM (International Master)</option>
+							<option value="FM">FM (FIDE Master)</option>
+							<option value="CM">CM (Candidate Master)</option>
+							<option value="WGM">WGM (Woman Grandmaster)</option>
+							<option value="WIM">WIM (Woman Int. Master)</option>
+							<option value="WFM">WFM (Woman FIDE Master)</option>
+							<option value="WCM">WCM (Woman Cand. Master)</option>
+							<option value="AGM">AGM (Arena Grandmaster)</option>
+							<option value="AIM">AIM (Arena Int. Master)</option>
+							<option value="AFM">AFM (Arena FIDE Master)</option>
+							<option value="ACM">ACM (Arena Cand. Master)</option>
+						</select>
+					</div>
+
+					<div class="form-group">
+						<label class="form-label">@Loc["Common_Federation"]</label>
+						<input type="text" class="form-input" @bind="_editFed" placeholder="e.g. SVK" maxlength="3" />
+					</div>
+				</div>
+
+				<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+					<div class="form-group">
+						<label class="form-label">@Loc["Roster_FideElo"]</label>
+						<input type="number" class="form-input" @bind="_editFideRating" min="0" max="3000" />
+					</div>
+
+					<div class="form-group">
+						<label class="form-label">@Loc["Common_NationalRating"]</label>
+						<input type="number" class="form-input" @bind="_editNationalRating" min="0" max="3000" />
+					</div>
+				</div>
+
+				<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+					<div class="form-group">
+						<label class="form-label">@Loc["Common_Club"]</label>
+						<input type="text" class="form-input" @bind="_editClub" placeholder="e.g. ŠK Slovan Bratislava" />
+					</div>
+
+					<div class="form-group">
+						<label class="form-label">@Loc["Roster_BirthYear"]</label>
+						<input type="number" class="form-input" @bind="_editBirthYear" min="1900" max="2026" />
+					</div>
+				</div>
+
+				<div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
+					<div class="form-group">
+						<label class="form-label">@Loc["Common_Gender"]</label>
+						<select class="form-select" @bind="_editGender">
+							<option value="M">@Loc["Common_Male"]</option>
+							<option value="F">@Loc["Common_Female"]</option>
+						</select>
+					</div>
+
+					<div class="form-group">
+						<label class="form-label">@Loc["Common_NationalId"]</label>
+						<input type="text" class="form-input" @bind="_editNationalId" placeholder="e.g. 12345" />
+					</div>
+
+					<div class="form-group">
+						<label class="form-label">@Loc["Common_Status"]</label>
+						<select class="form-select" @bind="_editStatus">
+							<option value="@PlayerStatus.Active">Active</option>
+							<option value="@PlayerStatus.Paused">Paused</option>
+							<option value="@PlayerStatus.Withdrawn">Withdrawn</option>
+						</select>
+					</div>
+				</div>
+			</div>
+
+			<div class="modal-footer">
+				<button class="btn-secondary" @onclick="() => _showEditPlayerModal = false">@Loc["Common_Cancel"]</button>
+				<button class="btn-primary" @onclick="SaveEditedPlayerAsync" disabled="@(string.IsNullOrWhiteSpace(_editLastName) && string.IsNullOrWhiteSpace(_editFirstName))">
+					<AppIcon Name="save" Size="14" />
+					<span>@Loc["Roster_EditPlayerBtn"]</span>
+				</button>
+			</div>
+		</div>
+	</div>
+}
+
+<!-- Modal: Board Result Entry Dialog -->
+<ResultEntryDialog IsOpen="_showResultDialog"
+				   Pairing="_selectedPairing"
+				   WhitePlayer="_tournament?.GetPlayer(_selectedPairing?.WhitePlayerId)"
+				   BlackPlayer="_tournament?.GetPlayer(_selectedPairing?.BlackPlayerId)"
+				   OnClose="() => _showResultDialog = false"
+				   OnResultSaved="HandleResultSaved" />
+
+<!-- Modal: Attendance, Byes & Player Status -->
+<AttendanceModal IsOpen="_showAttendanceModal"
+				 Tournament="_tournament"
+				 OnClose="() => _showAttendanceModal = false"
+				 OnSaved="HandleAttendanceSaved" />
+
+<!-- Modal: Arbiter Manual Board Pairing -->
+<ManualPairingModal IsOpen="_showManualPairingModal"
+					Tournament="_tournament"
+					Round="_tournament?.Rounds.FirstOrDefault(r => r.RoundNumber == _activeRoundNumber)"
+					Pairing="_editingPairing"
+					OnClose="() => _showManualPairingModal = false"
+					OnSaved="HandleManualPairingSaved" />
+
+<!-- Modal: Official Print Sheets & TRF Export -->
+<PrintSheetsModal IsOpen="_showPrintModal"
+				  Tournament="_tournament"
+				  OnClose="() => _showPrintModal = false" />
+
+<!-- Modal: Games Still in Progress Warning -->
+@if (_showUnfinishedGamesModal && _tournament != null)
+{
+	<div class="modal-overlay" @onclick="() => _showUnfinishedGamesModal = false">
+		<div class="modal-content" style="max-width: 620px;" @onclick:stopPropagation="true">
+			<div class="modal-header">
+				<div class="modal-title" style="color: #f87171; display: flex; align-items: center; gap: 8px;">
+					<AppIcon Name="warning" Size="20" />
+					<span>@Loc["Warning_CannotPairTitle", _tournament.Rounds.Count + 1]</span>
+				</div>
+				<button class="modal-close-btn" @onclick="() => _showUnfinishedGamesModal = false" type="button" title="@Loc["Common_Close"]">
+					<AppIcon Name="x" Size="15" />
+				</button>
+			</div>
+
+			<div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
+				<div style="font-size: 13.5px; color: var(--text-primary); line-height: 1.5;">
+					@Loc["Warning_CannotPairDesc", _unfinishedRoundNumber, _unfinishedPairings.Count]
+				</div>
+
+				<div class="data-table-container" style="max-height: 240px; overflow-y: auto;">
+					<table class="data-table">
+						<thead>
+							<tr>
+								<th style="width: 50px; text-align: center;">@Loc["Common_Board"]</th>
+								<th style="text-align: right; width: 38%;">@Loc["Common_White"]</th>
+								<th style="width: 60px; text-align: center;">@Loc["Common_Score"]</th>
+								<th style="width: 38%;">@Loc["Common_Black"]</th>
+								<th style="width: 75px; text-align: center;">@Loc["Common_Actions"]</th>
+							</tr>
+						</thead>
+						<tbody>
+							@foreach (var p in _unfinishedPairings)
+							{
+								var white = _tournament.GetPlayer(p.WhitePlayerId);
+								var black = _tournament.GetPlayer(p.BlackPlayerId);
+								<tr>
+									<td style="text-align: center; font-weight: 700; font-family: var(--font-mono); color: var(--text-secondary);">
+										@p.BoardNumber
+									</td>
+									<td style="text-align: right; font-weight: 600;">
+										@(white?.FullName ?? "BYE")
+									</td>
+									<td style="text-align: center; font-weight: 700; color: var(--text-muted); font-family: var(--font-mono);">
+										vs
+									</td>
+									<td style="font-weight: 600;">
+										@(black?.FullName ?? "BYE")
+									</td>
+									<td style="text-align: center;">
+										<button class="btn-primary" style="padding: 3px 8px; font-size: 11px;" @onclick="() => OpenResultFromWarningModal(p)">
+											<span>@Loc["Warning_Enter"]</span>
+										</button>
+									</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</div>
+
+				<div style="font-size: 12px; color: var(--text-secondary);">
+					@Loc["Warning_EnterInstruction"]
+				</div>
+			</div>
+
+			<div class="modal-footer" style="justify-content: space-between;">
+				<button class="btn-secondary" @onclick="GoToActiveRoundAndClose">
+					<span>@Loc["Warning_GoToBoardTable", _unfinishedRoundNumber]</span>
+				</button>
+				<button class="btn-secondary" @onclick="() => _showUnfinishedGamesModal = false">
+					<span>@Loc["Common_Dismiss"]</span>
+				</button>
+			</div>
+		</div>
+	</div>
+}
+
+<ConfirmModal IsOpen="_confirmIsOpen"
+			  Title="@_confirmTitle"
+			  Message="@_confirmMessage"
+			  Details="@_confirmDetails"
+			  ConfirmText="@_confirmConfirmText"
+			  HeaderIcon="@_confirmHeaderIcon"
+			  ConfirmIcon="@_confirmIcon"
+			  IsDestructive="@_confirmIsDestructive"
+			  OnConfirm="ExecuteConfirmAction"
+			  OnCancel="() => _confirmIsOpen = false" />
+
+@code {
+	[Parameter, EditorRequired] public TournamentTab Tab { get; set; } = default!;
+
+	private Tournament? _tournament;
+	private bool _showAddPlayerModal = false;
+	private bool _showResultDialog = false;
+	private bool _showAttendanceModal = false;
+	private bool _showPrintModal = false;
+	private bool _showManualPairingModal = false;
+	private bool _showUnfinishedGamesModal = false;
+	private int _unfinishedRoundNumber = 1;
+	private List<Pairing> _unfinishedPairings = [];
+	private bool _arbiterMode = false;
+	private Pairing? _editingPairing;
+	private Pairing? _selectedPairing;
+	private int _activeRoundNumber = 1;
+	private bool _showCrossTable = false;
+
+	private bool _confirmIsOpen;
+	private string _confirmTitle = "";
+	private string _confirmMessage = "";
+	private string? _confirmDetails;
+	private string? _confirmConfirmText;
+	private string? _confirmHeaderIcon;
+	private string? _confirmIcon;
+	private bool _confirmIsDestructive = true;
+	private Func<Task>? _confirmAction;
+
+	private void RequestRemovePlayer(string playerId, string playerName)
+	{
+		_confirmTitle = Loc["Confirm_DeletePlayerTitle"];
+		_confirmMessage = Loc["Confirm_DeletePlayerMsg", playerName];
+		_confirmDetails = Loc["Confirm_CannotUndo"];
+		_confirmConfirmText = Loc["Common_Delete"];
+		_confirmHeaderIcon = "trash";
+		_confirmIcon = "trash";
+		_confirmIsDestructive = true;
+		_confirmAction = () => RemovePlayerAsync(playerId);
+		_confirmIsOpen = true;
+	}
+
+	private void RequestDeletePairing(Round round, Pairing pairing)
+	{
+		var white = _tournament?.GetPlayer(pairing.WhitePlayerId);
+		var black = _tournament?.GetPlayer(pairing.BlackPlayerId);
+		_confirmTitle = Loc["Confirm_DeletePairingTitle"];
+		_confirmMessage = Loc["Confirm_DeletePairingMsg",
+			pairing.BoardNumber,
+			white?.FullName ?? Loc["Pairings_Bye"],
+			black?.FullName ?? Loc["Pairings_Bye"]];
+		_confirmDetails = Loc["Confirm_CannotUndo"];
+		_confirmConfirmText = Loc["Common_Delete"];
+		_confirmHeaderIcon = "trash";
+		_confirmIcon = "trash";
+		_confirmIsDestructive = true;
+		_confirmAction = () => DeletePairingAsync(round, pairing.Id);
+		_confirmIsOpen = true;
+	}
+
+	private void RequestRegeneratePairings()
+	{
+		_confirmTitle = Loc["Confirm_RegeneratePairingsTitle"];
+		_confirmMessage = Loc["Confirm_RegeneratePairingsMsg"];
+		_confirmDetails = Loc["Confirm_CannotUndo"];
+		_confirmConfirmText = Loc["Pairings_ResetRegenerate"];
+		_confirmHeaderIcon = "refresh";
+		_confirmIcon = "refresh";
+		_confirmIsDestructive = true;
+		_confirmAction = () => RegeneratePairingsAsync();
+		_confirmIsOpen = true;
+	}
+
+	private void RequestToggleWorkbenchFinished()
+	{
+		if (_tournament == null) return;
+		bool willFinish = !_tournament.IsFinished;
+		_confirmTitle = willFinish ? Loc["Confirm_ArchiveTournamentTitle"] : Loc["Confirm_UnarchiveTournamentTitle"];
+		_confirmMessage = willFinish ? Loc["Confirm_ArchiveTournamentMsg", _tournament.Name] : Loc["Confirm_UnarchiveTournamentMsg", _tournament.Name];
+		_confirmDetails = null;
+		_confirmConfirmText = willFinish ? Loc["Workbench_MarkFinishedBtn"] : Loc["Workbench_RestoreActiveBtn"];
+		_confirmHeaderIcon = willFinish ? "archive" : "unarchive";
+		_confirmIcon = willFinish ? "archive" : "unarchive";
+		_confirmIsDestructive = false;
+		_confirmAction = () => ToggleWorkbenchFinishedAsync();
+		_confirmIsOpen = true;
+	}
+
+	private async Task ExecuteConfirmAction()
+	{
+		_confirmIsOpen = false;
+		if (_confirmAction != null)
+		{
+			await _confirmAction.Invoke();
+			_confirmAction = null;
+		}
+	}
+
+	// New Player Form State
+	private string _newLastName = "";
+	private string _newFirstName = "";
+	private string _newTitle = "";
+	private string _newFed = "SVK";
+	private int _newFideRating = 0;
+	private int _newNationalRating = 0;
+	private string _newClub = "";
+	private int? _newBirthYear;
+	private string _newGender = "M";
+	private string _newNationalId = "";
+	private string _lookupFideId = "";
+	private bool _isSearchingFide = false;
+	private string? _fideLookupError;
+	private string? _fideLookupSuccessMessage;
+
+	// Edit Player Form State
+	private bool _showEditPlayerModal = false;
+	private Player? _editingPlayer;
+	private string _editLastName = "";
+	private string _editFirstName = "";
+	private string _editTitle = "";
+	private string _editFed = "SVK";
+	private int _editFideRating = 0;
+	private int _editNationalRating = 0;
+	private string _editClub = "";
+	private int? _editBirthYear;
+	private string _editGender = "M";
+	private string _editNationalId = "";
+	private string _editFideId = "";
+	private PlayerStatus _editStatus = PlayerStatus.Active;
+	private bool _isEditingFideSearching = false;
+	private string? _editFideMessage;
+	private bool _editFideIsError;
+
+	// Batch Sync State
+	private bool _isSyncingAllFide = false;
+	private int _syncProgressCurrent = 0;
+	private int _syncProgressTotal = 0;
+	private string? _syncResultMessage;
+
+	private bool _isLoading = true;
+
+	protected override async Task OnInitializedAsync()
+	{
+		Tab.OnTabChanged += StateHasChanged;
+		Loc.OnLanguageChanged += StateHasChanged;
+
+		_isLoading = true;
+		try
+		{
+			if (Tab.Tournament != null)
+			{
+				_tournament = Tab.Tournament;
+			}
+			else
+			{
+				_tournament = await TournamentRepo.GetByIdAsync(Tab.TournamentId);
+				Tab.Tournament = _tournament;
+			}
+
+			if (_tournament != null && _tournament.Rounds.Count > 0)
+			{
+				_activeRoundNumber = _tournament.Rounds.First().RoundNumber;
+			}
+		}
+		finally
+		{
+			_isLoading = false;
+		}
+	}
+
+	private void SetView(TournamentView view)
+	{
+		Tab.SetView(view);
+	}
+
+	private string GetNavButtonClass(TournamentView view) =>
+		Tab.CurrentView == view
+			? "workspace-tab tab-active"
+			: "workspace-tab";
+
+	private void ResetNewPlayerForm()
+	{
+		_newLastName = "";
+		_newFirstName = "";
+		_newTitle = "";
+		_newFed = _tournament?.Federation ?? "SVK";
+		_newFideRating = 0;
+		_newNationalRating = 0;
+		_newClub = "";
+		_newBirthYear = null;
+		_newGender = "M";
+		_newNationalId = "";
+		_lookupFideId = "";
+		_fideLookupError = null;
+		_fideLookupSuccessMessage = null;
+	}
+
+	private int GetRatingForTournament(FidePlayerCard card)
+	{
+		if (_tournament == null) return card.StandardElo ?? card.RapidElo ?? card.BlitzElo ?? 0;
+		return _tournament.TimeControl switch
+		{
+			TimeControlCategory.Rapid => card.RapidElo ?? card.StandardElo ?? card.BlitzElo ?? 0,
+			TimeControlCategory.Blitz => card.BlitzElo ?? card.RapidElo ?? card.StandardElo ?? 0,
+			_ => card.StandardElo ?? card.RapidElo ?? card.BlitzElo ?? 0
+		};
+	}
+
+	private static string NormalizeGender(string? cardGender, string? title)
+	{
+		if (!string.IsNullOrWhiteSpace(cardGender) && cardGender.Trim().StartsWith("f", StringComparison.OrdinalIgnoreCase))
+			return "F";
+		if (!string.IsNullOrWhiteSpace(title) && title.Trim().StartsWith("W", StringComparison.OrdinalIgnoreCase))
+			return "F";
+		return "M";
+	}
+
+	private Task<FidePlayerCard?> SmartFideLookupAsync(string? fideId, string? fullName, string? federation)
+	{
+		var (last, first) = Player.SplitFullName(fullName);
+		return SmartFideLookupAsync(fideId, last, first, federation);
+	}
+
+	private async Task<FidePlayerCard?> SmartFideLookupAsync(string? fideId, string? lastName, string? firstName, string? federation)
+	{
+		// 1. Try by FIDE ID if provided
+		if (!string.IsNullOrWhiteSpace(fideId))
+		{
+			string cleanId = System.Text.RegularExpressions.Regex.Replace(fideId.Trim(), @"[^\d]", "");
+			if (!string.IsNullOrEmpty(cleanId))
+			{
+				var card = await FideService.GetPlayerCardAsync(cleanId);
+				if (card != null)
+				{
+					return card;
+				}
+			}
+		}
+
+		// 2. Fall back to search by Name (+ Federation)
+		string cleanLast = (lastName ?? "").Trim();
+		string cleanFirst = (firstName ?? "").Trim();
+		var queryParts = new[] { cleanLast, cleanFirst }.Where(s => !string.IsNullOrEmpty(s));
+		string query = string.Join(" ", queryParts);
+
+		if (query.Length >= 2)
+		{
+			var results = await FideService.SearchPlayersByNameAsync(query);
+			if ((results == null || results.Count == 0) && !string.IsNullOrWhiteSpace(cleanLast) && cleanLast.Length >= 2 && !string.IsNullOrWhiteSpace(cleanFirst))
+			{
+				// If full name query produced no results, try searching just the last name
+				results = await FideService.SearchPlayersByNameAsync(cleanLast);
+			}
+
+			if (results != null && results.Count > 0)
+			{
+				var match = SelectBestFideMatch(results, cleanLast, cleanFirst, federation);
+				if (match != null && !string.IsNullOrWhiteSpace(match.FideId))
+				{
+					var card = await FideService.GetPlayerCardAsync(match.FideId);
+					if (card != null)
+					{
+						return card;
+					}
+
+					return new FidePlayerCard
+					{
+						FideId = match.FideId,
+						FullName = match.FullName,
+						Title = match.Title,
+						FederationCode = FideCountryHelper.ToFideCode(match.Federation) ?? match.Federation,
+						Federation = match.Federation,
+						StandardElo = match.StandardElo,
+						RapidElo = match.RapidElo,
+						BlitzElo = match.BlitzElo,
+						BirthYear = match.BirthYear
+					};
+				}
+			}
+		}
+
+		return null;
+	}
+
+	private static FideSearchResult? SelectBestFideMatch(
+		List<FideSearchResult> results,
+		string? targetLastName,
+		string? targetFirstName,
+		string? targetFed)
+	{
+		if (results == null || results.Count == 0) return null;
+
+		string tLast = Player.RemoveDiacritics(targetLastName ?? "").Trim().ToLowerInvariant();
+		string tFirst = Player.RemoveDiacritics(targetFirstName ?? "").Trim().ToLowerInvariant();
+		string? tFedCode = FideCountryHelper.ToFideCode(targetFed);
+
+		FideSearchResult? bestResult = null;
+		int bestScore = -1;
+
+		foreach (var r in results)
+		{
+			var (cLastRaw, cFirstRaw) = Player.SplitFullName(r.FullName);
+			string cLast = Player.RemoveDiacritics(cLastRaw).Trim().ToLowerInvariant();
+			string cFirst = Player.RemoveDiacritics(cFirstRaw).Trim().ToLowerInvariant();
+			string? cFedCode = FideCountryHelper.ToFideCode(r.Federation);
+
+			int score = 0;
+
+			// Last name scoring - candidate must match last name if provided
+			if (!string.IsNullOrEmpty(tLast))
+			{
+				if (cLast == tLast)
+				{
+					score += 100;
+				}
+				else if (cLast.StartsWith(tLast) || tLast.StartsWith(cLast))
+				{
+					score += 60;
+				}
+				else if (cLast.Contains(tLast) || tLast.Contains(cLast))
+				{
+					score += 40;
+				}
+				else
+				{
+					// Fatal mismatch: candidate with different last name must NOT be picked!
+					continue;
+				}
+			}
+			else
+			{
+				score += 10;
+			}
+
+			// First name scoring
+			if (!string.IsNullOrEmpty(tFirst))
+			{
+				if (cFirst == tFirst)
+				{
+					score += 60;
+				}
+				else if (cFirst.StartsWith(tFirst) || tFirst.StartsWith(cFirst))
+				{
+					score += 40;
+				}
+				else if (cFirst.Contains(tFirst) || tFirst.Contains(cFirst))
+				{
+					score += 25;
+				}
+				else
+				{
+					score -= 30;
+				}
+			}
+
+			// Federation scoring
+			if (!string.IsNullOrEmpty(tFedCode))
+			{
+				if (string.Equals(cFedCode, tFedCode, StringComparison.OrdinalIgnoreCase))
+				{
+					score += 50;
+				}
+				else
+				{
+					score -= 20;
+				}
+			}
+
+			if (r.StandardElo.HasValue && r.StandardElo.Value > 0)
+			{
+				score += 5;
+			}
+			if (r.BirthYear.HasValue)
+			{
+				score += 1;
+			}
+
+			if (score > bestScore)
+			{
+				bestScore = score;
+				bestResult = r;
+			}
+		}
+
+		return bestScore > 0 ? bestResult : null;
+	}
+
+	private async Task LookupFidePlayerAsync()
+	{
+		if (string.IsNullOrWhiteSpace(_lookupFideId) && string.IsNullOrWhiteSpace(_newLastName) && string.IsNullOrWhiteSpace(_newFirstName) && string.IsNullOrWhiteSpace(_newNationalId))
+		{
+			_fideLookupError = Loc["Roster_FideLookupEmptyQuery"];
+			return;
+		}
+
+		_isSearchingFide = true;
+		_fideLookupError = null;
+		_fideLookupSuccessMessage = null;
+
+		try
+		{
+			// 1. FIDE Lookup
+			var card = await SmartFideLookupAsync(_lookupFideId, _newLastName, _newFirstName, _newFed);
+			if (card != null)
+			{
+				_lookupFideId = card.FideId;
+				var (last, first) = Player.SplitFullName(card.FullName);
+
+				// Preserve user-entered diacritics if base name matches
+				if (!string.IsNullOrWhiteSpace(_newLastName) &&
+				    string.Equals(Player.RemoveDiacritics(_newLastName).Trim(), Player.RemoveDiacritics(last).Trim(), StringComparison.OrdinalIgnoreCase))
+				{
+					// Retain user's accented last name (e.g. "Kamenický")
+				}
+				else
+				{
+					_newLastName = last;
+				}
+
+				if (!string.IsNullOrWhiteSpace(_newFirstName) &&
+				    string.Equals(Player.RemoveDiacritics(_newFirstName).Trim(), Player.RemoveDiacritics(first).Trim(), StringComparison.OrdinalIgnoreCase))
+				{
+					// Retain user's accented first name
+				}
+				else
+				{
+					_newFirstName = first;
+				}
+
+				_newTitle = card.TitleAbbreviation ?? "";
+				string? resolvedFed = FideCountryHelper.ToFideCode(card.FederationCode) ?? FideCountryHelper.ToFideCode(card.Federation);
+				_newFed = resolvedFed ?? card.FederationCode ?? (!string.IsNullOrWhiteSpace(card.Federation) && card.Federation.Length == 3 ? card.Federation.ToUpperInvariant() : _newFed);
+				_newFideRating = GetRatingForTournament(card);
+				if (card.BirthYear.HasValue) _newBirthYear = card.BirthYear;
+				_newGender = NormalizeGender(card.Gender, card.TitleAbbreviation);
+
+				_fideLookupSuccessMessage = Loc["Roster_FideLookupSuccess", card.FullName];
+			}
+
+			// 2. National Database Lookup (e.g. SŠZ / chess.sk for SVK)
+			string targetFed = _newFed;
+			if (string.IsNullOrWhiteSpace(targetFed) && card != null)
+			{
+				targetFed = card.FederationCode ?? card.Federation ?? "";
+			}
+
+			try
+			{
+				var nationalCard = await NationalService.LookupPlayerAsync(
+					_newNationalId, 
+					card?.FideId ?? _lookupFideId, 
+					_newLastName, 
+					_newFirstName, 
+					targetFed);
+
+				if (nationalCard != null)
+				{
+					if (!string.IsNullOrWhiteSpace(nationalCard.NationalId))
+					{
+						_newNationalId = nationalCard.NationalId;
+					}
+					if (!string.IsNullOrWhiteSpace(nationalCard.Club))
+					{
+						_newClub = nationalCard.Club;
+					}
+					if (nationalCard.NationalRating.HasValue && nationalCard.NationalRating.Value > 0)
+					{
+						_newNationalRating = nationalCard.NationalRating.Value;
+					}
+
+					// If FIDE card was not found earlier, fill in basic identity from national database
+					if (card == null)
+					{
+						if (!string.IsNullOrWhiteSpace(nationalCard.FideId))
+						{
+							_lookupFideId = nationalCard.FideId;
+							var fetchedCard = await FideService.GetPlayerCardAsync(nationalCard.FideId);
+							if (fetchedCard != null)
+							{
+								_newTitle = fetchedCard.TitleAbbreviation ?? "";
+								_newFideRating = GetRatingForTournament(fetchedCard);
+								if (fetchedCard.BirthYear.HasValue) _newBirthYear = fetchedCard.BirthYear;
+								_newGender = NormalizeGender(fetchedCard.Gender, fetchedCard.TitleAbbreviation);
+							}
+						}
+
+						var (nLast, nFirst) = Player.SplitFullName(nationalCard.FullName);
+						if (string.IsNullOrWhiteSpace(_newLastName)) _newLastName = nLast;
+						if (string.IsNullOrWhiteSpace(_newFirstName)) _newFirstName = nFirst;
+						if (string.IsNullOrWhiteSpace(_newFed) && !string.IsNullOrWhiteSpace(nationalCard.Federation))
+						{
+							_newFed = nationalCard.Federation;
+						}
+
+						_fideLookupSuccessMessage = Loc["Roster_FideLookupSuccess", nationalCard.FullName];
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[LookupPlayer] National lookup warning: {ex.Message}");
+			}
+
+			if (card == null && string.IsNullOrEmpty(_fideLookupSuccessMessage))
+			{
+				_fideLookupError = Loc["Roster_FideLookupNotFound"];
+			}
+		}
+		catch (Exception ex)
+		{
+			_fideLookupError = $"Lookup failed: {ex.Message}";
+		}
+		finally
+		{
+			_isSearchingFide = false;
+		}
+	}
+
+	private async Task AddPlayerAsync()
+	{
+		if ((string.IsNullOrWhiteSpace(_newLastName) && string.IsNullOrWhiteSpace(_newFirstName)) || _tournament == null) return;
+
+		int nextSeed = _tournament.Players.Count + 1;
+		string fedCode = FideCountryHelper.ToFideCode(_newFed) ?? (string.IsNullOrWhiteSpace(_newFed) ? "FID" : _newFed.Trim().ToUpperInvariant());
+		var player = new Player
+		{
+			StartRank = nextSeed,
+			LastName = _newLastName.Trim(),
+			FirstName = _newFirstName.Trim(),
+			Title = string.IsNullOrWhiteSpace(_newTitle) ? null : _newTitle.Trim(),
+			Federation = fedCode,
+			FideRating = _newFideRating,
+			NationalRating = _newNationalRating,
+			Club = string.IsNullOrWhiteSpace(_newClub) ? null : _newClub.Trim(),
+			BirthYear = _newBirthYear,
+			Gender = string.IsNullOrWhiteSpace(_newGender) ? "M" : _newGender,
+			NationalId = string.IsNullOrWhiteSpace(_newNationalId) ? null : _newNationalId.Trim(),
+			FideId = string.IsNullOrWhiteSpace(_lookupFideId) ? null : _lookupFideId.Trim()
+		};
+
+		_tournament.Players.Add(player);
+		await TournamentRepo.SaveAsync(_tournament);
+		_showAddPlayerModal = false;
+		Tab.NotifyChanged();
+	}
+
+	private void OpenEditPlayerModal(Player player)
+	{
+		_editingPlayer = player;
+		_editLastName = player.LastName;
+		_editFirstName = player.FirstName;
+		if (string.IsNullOrWhiteSpace(_editLastName) && string.IsNullOrWhiteSpace(_editFirstName) && !string.IsNullOrWhiteSpace(player.FullName))
+		{
+			var (last, first) = Player.SplitFullName(player.FullName);
+			_editLastName = last;
+			_editFirstName = first;
+		}
+		_editTitle = player.Title ?? "";
+		_editFed = player.Federation ?? "FID";
+		_editFideRating = player.FideRating;
+		_editNationalRating = player.NationalRating;
+		_editClub = player.Club ?? "";
+		_editBirthYear = player.BirthYear;
+		_editGender = string.IsNullOrEmpty(player.Gender) ? "M" : player.Gender;
+		_editNationalId = player.NationalId ?? "";
+		_editFideId = player.FideId ?? "";
+		_editStatus = player.Status;
+		_editFideMessage = null;
+		_editFideIsError = false;
+		_showEditPlayerModal = true;
+	}
+
+	private async Task LookupFideForEditAsync()
+	{
+		if (string.IsNullOrWhiteSpace(_editFideId) && string.IsNullOrWhiteSpace(_editLastName) && string.IsNullOrWhiteSpace(_editFirstName) && string.IsNullOrWhiteSpace(_editNationalId))
+		{
+			_editFideMessage = Loc["Roster_FideLookupEmptyQuery"];
+			_editFideIsError = true;
+			return;
+		}
+
+		_isEditingFideSearching = true;
+		_editFideMessage = null;
+		_editFideIsError = false;
+
+		try
+		{
+			// 1. FIDE Lookup
+			var card = await SmartFideLookupAsync(_editFideId, _editLastName, _editFirstName, _editFed);
+			if (card != null)
+			{
+				_editFideId = card.FideId;
+				var (last, first) = Player.SplitFullName(card.FullName);
+
+				// Preserve user-entered diacritics if base name matches
+				if (!string.IsNullOrWhiteSpace(_editLastName) &&
+				    string.Equals(Player.RemoveDiacritics(_editLastName).Trim(), Player.RemoveDiacritics(last).Trim(), StringComparison.OrdinalIgnoreCase))
+				{
+					// Retain user's accented last name
+				}
+				else
+				{
+					_editLastName = last;
+				}
+
+				if (!string.IsNullOrWhiteSpace(_editFirstName) &&
+				    string.Equals(Player.RemoveDiacritics(_editFirstName).Trim(), Player.RemoveDiacritics(first).Trim(), StringComparison.OrdinalIgnoreCase))
+				{
+					// Retain user's accented first name
+				}
+				else
+				{
+					_editFirstName = first;
+				}
+
+				_editTitle = card.TitleAbbreviation ?? "";
+				string? resolvedFed = FideCountryHelper.ToFideCode(card.FederationCode) ?? FideCountryHelper.ToFideCode(card.Federation);
+				_editFed = resolvedFed ?? card.FederationCode ?? (!string.IsNullOrWhiteSpace(card.Federation) && card.Federation.Length == 3 ? card.Federation.ToUpperInvariant() : _editFed);
+				_editFideRating = GetRatingForTournament(card);
+				if (card.BirthYear.HasValue) _editBirthYear = card.BirthYear;
+				_editGender = NormalizeGender(card.Gender, card.TitleAbbreviation);
+
+				_editFideMessage = Loc["Roster_FideLookupSuccess", card.FullName];
+				_editFideIsError = false;
+			}
+
+			// 2. National Database Lookup (e.g. SŠZ / chess.sk for SVK)
+			string targetFed = _editFed;
+			if (string.IsNullOrWhiteSpace(targetFed) && card != null)
+			{
+				targetFed = card.FederationCode ?? card.Federation ?? "";
+			}
+
+			try
+			{
+				var nationalCard = await NationalService.LookupPlayerAsync(
+					_editNationalId,
+					card?.FideId ?? _editFideId,
+					_editLastName,
+					_editFirstName,
+					targetFed);
+
+				if (nationalCard != null)
+				{
+					if (!string.IsNullOrWhiteSpace(nationalCard.NationalId))
+					{
+						_editNationalId = nationalCard.NationalId;
+					}
+					if (!string.IsNullOrWhiteSpace(nationalCard.Club))
+					{
+						_editClub = nationalCard.Club;
+					}
+					if (nationalCard.NationalRating.HasValue && nationalCard.NationalRating.Value > 0)
+					{
+						_editNationalRating = nationalCard.NationalRating.Value;
+					}
+
+					if (card == null)
+					{
+						if (!string.IsNullOrWhiteSpace(nationalCard.FideId))
+						{
+							_editFideId = nationalCard.FideId;
+							var fetchedCard = await FideService.GetPlayerCardAsync(nationalCard.FideId);
+							if (fetchedCard != null)
+							{
+								_editTitle = fetchedCard.TitleAbbreviation ?? "";
+								_editFideRating = GetRatingForTournament(fetchedCard);
+								if (fetchedCard.BirthYear.HasValue) _editBirthYear = fetchedCard.BirthYear;
+								_editGender = NormalizeGender(fetchedCard.Gender, fetchedCard.TitleAbbreviation);
+							}
+						}
+
+						var (nLast, nFirst) = Player.SplitFullName(nationalCard.FullName);
+						if (string.IsNullOrWhiteSpace(_editLastName)) _editLastName = nLast;
+						if (string.IsNullOrWhiteSpace(_editFirstName)) _editFirstName = nFirst;
+						if (string.IsNullOrWhiteSpace(_editFed) && !string.IsNullOrWhiteSpace(nationalCard.Federation))
+						{
+							_editFed = nationalCard.Federation;
+						}
+
+						_editFideMessage = Loc["Roster_FideLookupSuccess", nationalCard.FullName];
+						_editFideIsError = false;
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[LookupEditPlayer] National lookup warning: {ex.Message}");
+			}
+
+			if (card == null && string.IsNullOrEmpty(_editFideMessage))
+			{
+				_editFideMessage = Loc["Roster_FideLookupNotFound"];
+				_editFideIsError = true;
+			}
+		}
+		catch (Exception ex)
+		{
+			_editFideMessage = $"Lookup failed: {ex.Message}";
+			_editFideIsError = true;
+		}
+		finally
+		{
+			_isEditingFideSearching = false;
+		}
+	}
+
+	private async Task SaveEditedPlayerAsync()
+	{
+		if (_editingPlayer == null || _tournament == null || (string.IsNullOrWhiteSpace(_editLastName) && string.IsNullOrWhiteSpace(_editFirstName))) return;
+
+		string fedCode = FideCountryHelper.ToFideCode(_editFed) ?? (string.IsNullOrWhiteSpace(_editFed) ? "FID" : _editFed.Trim().ToUpperInvariant());
+		_editingPlayer.LastName = _editLastName.Trim();
+		_editingPlayer.FirstName = _editFirstName.Trim();
+		_editingPlayer.Title = string.IsNullOrWhiteSpace(_editTitle) ? null : _editTitle.Trim();
+		_editingPlayer.Federation = fedCode;
+		_editingPlayer.FideRating = _editFideRating;
+		_editingPlayer.NationalRating = _editNationalRating;
+		_editingPlayer.Club = string.IsNullOrWhiteSpace(_editClub) ? null : _editClub.Trim();
+		_editingPlayer.BirthYear = _editBirthYear;
+		_editingPlayer.Gender = string.IsNullOrWhiteSpace(_editGender) ? "M" : _editGender;
+		_editingPlayer.NationalId = string.IsNullOrWhiteSpace(_editNationalId) ? null : _editNationalId.Trim();
+		_editingPlayer.FideId = string.IsNullOrWhiteSpace(_editFideId) ? null : _editFideId.Trim();
+		_editingPlayer.Status = _editStatus;
+
+		await TournamentRepo.SaveAsync(_tournament);
+		_showEditPlayerModal = false;
+		Tab.NotifyChanged();
+	}
+
+	private async Task SyncAllPlayersFromFideAsync()
+	{
+		if (_tournament == null || _tournament.Players.Count == 0 || _isSyncingAllFide) return;
+
+		_isSyncingAllFide = true;
+		_syncProgressCurrent = 0;
+		_syncProgressTotal = _tournament.Players.Count;
+		_syncResultMessage = null;
+		int updatedCount = 0;
+
+		try
+		{
+			foreach (var player in _tournament.Players)
+			{
+				_syncProgressCurrent++;
+				StateHasChanged();
+
+				try
+				{
+					var card = await SmartFideLookupAsync(player.FideId, player.LastName, player.FirstName, player.Federation);
+					if (card != null)
+					{
+						if (string.IsNullOrWhiteSpace(player.FideId) && !string.IsNullOrWhiteSpace(card.FideId))
+						{
+							player.FideId = card.FideId;
+						}
+
+						if (!string.IsNullOrWhiteSpace(card.TitleAbbreviation))
+						{
+							player.Title = card.TitleAbbreviation;
+						}
+
+						string? fedCode = FideCountryHelper.ToFideCode(card.FederationCode) ?? FideCountryHelper.ToFideCode(card.Federation);
+						if (!string.IsNullOrWhiteSpace(fedCode))
+						{
+							player.Federation = fedCode;
+						}
+
+						int rating = GetRatingForTournament(card);
+						if (rating > 0)
+						{
+							player.FideRating = rating;
+						}
+
+						if (card.BirthYear.HasValue)
+						{
+							player.BirthYear = card.BirthYear;
+						}
+
+						player.Gender = NormalizeGender(card.Gender, card.TitleAbbreviation);
+						updatedCount++;
+					}
+
+					// Also sync national details (club, national rating, national ID)
+					try
+					{
+						var nationalCard = await NationalService.LookupPlayerAsync(
+							player.NationalId,
+							card?.FideId ?? player.FideId,
+							player.LastName,
+							player.FirstName,
+							player.Federation);
+
+						if (nationalCard != null)
+						{
+							if (string.IsNullOrWhiteSpace(player.NationalId) && !string.IsNullOrWhiteSpace(nationalCard.NationalId))
+							{
+								player.NationalId = nationalCard.NationalId;
+							}
+							if (string.IsNullOrWhiteSpace(player.Club) && !string.IsNullOrWhiteSpace(nationalCard.Club))
+							{
+								player.Club = nationalCard.Club;
+							}
+							if (nationalCard.NationalRating.HasValue && nationalCard.NationalRating.Value > 0)
+							{
+								player.NationalRating = nationalCard.NationalRating.Value;
+							}
+						}
+					}
+					catch (Exception ex)
+					{
+						Console.WriteLine($"[SyncAllPlayers] National sync warning for {player.FullName}: {ex.Message}");
+					}
+
+					await Task.Delay(80);
+				}
+				catch (Exception ex)
+				{
+					Console.WriteLine($"[SyncAllPlayersFromFide] Error for {player.FullName}: {ex.Message}");
+				}
+			}
+
+			await TournamentRepo.SaveAsync(_tournament);
+			_syncResultMessage = Loc["Roster_SyncSuccess", updatedCount, _tournament.Players.Count];
+			Tab.NotifyChanged();
+		}
+		catch (Exception ex)
+		{
+			_syncResultMessage = $"Sync failed: {ex.Message}";
+		}
+		finally
+		{
+			_isSyncingAllFide = false;
+			StateHasChanged();
+		}
+	}
+
+	private async Task RemovePlayerAsync(string playerId)
+	{
+		if (_tournament == null) return;
+		_tournament.Players.RemoveAll(p => p.Id == playerId);
+
+		int rank = 1;
+		foreach (var p in _tournament.Players.OrderBy(p => p.StartRank))
+		{
+			p.StartRank = rank++;
+		}
+
+		await TournamentRepo.SaveAsync(_tournament);
+		Tab.NotifyChanged();
+	}
+
+	private async Task ReseedPlayersAsync()
+	{
+		if (_tournament == null || _tournament.Players.Count == 0) return;
+
+		var sorted = _tournament.Players
+			.OrderByDescending(p => p.EffectiveRating(_tournament.SeedingPrecedence))
+			.ThenByDescending(p => Player.GetTitleWeight(p.Title))
+			.ThenBy(p => p.FullName, StringComparer.OrdinalIgnoreCase)
+			.ToList();
+
+		for (int i = 0; i < sorted.Count; i++)
+		{
+			sorted[i].StartRank = i + 1;
+		}
+
+		_tournament.Players = sorted;
+		await TournamentRepo.SaveAsync(_tournament);
+		Tab.NotifyChanged();
+	}
+
+	private string GetActiveEngineName()
+	{
+		if (_tournament == null) return "FIDE Dutch";
+		if (_tournament.System == TournamentSystem.RoundRobin) return "Berger Tables";
+		var engine = EngineRegistry.GetEngine(_tournament.PairingEngineId);
+		return engine.DisplayName;
+	}
+
+	private bool _isDownloadingEngine;
+	private string? _downloadingEngineId;
+	private string? _engineDownloadMessage;
+
+	private async Task SelectPairingEngine(string engineId)
+	{
+		if (_tournament == null) return;
+		var engine = EngineRegistry.GetEngine(engineId);
+		if (!engine.IsAvailable) return;
+		_tournament.PairingEngineId = engineId;
+		await TournamentRepo.SaveAsync(_tournament);
+		Tab.NotifyChanged();
+	}
+
+	private async Task DownloadEngineWorkbenchAsync(string engineId)
+	{
+		_isDownloadingEngine = true;
+		_downloadingEngineId = engineId;
+		_engineDownloadMessage = Loc["Settings_Downloading"];
+		StateHasChanged();
+
+		try
+		{
+			var result = await EngineInstaller.InstallEngineAsync(engineId);
+			if (result.Success)
+			{
+				_engineDownloadMessage = null;
+				await SelectPairingEngine(engineId);
+			}
+			else
+			{
+				_engineDownloadMessage = result.ErrorMessage;
+			}
+		}
+		finally
+		{
+			_isDownloadingEngine = false;
+			_downloadingEngineId = null;
+			StateHasChanged();
+		}
+	}
+
+	private async Task GeneratePairingsAsync()
+	{
+		if (_tournament == null || _tournament.Players.Count < 2) return;
+
+		if (_tournament.System == TournamentSystem.RoundRobin)
+		{
+			var engine = new BergerPairingEngine();
+			_tournament.Rounds = engine.GenerateAllRounds(_tournament);
+			_tournament.TotalRounds = _tournament.Rounds.Count;
+			_activeRoundNumber = 1;
+		}
+		else
+		{
+			var engine = EngineRegistry.GetEngine(_tournament.PairingEngineId);
+			var result = engine.GenerateRoundPairings(_tournament, 1);
+			if (result.Success)
+			{
+				_tournament.Rounds = [new Round { RoundNumber = 1, Pairings = result.Pairings }];
+				_activeRoundNumber = 1;
+			}
+		}
+
+		await TournamentRepo.SaveAsync(_tournament);
+		Tab.NotifyChanged();
+	}
+
+	private string? _pairingErrorMessage;
+
+	private async Task GenerateNextRoundAsync()
+	{
+		if (_tournament == null) return;
+		_pairingErrorMessage = null;
+		int nextRoundNumber = _tournament.Rounds.Count + 1;
+		if (nextRoundNumber > _tournament.TotalRounds) return;
+
+		var latestRound = _tournament.Rounds.OrderBy(r => r.RoundNumber).LastOrDefault();
+		if (latestRound != null)
+		{
+			var pending = latestRound.Pairings.Where(p => p.Result == MatchResult.NotPlayed).ToList();
+			if (pending.Count > 0)
+			{
+				_unfinishedRoundNumber = latestRound.RoundNumber;
+				_unfinishedPairings = pending;
+				_showUnfinishedGamesModal = true;
+				return;
+			}
+		}
+
+		var engine = EngineRegistry.GetEngine(_tournament.PairingEngineId);
+		var result = engine.GenerateRoundPairings(_tournament, nextRoundNumber);
+		if (result.Success)
+		{
+			_tournament.Rounds.Add(new Round { RoundNumber = nextRoundNumber, Pairings = result.Pairings });
+			_activeRoundNumber = nextRoundNumber;
+			await TournamentRepo.SaveAsync(_tournament);
+			Tab.NotifyChanged();
+		}
+		else
+		{
+			_pairingErrorMessage = result.ErrorMessage ?? "Failed to generate round pairings.";
+		}
+	}
+
+	private void OpenResultFromWarningModal(Pairing pairing)
+	{
+		_showUnfinishedGamesModal = false;
+		_activeRoundNumber = _unfinishedRoundNumber;
+		OpenResultDialog(pairing);
+	}
+
+	private void GoToActiveRoundAndClose()
+	{
+		_activeRoundNumber = _unfinishedRoundNumber;
+		_showUnfinishedGamesModal = false;
+	}
+
+	private bool HasAnyResultsEntered()
+	{
+		if (_tournament == null || _tournament.Rounds.Count == 0) return false;
+		return _tournament.Rounds.Any(r => r.Pairings.Any(p => p.Result != MatchResult.NotPlayed));
+	}
+
+	private int GetCurrentRoundNumber()
+	{
+		if (_tournament == null || _tournament.Rounds.Count == 0) return 1;
+		if (_tournament.System == TournamentSystem.RoundRobin)
+		{
+			return _activeRoundNumber;
+		}
+		return _tournament.Rounds.Count;
+	}
+
+	private void RequestResetRound(int roundNumber)
+	{
+		_confirmTitle = Loc["Confirm_ResetRoundTitle", roundNumber];
+		_confirmMessage = Loc["Confirm_ResetRoundMsg", roundNumber];
+		_confirmDetails = Loc["Confirm_CannotUndo"];
+		_confirmConfirmText = Loc["Pairings_ResetRound", roundNumber];
+		_confirmHeaderIcon = "refresh";
+		_confirmIcon = "refresh";
+		_confirmIsDestructive = true;
+		_confirmAction = () => ResetRoundAsync(roundNumber);
+		_confirmIsOpen = true;
+	}
+
+	private async Task ResetRoundAsync(int roundNumber)
+	{
+		if (_tournament == null) return;
+		_pairingErrorMessage = null;
+
+		if (_tournament.System == TournamentSystem.RoundRobin)
+		{
+			var targetRound = _tournament.Rounds.FirstOrDefault(r => r.RoundNumber == roundNumber);
+			if (targetRound != null)
+			{
+				foreach (var p in targetRound.Pairings)
+				{
+					p.Result = MatchResult.NotPlayed;
+					p.IsManualOverride = false;
+				}
+			}
+		}
+		else
+		{
+			_tournament.Rounds.RemoveAll(r => r.RoundNumber == roundNumber);
+
+			var engine = EngineRegistry.GetEngine(_tournament.PairingEngineId);
+			var result = engine.GenerateRoundPairings(_tournament, roundNumber);
+			if (result.Success)
+			{
+				_tournament.Rounds.Add(new Round { RoundNumber = roundNumber, Pairings = result.Pairings });
+				_activeRoundNumber = roundNumber;
+			}
+			else
+			{
+				_pairingErrorMessage = result.ErrorMessage ?? $"Failed to regenerate pairings for Round {roundNumber}.";
+				_activeRoundNumber = Math.Max(1, roundNumber - 1);
+			}
+		}
+
+		await TournamentRepo.SaveAsync(_tournament);
+		Tab.NotifyChanged();
+	}
+
+	private void RequestDeleteRound(int roundNumber)
+	{
+		_confirmTitle = Loc["Confirm_DeleteRoundTitle", roundNumber];
+		_confirmMessage = Loc["Confirm_DeleteRoundMsg", roundNumber];
+		_confirmDetails = Loc["Confirm_CannotUndo"];
+		_confirmConfirmText = Loc["Pairings_DeleteRound", roundNumber];
+		_confirmHeaderIcon = "trash";
+		_confirmIcon = "trash";
+		_confirmIsDestructive = true;
+		_confirmAction = () => DeleteRoundAsync(roundNumber);
+		_confirmIsOpen = true;
+	}
+
+	private async Task DeleteRoundAsync(int roundNumber)
+	{
+		if (_tournament == null) return;
+		_pairingErrorMessage = null;
+
+		_tournament.Rounds.RemoveAll(r => r.RoundNumber == roundNumber);
+		_activeRoundNumber = Math.Max(1, _tournament.Rounds.Count);
+
+		await TournamentRepo.SaveAsync(_tournament);
+		Tab.NotifyChanged();
+	}
+
+	private async Task RegeneratePairingsAsync()
+	{
+		if (_tournament == null) return;
+		_pairingErrorMessage = null;
+		_tournament.Rounds.Clear();
+		await GeneratePairingsAsync();
+	}
+
+	private void OpenResultDialog(Pairing pairing)
+	{
+		_selectedPairing = pairing;
+		_showResultDialog = true;
+	}
+
+	private async Task HandleResultSaved(Pairing pairing)
+	{
+		if (_tournament == null) return;
+		_pairingErrorMessage = null;
+		await TournamentRepo.SaveAsync(_tournament);
+		Tab.NotifyChanged();
+	}
+
+	private string GetMatchResultBadgeClass(MatchResult result) => result switch
+	{
+		MatchResult.NotPlayed => "btn-secondary",
+		MatchResult.Draw => "badge badge-blue",
+		MatchResult.WhiteWin or MatchResult.BlackWin => "badge badge-gold",
+		MatchResult.WhiteForfeit or MatchResult.BlackForfeit or MatchResult.DoubleForfeit => "badge badge-gray",
+		_ => "badge badge-gray"
+	};
+
+	private Dictionary<string, (double Points, int Games)> CalculateScores()
+	{
+		var dict = new Dictionary<string, (double Points, int Games)>();
+		if (_tournament == null) return dict;
+
+		foreach (var p in _tournament.Players)
+		{
+			dict[p.Id] = (0.0, 0);
+		}
+
+		foreach (var round in _tournament.Rounds)
+		{
+			foreach (var pairing in round.Pairings)
+			{
+				if (pairing.Result == MatchResult.NotPlayed) continue;
+
+				var (wPts, bPts) = pairing.Result.ToPoints();
+
+				if (!string.IsNullOrEmpty(pairing.WhitePlayerId) && dict.ContainsKey(pairing.WhitePlayerId))
+				{
+					var curr = dict[pairing.WhitePlayerId];
+					dict[pairing.WhitePlayerId] = (curr.Points + wPts, curr.Games + 1);
+				}
+
+				if (!string.IsNullOrEmpty(pairing.BlackPlayerId) && dict.ContainsKey(pairing.BlackPlayerId))
+				{
+					var curr = dict[pairing.BlackPlayerId];
+					dict[pairing.BlackPlayerId] = (curr.Points + bPts, curr.Games + 1);
+				}
+			}
+		}
+
+		return dict;
+	}
+
+	private string GetHeadToHeadResult(string player1Id, string player2Id)
+	{
+		if (_tournament == null) return "-";
+
+		foreach (var round in _tournament.Rounds)
+		{
+			var match = round.Pairings.FirstOrDefault(p =>
+				(p.WhitePlayerId == player1Id && p.BlackPlayerId == player2Id) ||
+				(p.WhitePlayerId == player2Id && p.BlackPlayerId == player1Id));
+
+			if (match == null || match.Result == MatchResult.NotPlayed) continue;
+
+			var (wPts, bPts) = match.Result.ToPoints();
+			if (match.WhitePlayerId == player1Id)
+			{
+				return wPts switch
+				{
+					1.0 => "1",
+					0.5 => "½",
+					0.0 => "0",
+					_ => "-"
+				};
+			}
+			else
+			{
+				return bPts switch
+				{
+					1.0 => "1",
+					0.5 => "½",
+					0.0 => "0",
+					_ => "-"
+				};
+			}
+		}
+
+		return "-";
+	}
+
+	private string GetCellColor(string res) => res switch
+	{
+		"1" => "var(--brand-gold)",
+		"½" => "var(--accent-blue-hover)",
+		"0" => "var(--text-secondary)",
+		_ => "var(--text-muted)"
+	};
+
+	private TiebreakType? _selectedTiebreakToAdd;
+
+	private async Task ApplyTiebreakPreset(TiebreakPreset preset)
+	{
+		if (_tournament == null) return;
+		_tournament.TiebreakOrder = preset.GetDefaultList();
+		await TournamentRepo.SaveAsync(_tournament);
+		Tab.NotifyChanged();
+	}
+
+	private async Task MoveTiebreakUp(int index)
+	{
+		if (_tournament == null || index <= 0 || index >= _tournament.TiebreakOrder.Count) return;
+		var temp = _tournament.TiebreakOrder[index];
+		_tournament.TiebreakOrder[index] = _tournament.TiebreakOrder[index - 1];
+		_tournament.TiebreakOrder[index - 1] = temp;
+		await TournamentRepo.SaveAsync(_tournament);
+		Tab.NotifyChanged();
+	}
+
+	private async Task MoveTiebreakDown(int index)
+	{
+		if (_tournament == null || index < 0 || index >= _tournament.TiebreakOrder.Count - 1) return;
+		var temp = _tournament.TiebreakOrder[index];
+		_tournament.TiebreakOrder[index] = _tournament.TiebreakOrder[index + 1];
+		_tournament.TiebreakOrder[index + 1] = temp;
+		await TournamentRepo.SaveAsync(_tournament);
+		Tab.NotifyChanged();
+	}
+
+	private async Task RemoveTiebreak(int index)
+	{
+		if (_tournament == null || index < 0 || index >= _tournament.TiebreakOrder.Count) return;
+		_tournament.TiebreakOrder.RemoveAt(index);
+		await TournamentRepo.SaveAsync(_tournament);
+		Tab.NotifyChanged();
+	}
+
+	private async Task AddSelectedTiebreak()
+	{
+		if (_tournament == null || !_selectedTiebreakToAdd.HasValue) return;
+		if (!_tournament.TiebreakOrder.Contains(_selectedTiebreakToAdd.Value))
+		{
+			_tournament.TiebreakOrder.Add(_selectedTiebreakToAdd.Value);
+			await TournamentRepo.SaveAsync(_tournament);
+			Tab.NotifyChanged();
+		}
+		_selectedTiebreakToAdd = null;
+	}
+
+	private string? _settingsErrorMessage;
+	private string? _settingsSuccessMessage;
+
+	private void OnStartDateChanged(ChangeEventArgs e)
+	{
+		if (_tournament != null && DateTime.TryParse(e.Value?.ToString(), out var dt))
+		{
+			_tournament.StartDate = dt;
+		}
+	}
+
+	private void OnEndDateChanged(ChangeEventArgs e)
+	{
+		if (_tournament != null && DateTime.TryParse(e.Value?.ToString(), out var dt))
+		{
+			_tournament.EndDate = dt;
+		}
+	}
+
+	private async Task SaveSettingsAsync()
+	{
+		if (_tournament == null) return;
+		_settingsErrorMessage = null;
+		_settingsSuccessMessage = null;
+
+		if (string.IsNullOrWhiteSpace(_tournament.Name))
+		{
+			_settingsErrorMessage = Loc["Tournament_Name"] + " is required.";
+			return;
+		}
+
+		if (!_tournament.TrySetTotalRounds(_tournament.TotalRounds, out var err))
+		{
+			_settingsErrorMessage = Loc["Tournament_MinRoundsError", _tournament.MinAllowedRounds];
+			return;
+		}
+
+		_tournament.Federation = string.IsNullOrWhiteSpace(_tournament.Federation) ? "SVK" : _tournament.Federation.Trim().ToUpperInvariant();
+
+		await TournamentRepo.SaveAsync(_tournament);
+		Tab.NotifyChanged();
+		_settingsSuccessMessage = Loc["Tournament_DetailsSaved"];
+	}
+
+	private async Task ToggleWorkbenchFinishedAsync()
+	{
+		if (_tournament == null) return;
+		_tournament.IsFinished = !_tournament.IsFinished;
+		_tournament.FinishedAt = _tournament.IsFinished ? DateTime.UtcNow : null;
+		await TournamentRepo.SaveAsync(_tournament);
+		Tab.NotifyChanged();
+	}
+
+	private void OpenAddManualPairingModal()
+	{
+		_editingPairing = null;
+		_showManualPairingModal = true;
+	}
+
+	private void OpenEditPairingModal(Pairing pairing)
+	{
+		_editingPairing = pairing;
+		_showManualPairingModal = true;
+	}
+
+	private async Task SwapColorsAsync(Round round, int boardNumber)
+	{
+		if (_tournament == null) return;
+		bool ok = ArbiterService.SwapBoardColors(round, boardNumber);
+		if (ok)
+		{
+			await TournamentRepo.SaveAsync(_tournament);
+			Tab.NotifyChanged();
+		}
+	}
+
+	private async Task DeletePairingAsync(Round round, string pairingId)
+	{
+		if (_tournament == null) return;
+		bool ok = ArbiterService.DeletePairing(round, pairingId);
+		if (ok)
+		{
+			await TournamentRepo.SaveAsync(_tournament);
+			Tab.NotifyChanged();
+		}
+	}
+
+	private async Task HandleAttendanceSaved()
+	{
+		if (_tournament == null) return;
+		await TournamentRepo.SaveAsync(_tournament);
+		Tab.NotifyChanged();
+	}
+
+	private async Task HandleManualPairingSaved()
+	{
+		if (_tournament == null) return;
+		_showManualPairingModal = false;
+		await TournamentRepo.SaveAsync(_tournament);
+		Tab.NotifyChanged();
+	}
+
+	private async Task DownloadTrfAsync()
+	{
+		if (_tournament == null) return;
+		string trfContent = TrfHandler.GenerateTrf(_tournament);
+		string safeName = string.Join("_", _tournament.Name.Split(Path.GetInvalidFileNameChars())).Replace(" ", "_");
+		string filename = $"{safeName}_{DateTime.Now:yyyyMMdd}.trf";
+		await FileExport.SaveTextFileAsync(
+			Loc["Export_TrfDialogTitle"],
+			filename,
+			trfContent,
+			(Loc["Export_TrfFilterName"], new[] { ".trf" }));
+	}
+
+	private async Task DownloadCdeskAsync()
+	{
+		if (_tournament == null) return;
+		string json = await TournamentRepo.ExportJsonAsync(_tournament.Id);
+		string safeName = string.Join("_", _tournament.Name.Split(Path.GetInvalidFileNameChars())).Replace(" ", "_");
+		string filename = $"{safeName}.cdesk";
+		await FileExport.SaveTextFileAsync(
+			Loc["Export_CdeskDialogTitle"],
+			filename,
+			json,
+			(Loc["Export_CdeskFilterName"], new[] { ".cdesk" }));
+	}
+
+	private bool _isSyncingToWeb;
+	private bool _hasPublishedToWeb;
+	private string? _webSyncStatusMessage;
+
+	private async Task PublishToCaissaResultsAsync()
+	{
+		if (_tournament == null) return;
+		if (!CaissaResultsSync.IsSyncConfigured)
+		{
+			_webSyncStatusMessage = "Upload disabled: CaissaResults API Key is not configured. Please enter the API key in Settings.";
+			StateHasChanged();
+			return;
+		}
+
+		_isSyncingToWeb = true;
+		StateHasChanged();
+
+		try
+		{
+			var result = await CaissaResultsSync.PublishTournamentAsync(_tournament);
+			if (result.Success)
+			{
+				_hasPublishedToWeb = true;
+				_webSyncStatusMessage = "Successfully published to CaissaResults!";
+				await TournamentRepo.SaveAsync(_tournament);
+			}
+			else
+			{
+				_webSyncStatusMessage = result.Message;
+			}
+		}
+		catch (Exception ex)
+		{
+			_webSyncStatusMessage = $"Sync error: {ex.Message}";
+		}
+		finally
+		{
+			_isSyncingToWeb = false;
+			StateHasChanged();
+		}
+	}
+
+	private async Task OpenWebPortal()
+	{
+		if (_tournament == null) return;
+		var url = CaissaResultsSync.GetPortalUrl(_tournament.Id);
+		try
+		{
+			await JS.InvokeVoidAsync("open", url, "_blank");
+		}
+		catch { }
+	}
+
+	public void Dispose()
+	{
+		Tab.OnTabChanged -= StateHasChanged;
+		Loc.OnLanguageChanged -= StateHasChanged;
+	}
+}

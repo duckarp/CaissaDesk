@@ -1,0 +1,921 @@
+@namespace CaissaDesk.Components.Settings
+@using CaissaDesk.Components
+@using CaissaDesk.Components.Icons
+@using CaissaDesk.Core.PairingEngine
+@using CaissaDesk.Core.Settings
+@using Caissa.Shared.Models
+@using CaissaDesk.Data
+@using CaissaDesk.Localization
+@using System.Runtime.InteropServices
+@inject ILocalizationService Loc
+@inject IAppSettingsService AppSettings
+@inject IPairingEngineRegistry EngineRegistry
+@inject IEngineInstallerService EngineInstaller
+@inject ICaissaResultsSyncService CaissaResultsSync
+@inject IJSRuntime JS
+@implements IDisposable
+
+<div class="control-center-container">
+	<div class="control-center-header">
+		<div class="control-title-group">
+			<span class="control-header-icon"><AppIcon Name="settings" Size="22" /></span>
+			<div>
+				<h2 class="control-heading">@Loc["Settings_Title"]</h2>
+				<p class="control-subtitle">@Loc["Settings_Subtitle"]</p>
+			</div>
+		</div>
+	</div>
+
+	<div class="control-center-body">
+		<aside class="control-sidebar">
+			<nav class="control-nav-menu">
+				<button class="@GetNavClass("general")" @onclick='() => SetCategory("general")'>
+					<span class="nav-item-icon nav-icon-general"><AppIcon Name="globe" Size="18" /></span>
+					<div class="nav-item-content">
+						<span class="nav-item-title">@Loc["Settings_Nav_General"]</span>
+						<span class="nav-item-desc">@Loc["Settings_Nav_General_Desc"]</span>
+					</div>
+				</button>
+
+				<button class="@GetNavClass("defaults")" @onclick='() => SetCategory("defaults")'>
+					<span class="nav-item-icon nav-icon-defaults"><AppIcon Name="trophy" Size="18" /></span>
+					<div class="nav-item-content">
+						<span class="nav-item-title">@Loc["Settings_Nav_Defaults"]</span>
+						<span class="nav-item-desc">@Loc["Settings_Nav_Defaults_Desc"]</span>
+					</div>
+				</button>
+
+				<button class="@GetNavClass("engines")" @onclick='() => SetCategory("engines")'>
+					<span class="nav-item-icon nav-icon-engines"><AppIcon Name="cpu" Size="18" /></span>
+					<div class="nav-item-content">
+						<span class="nav-item-title">@Loc["Settings_Nav_Engines"]</span>
+						<span class="nav-item-desc">@Loc["Settings_Nav_Engines_Desc"]</span>
+					</div>
+				</button>
+
+				<button class="@GetNavClass("sync")" @onclick='() => SetCategory("sync")'>
+					<span class="nav-item-icon nav-icon-sync"><AppIcon Name="cloud" Size="18" /></span>
+					<div class="nav-item-content">
+						<span class="nav-item-title">@Loc["Settings_Nav_Sync"]</span>
+						<span class="nav-item-desc">@Loc["Settings_Nav_Sync_Desc"]</span>
+					</div>
+				</button>
+
+				<button class="@GetNavClass("about")" @onclick='() => SetCategory("about")'>
+					<span class="nav-item-icon nav-icon-about"><AppIcon Name="info" Size="18" /></span>
+					<div class="nav-item-content">
+						<span class="nav-item-title">@Loc["Settings_Nav_About"]</span>
+						<span class="nav-item-desc">@Loc["Settings_Nav_About_Desc"]</span>
+					</div>
+				</button>
+			</nav>
+		</aside>
+
+		<main class="control-content-panel">
+			@if (_activeCategory == "general")
+			{
+				<!-- SECTION: LANGUAGE & REGIONAL -->
+				<div class="control-section-card">
+					<div class="card-section-header">
+						<h3 class="card-section-title">
+							<span class="nav-item-icon nav-icon-general" style="width: 28px; height: 28px;"><AppIcon Name="globe" Size="16" /></span>
+							<span>@Loc["Settings_LangRegional"]</span>
+						</h3>
+						<p class="card-section-desc">@Loc["Settings_Nav_General_Desc"]</p>
+					</div>
+
+					<div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; padding: 16px; background-color: var(--bg-surface-elevated); border: 1px solid var(--border-subtle); border-radius: 8px;">
+						<div>
+							<div style="font-weight: 600; color: var(--text-primary); font-size: 14px;">@Loc["Settings_InterfaceLang"]</div>
+							<div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">@Loc["Settings_InterfaceLangDesc"]</div>
+						</div>
+						<div style="display: flex; gap: 10px;">
+							@foreach (var lang in Loc.SupportedLanguages)
+							{
+								bool isSelected = Loc.CurrentLanguage.Equals(lang.Code, StringComparison.OrdinalIgnoreCase);
+								<button class="@(isSelected ? "btn-primary" : "btn-secondary")" @onclick="() => Loc.SetLanguageAsync(lang.Code)">
+									<span>@lang.FlagEmoji</span>
+									<span>@lang.NativeName</span>
+								</button>
+							}
+						</div>
+					</div>
+				</div>
+			}
+			else if (_activeCategory == "defaults")
+			{
+				<!-- SECTION: TOURNAMENT DEFAULTS -->
+				<div class="control-section-card">
+					<div class="card-section-header">
+						<h3 class="card-section-title">
+							<span class="nav-item-icon nav-icon-defaults" style="width: 28px; height: 28px;"><AppIcon Name="trophy" Size="16" /></span>
+							<span>@Loc["Settings_TournamentDefaults"]</span>
+						</h3>
+						<p class="card-section-desc">@Loc["Settings_TournamentDefaultsDesc"]</p>
+					</div>
+
+					@if (!string.IsNullOrEmpty(_defaultsSuccessMessage))
+					{
+						<div style="background-color: rgba(35, 134, 54, 0.12); border: 1px solid var(--accent-primary); border-radius: 6px; padding: 10px 14px; color: var(--accent-primary); font-size: 13px; display: flex; align-items: center; gap: 8px; margin-bottom: 16px;">
+							<AppIcon Name="check" Size="16" />
+							<span>@_defaultsSuccessMessage</span>
+						</div>
+					}
+
+					<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 20px; align-items: start;">
+						<div class="panel-card" style="display: flex; flex-direction: column; gap: 14px;">
+							<div class="panel-title">@Loc["Settings_DefaultArbiterVenueCard"]</div>
+
+							<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+								<div class="form-group">
+									<label class="form-label">@Loc["Tournament_ChiefArbiter"]</label>
+									<input type="text" class="form-input" @bind="_defaultsModel.DefaultChiefArbiter" placeholder="e.g. IA Tomas K." />
+								</div>
+								<div class="form-group">
+									<label class="form-label">@Loc["Tournament_DeputyArbiter"]</label>
+									<input type="text" class="form-input" @bind="_defaultsModel.DefaultDeputyArbiter" placeholder="e.g. FA John D." />
+								</div>
+							</div>
+
+							<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+								<div class="form-group">
+									<label class="form-label">@Loc["Tournament_Venue"]</label>
+									<input type="text" class="form-input" @bind="_defaultsModel.DefaultVenue" placeholder="e.g. Chess Club" />
+								</div>
+								<div class="form-group">
+									<label class="form-label">@Loc["Tournament_Organizer"]</label>
+									<input type="text" class="form-input" @bind="_defaultsModel.DefaultOrganizer" placeholder="e.g. Slovak Chess Academy" />
+								</div>
+							</div>
+
+							<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+								<div class="form-group">
+									<label class="form-label">@Loc["Tournament_Federation"]</label>
+									<input type="text" class="form-input" @bind="_defaultsModel.DefaultFederation" placeholder="e.g. SVK" maxlength="3" />
+								</div>
+								<div class="form-group">
+									<label class="form-label">@Loc["Tournament_SeedingPrecedence"]</label>
+									<select class="form-select" @bind="_defaultsModel.DefaultSeedingPrecedence">
+										<option value="@SeedingPrecedence.FideFirst">@Loc["Tournament_FideFirst"]</option>
+										<option value="@SeedingPrecedence.NationalFirst">@Loc["Tournament_NationalFirst"]</option>
+									</select>
+								</div>
+							</div>
+						</div>
+
+						<div class="panel-card" style="display: flex; flex-direction: column; gap: 14px;">
+							<div class="panel-title">@Loc["Settings_DefaultTournamentStructureCard"]</div>
+
+							<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+								<div class="form-group">
+									<label class="form-label">@Loc["Tournament_System"]</label>
+									<select class="form-select" @bind="_defaultsModel.DefaultSystem">
+										<option value="@TournamentSystem.SwissDutch">@Loc["Tournament_SwissDutch"]</option>
+										<option value="@TournamentSystem.RoundRobin">@Loc["Tournament_RoundRobin"]</option>
+									</select>
+								</div>
+								<div class="form-group">
+									<label class="form-label">@Loc["Tournament_TotalRounds"]</label>
+									<input type="number" class="form-input" @bind="_defaultsModel.DefaultTotalRounds" min="1" max="50" />
+								</div>
+							</div>
+
+							<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+								<div class="form-group">
+									<label class="form-label">@Loc["Tournament_TimeControl"]</label>
+									<select class="form-select" @bind="_defaultsModel.DefaultTimeControl">
+										<option value="@TimeControlCategory.Rapid">@Loc["TimeControl_Rapid"]</option>
+										<option value="@TimeControlCategory.Blitz">@Loc["TimeControl_Blitz"]</option>
+										<option value="@TimeControlCategory.Standard">@Loc["TimeControl_Standard"]</option>
+									</select>
+								</div>
+								<div class="form-group">
+									<label class="form-label">@Loc["Tournament_TimeControlSpec"]</label>
+									<input type="text" class="form-input" @bind="_defaultsModel.DefaultTimeControlDetails" placeholder="e.g. 15m + 5s" />
+								</div>
+							</div>
+
+							<div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+								<input type="checkbox" id="defFideRated" @bind="_defaultsModel.DefaultFideRated" style="cursor: pointer; width: 16px; height: 16px; accent-color: var(--brand-gold);" />
+								<label for="defFideRated" style="font-size: 13px; color: var(--text-primary); cursor: pointer; user-select: none;">
+									@Loc["Tournament_FideRated"]
+								</label>
+							</div>
+						</div>
+					</div>
+
+					<div style="display: flex; justify-content: flex-end; margin-top: 20px;">
+						<button class="btn-primary" @onclick="SaveDefaultsAsync">
+							<AppIcon Name="save" Size="14" />
+							<span>@Loc["Settings_SaveDefaults"]</span>
+						</button>
+					</div>
+				</div>
+			}
+			else if (_activeCategory == "engines")
+			{
+				<!-- SECTION: PAIRING ENGINES MANAGEMENT -->
+				<div class="control-section-card">
+					<div class="card-section-header">
+						<h3 class="card-section-title">
+							<span class="nav-item-icon nav-icon-engines" style="width: 28px; height: 28px;"><AppIcon Name="cpu" Size="16" /></span>
+							<span>@Loc["Settings_PairingEngines"]</span>
+						</h3>
+						<p class="card-section-desc">@Loc["Settings_Nav_Engines_Desc"]</p>
+					</div>
+
+					@if (!string.IsNullOrEmpty(_enginesSuccessMessage))
+					{
+						<div style="background-color: rgba(35, 134, 54, 0.12); border: 1px solid var(--accent-primary); border-radius: 6px; padding: 10px 14px; color: var(--accent-primary); font-size: 13px; display: flex; align-items: center; gap: 8px; margin-bottom: 16px;">
+							<AppIcon Name="check" Size="16" />
+							<span>@_enginesSuccessMessage</span>
+						</div>
+					}
+
+					@if (!string.IsNullOrEmpty(_installerErrorMessage))
+					{
+						<div style="background-color: rgba(218, 54, 51, 0.12); border: 1px solid var(--accent-danger); border-radius: 6px; padding: 10px 14px; color: var(--accent-danger); font-size: 13px; display: flex; align-items: center; gap: 8px; margin-bottom: 16px;">
+							<AppIcon Name="alert" Size="16" />
+							<span>@_installerErrorMessage</span>
+						</div>
+					}
+
+					@if (!string.IsNullOrEmpty(_installerNoteMessage))
+					{
+						<div style="background-color: rgba(210, 153, 34, 0.12); border: 1px solid var(--accent-warning); border-radius: 6px; padding: 10px 14px; color: var(--accent-warning); font-size: 13px; display: flex; align-items: center; gap: 8px; margin-bottom: 16px;">
+							<AppIcon Name="info" Size="16" />
+							<span>@_installerNoteMessage</span>
+						</div>
+					}
+
+					<!-- Top Section: Default Engine Selection + Guide side-by-side -->
+					<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 20px; align-items: start; margin-bottom: 20px;">
+						<!-- Default Engine Selection Card -->
+						<div class="panel-card" style="display: flex; flex-direction: column; gap: 14px;">
+							<div class="panel-title">@Loc["Settings_DefaultSwissEngine"]</div>
+							<div style="font-size: 12px; color: var(--text-secondary); margin-top: -6px;">
+								@Loc["Settings_PairingEnginesDesc"]
+							</div>
+
+							<div style="display: flex; flex-direction: column; gap: 8px;">
+								@foreach (var engine in EngineRegistry.SwissEngines)
+								{
+									bool isDefault = _enginesModel.DefaultSwissEngineId.Equals(engine.Id, StringComparison.OrdinalIgnoreCase);
+									bool isAvailable = engine.IsAvailable;
+									<div class="panel-card"
+										 style="display: flex; align-items: center; justify-content: space-between; padding: 12px; background-color: var(--bg-surface-elevated); cursor: @(isAvailable ? "pointer" : "not-allowed"); opacity: @(isAvailable ? "1" : "0.65"); border-color: @(isDefault ? "var(--brand-gold)" : "var(--border-subtle)");"
+										 title="@(!isAvailable ? Loc["Settings_SelectDisabledTooltip"] : "")"
+										 @onclick="() => { if (isAvailable) _enginesModel.DefaultSwissEngineId = engine.Id; }">
+										<div>
+											<div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+												<span style="font-weight: 700; color: var(--text-primary); font-size: 13px;">@engine.DisplayName</span>
+												<span class="badge @(engine.Id == "native_dutch" ? "badge-blue" : engine.Id == "bbp" ? "badge-gold" : "badge-purple")" style="font-size: 10px;">
+													@(engine.Id == "native_dutch" ? Loc["Settings_EngineNativeBadge"] :
+													  engine.Id == "bbp" ? Loc["Settings_EngineBbpBadge"] :
+													  Loc["Settings_EngineJaVaFoBadge"])
+												</span>
+												@if (isDefault)
+												{
+													<span class="badge badge-gold">@Loc["Settings_DefaultSwissEngine"]</span>
+												}
+											</div>
+											<div style="font-size: 11px; color: var(--text-secondary); margin-top: 3px;">
+												@(engine.Id == "native_dutch" ? Loc["Settings_EngineNativeAdvise"] :
+												  engine.Id == "bbp" ? Loc["Settings_EngineBbpAdvise"] :
+												  Loc["Settings_EngineJaVaFoAdvise"])
+											</div>
+											@if (!isAvailable)
+											{
+												<div style="font-size: 11px; color: var(--accent-danger); margin-top: 2px;">
+													@Loc["Settings_EngineNotInstalled"]
+												</div>
+											}
+										</div>
+
+										<div>
+											@if (isAvailable)
+											{
+												<span class="badge badge-green">@Loc["Settings_EngineStatusReady"]</span>
+											}
+											else
+											{
+												<span class="badge badge-gray">@Loc["Settings_EngineStatusMissing"]</span>
+											}
+										</div>
+									</div>
+								}
+							</div>
+						</div>
+
+						<!-- Arbiter's Guide to Choosing an Engine Card -->
+						<div class="panel-card" style="display: flex; flex-direction: column; gap: 14px; background: linear-gradient(180deg, var(--bg-surface) 0%, var(--bg-surface-elevated) 100%); border-left: 3px solid var(--brand-gold);">
+							<div>
+								<div style="display: flex; align-items: center; gap: 8px;">
+									<span style="color: var(--brand-gold);"><AppIcon Name="lightbulb" Size="16" /></span>
+									<span class="panel-title" style="margin: 0;">@Loc["Settings_EngineGuideTitle"]</span>
+								</div>
+								<div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">
+									@Loc["Settings_EngineGuideSubtitle"]
+								</div>
+							</div>
+
+							<div style="display: flex; flex-direction: column; gap: 10px;">
+								<!-- Native Dutch Column -->
+								<div style="background-color: var(--bg-canvas); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 6px;">
+									<div style="display: flex; align-items: center; justify-content: space-between;">
+										<span style="font-weight: 700; font-size: 13px; color: var(--text-primary);">Native Dutch</span>
+										<span class="badge badge-blue" style="font-size: 10px;">@Loc["Settings_EngineNativeBadge"]</span>
+									</div>
+									<div style="font-size: 12px; color: var(--text-secondary); line-height: 1.4;">
+										@Loc["Settings_EngineNativeAdvise"]
+									</div>
+									<div style="border-top: 1px solid var(--border-subtle); padding-top: 6px; margin-top: auto; font-size: 11px; color: var(--text-muted);">
+										<strong>@Loc["Settings_EnginePrereqs"]</strong> @Loc["Settings_EnginePrereqNone"]
+									</div>
+								</div>
+
+								<!-- bbpPairings Column -->
+								<div style="background-color: var(--bg-canvas); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 6px;">
+									<div style="display: flex; align-items: center; justify-content: space-between;">
+										<span style="font-weight: 700; font-size: 13px; color: var(--text-primary);">bbpPairings</span>
+										<span class="badge badge-gold" style="font-size: 10px;">@Loc["Settings_EngineBbpBadge"]</span>
+									</div>
+									<div style="font-size: 12px; color: var(--text-secondary); line-height: 1.4;">
+										@Loc["Settings_EngineBbpAdvise"]
+									</div>
+									<div style="border-top: 1px solid var(--border-subtle); padding-top: 6px; margin-top: auto; font-size: 11px; color: var(--text-muted);">
+										<strong>@Loc["Settings_EnginePrereqs"]</strong> @Loc["Settings_EnginePrereqBbp"]
+									</div>
+								</div>
+
+								<!-- JaVaFo Column -->
+								<div style="background-color: var(--bg-canvas); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 6px;">
+									<div style="display: flex; align-items: center; justify-content: space-between;">
+										<span style="font-weight: 700; font-size: 13px; color: var(--text-primary);">JaVaFo</span>
+										<span class="badge badge-purple" style="font-size: 10px;">@Loc["Settings_EngineJaVaFoBadge"]</span>
+									</div>
+									<div style="font-size: 12px; color: var(--text-secondary); line-height: 1.4;">
+										@Loc["Settings_EngineJaVaFoAdvise"]
+									</div>
+									<div style="border-top: 1px solid var(--border-subtle); padding-top: 6px; margin-top: auto; font-size: 11px; color: var(--text-muted);">
+										<strong>@Loc["Settings_EnginePrereqs"]</strong> @Loc["Settings_EnginePrereqJaVaFo"]
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<!-- Detailed Engine Cards with Path Management & Testing -->
+					<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 20px; align-items: start;">
+						<!-- 1. Native Dutch Engine -->
+						<div class="panel-card" style="display: flex; flex-direction: column; gap: 12px;">
+							<div style="display: flex; align-items: center; justify-content: space-between;">
+								<div>
+									<div style="font-weight: 700; color: var(--text-primary); font-size: 14px;">@Loc["Settings_EngineNativeTitle"]</div>
+									<div style="font-size: 12px; color: var(--text-secondary);">@Loc["Settings_EngineNativeDesc"]</div>
+								</div>
+								<span class="badge badge-green">@Loc["Settings_EngineStatusReady"]</span>
+							</div>
+
+							<div style="display: flex; align-items: center; justify-content: space-between; border-top: 1px solid var(--border-subtle); padding-top: 10px; margin-top: 4px;">
+								<div style="font-size: 12px; color: var(--text-muted); font-family: var(--font-mono);">
+									caissadesk://internal/native_dutch
+								</div>
+								<button type="button" class="btn-secondary" style="font-size: 12px; padding: 4px 10px;" @onclick='() => RunEngineTest("native_dutch")'>
+									<AppIcon Name="play" Size="12" />
+									<span>@Loc["Settings_TestEngineBtn"]</span>
+								</button>
+							</div>
+
+							@if (_testResults.TryGetValue("native_dutch", out var nativeTestResult))
+							{
+								<div style="font-size: 12px; padding: 8px 12px; border-radius: 6px; background-color: @(nativeTestResult.Success ? "rgba(35, 134, 54, 0.12)" : "rgba(218, 54, 51, 0.12)"); color: @(nativeTestResult.Success ? "var(--accent-primary)" : "var(--accent-danger)");">
+									@(nativeTestResult.Success ? Loc["Settings_TestSuccess", nativeTestResult.Pairings.Count, _testDurations.GetValueOrDefault("native_dutch", 1)] : Loc["Settings_TestFailed", nativeTestResult.ErrorMessage ?? "Unknown"])
+								</div>
+							}
+						</div>
+
+						<!-- 2. bbpPairings Engine -->
+						@{
+							var bbpEngine = EngineRegistry.AllEngines.OfType<BbpPairingEngine>().FirstOrDefault();
+						}
+						<div class="panel-card" style="display: flex; flex-direction: column; gap: 12px;">
+							<div style="display: flex; align-items: center; justify-content: space-between;">
+								<div>
+									<div style="font-weight: 700; color: var(--text-primary); font-size: 14px;">@Loc["Settings_EngineBbpTitle"]</div>
+									<div style="font-size: 12px; color: var(--text-secondary);">@Loc["Settings_EngineBbpDesc"]</div>
+								</div>
+								@if (bbpEngine?.IsAvailable == true)
+								{
+									<span class="badge badge-green">@Loc["Settings_EngineStatusReady"]</span>
+								}
+								else
+								{
+									<span class="badge badge-gray">@Loc["Settings_EngineStatusMissing"]</span>
+								}
+							</div>
+
+							@if (!string.IsNullOrEmpty(bbpEngine?.ExecutablePath))
+							{
+								<div style="font-size: 12px; color: var(--text-secondary);">
+									@Loc["Settings_EnginePathDetected", bbpEngine.ExecutablePath]
+								</div>
+							}
+
+							<div class="form-group" style="margin-top: 4px;">
+								<label class="form-label">@Loc["Settings_EnginePathCustom"]</label>
+								<input type="text"
+									   class="form-input"
+									   style="font-family: var(--font-mono); font-size: 12px;"
+									   @bind="_enginesModel.CustomBbpPath"
+									   placeholder="/usr/local/bin/bbpPairings or C:\Program Files\bbpPairings\bbpPairings.exe" />
+							</div>
+
+							<div style="display: flex; align-items: center; justify-content: flex-end; gap: 8px;">
+								@if (bbpEngine?.IsAvailable != true)
+								{
+									<button type="button" class="btn-primary" style="font-size: 12px; padding: 4px 12px;"
+											disabled="@_isInstalling"
+											@onclick='() => InstallEngineAsync("bbp")'>
+										<AppIcon Name="download" Size="13" />
+										<span>@(_isInstalling && _installingEngineId == "bbp" ? _installStatus : Loc["Settings_DownloadInstallBtn"])</span>
+									</button>
+								}
+								<button type="button" class="btn-secondary" style="font-size: 12px; padding: 4px 10px;"
+										disabled="@(bbpEngine?.IsAvailable != true)"
+										@onclick='() => RunEngineTest("bbp")'>
+									<AppIcon Name="play" Size="12" />
+									<span>@Loc["Settings_TestEngineBtn"]</span>
+								</button>
+							</div>
+
+							@if (_testResults.TryGetValue("bbp", out var bbpTestResult))
+							{
+								<div style="font-size: 12px; padding: 8px 12px; border-radius: 6px; background-color: @(bbpTestResult.Success ? "rgba(35, 134, 54, 0.12)" : "rgba(218, 54, 51, 0.12)"); color: @(bbpTestResult.Success ? "var(--accent-primary)" : "var(--accent-danger)");">
+									@(bbpTestResult.Success ? Loc["Settings_TestSuccess", bbpTestResult.Pairings.Count, _testDurations.GetValueOrDefault("bbp", 1)] : Loc["Settings_TestFailed", bbpTestResult.ErrorMessage ?? "Unknown"])
+								</div>
+							}
+						</div>
+
+						<!-- 3. JaVaFo Engine -->
+						@{
+							var javafoEngine = EngineRegistry.AllEngines.OfType<JaVaFoPairingEngine>().FirstOrDefault();
+						}
+						<div class="panel-card" style="display: flex; flex-direction: column; gap: 12px;">
+							<div style="display: flex; align-items: center; justify-content: space-between;">
+								<div>
+									<div style="font-weight: 700; color: var(--text-primary); font-size: 14px;">@Loc["Settings_EngineJaVaFoTitle"]</div>
+									<div style="font-size: 12px; color: var(--text-secondary);">@Loc["Settings_EngineJaVaFoDesc"]</div>
+								</div>
+								@if (javafoEngine?.IsAvailable == true)
+								{
+									<span class="badge badge-green">@Loc["Settings_EngineStatusReady"]</span>
+								}
+								else
+								{
+									<span class="badge badge-gray">@Loc["Settings_EngineStatusMissing"]</span>
+								}
+							</div>
+
+							<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 4px;">
+								<div class="form-group">
+									<label class="form-label">@Loc["Settings_EngineJavaPathCustom"]</label>
+									<input type="text"
+										   class="form-input"
+										   style="font-family: var(--font-mono); font-size: 12px;"
+										   @bind="_enginesModel.CustomJavaPath"
+										   placeholder="@(javafoEngine?.JavaPath ?? "e.g. /usr/bin/java")" />
+								</div>
+
+								<div class="form-group">
+									<label class="form-label">@Loc["Settings_EngineJarPathCustom"]</label>
+									<input type="text"
+										   class="form-input"
+										   style="font-family: var(--font-mono); font-size: 12px;"
+										   @bind="_enginesModel.CustomJavafoJarPath"
+										   placeholder="@(javafoEngine?.JarPath ?? "e.g. /opt/caissadesk/javafo.jar")" />
+								</div>
+							</div>
+
+							<div style="display: flex; align-items: center; justify-content: flex-end; gap: 8px;">
+								@if (string.IsNullOrEmpty(javafoEngine?.JarPath))
+								{
+									<button type="button" class="btn-primary" style="font-size: 12px; padding: 4px 12px;"
+											disabled="@_isInstalling"
+											@onclick='() => InstallEngineAsync("javafo")'>
+										<AppIcon Name="download" Size="13" />
+										<span>@(_isInstalling && _installingEngineId == "javafo" ? _installStatus : Loc["Settings_DownloadInstallBtn"])</span>
+									</button>
+								}
+								<button type="button" class="btn-secondary" style="font-size: 12px; padding: 4px 10px;"
+										disabled="@(javafoEngine?.IsAvailable != true)"
+										@onclick='() => RunEngineTest("javafo")'>
+									<AppIcon Name="play" Size="12" />
+									<span>@Loc["Settings_TestEngineBtn"]</span>
+								</button>
+							</div>
+
+							@if (_testResults.TryGetValue("javafo", out var javafoTestResult))
+							{
+								<div style="font-size: 12px; padding: 8px 12px; border-radius: 6px; background-color: @(javafoTestResult.Success ? "rgba(35, 134, 54, 0.12)" : "rgba(218, 54, 51, 0.12)"); color: @(javafoTestResult.Success ? "var(--accent-primary)" : "var(--accent-danger)");">
+									@(javafoTestResult.Success ? Loc["Settings_TestSuccess", javafoTestResult.Pairings.Count, _testDurations.GetValueOrDefault("javafo", 1)] : Loc["Settings_TestFailed", javafoTestResult.ErrorMessage ?? "Unknown"])
+								</div>
+							}
+						</div>
+					</div>
+
+					<div style="display: flex; justify-content: flex-end; margin-top: 20px;">
+						<button class="btn-primary" @onclick="SaveEnginesAsync">
+							<AppIcon Name="save" Size="14" />
+							<span>@Loc["Settings_SaveEngines"]</span>
+						</button>
+					</div>
+				</div>
+			}
+			else if (_activeCategory == "sync")
+			{
+				<!-- SECTION: CAISSARESULTS CLOUD SYNC -->
+				<div class="control-section-card">
+					<div class="card-section-header">
+						<h3 class="card-section-title">
+							<span class="nav-item-icon nav-icon-sync" style="width: 28px; height: 28px;"><AppIcon Name="cloud" Size="16" /></span>
+							<span>@Loc["Settings_Nav_Sync"]</span>
+						</h3>
+						<p class="card-section-desc">@Loc["Settings_Nav_Sync_Desc"]</p>
+					</div>
+
+					<div class="panel-card" style="display: flex; flex-direction: column; gap: 16px;">
+						<div style="font-size: 13px; color: var(--text-secondary); line-height: 1.5;">
+							Publish your tournaments, live round pairings, and tournament standings to the <strong>CaissaResults</strong> web portal so players, coaches, and arbiters can follow results live on their phones and browsers.
+						</div>
+
+						<div style="display: flex; flex-direction: column; gap: 14px; margin-top: 4px;">
+							<div>
+								<label class="form-label" style="display: block; margin-bottom: 6px; font-weight: 500;">CaissaResults Server URL</label>
+								<input type="text" class="form-input" style="width: 100%; max-width: 500px;" @bind="_cloudSyncModel.CaissaResultsUrl" placeholder="http://localhost:5200" />
+								<div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">The base URL of the CaissaResults web service.</div>
+							</div>
+
+							<div>
+								<label class="form-label" style="display: block; margin-bottom: 6px; font-weight: 500;">
+									API Key / Server Token <span style="color: #ef4444; font-weight: 700;">*</span>
+								</label>
+								<input type="password" class="form-input" style="width: 100%; max-width: 500px;" @bind="_cloudSyncModel.CaissaResultsApiKey" placeholder="Enter server API key (Required for syncing and uploads)" />
+								<div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+									Required for secure, tamper-proof uploads. Web synchronization and uploads are disabled if this key is not configured.
+								</div>
+							</div>
+
+							<div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+								<input type="checkbox" id="autoSyncCheck" @bind="_cloudSyncModel.AutoSyncOnResultChange" style="cursor: pointer;" />
+								<label for="autoSyncCheck" style="font-size: 13px; color: var(--text-primary); cursor: pointer;">
+									Auto-sync live results when entering/editing game results in workbench
+								</label>
+							</div>
+						</div>
+
+						<div style="display: flex; gap: 10px; align-items: center; margin-top: 8px; padding-top: 12px; border-top: 1px solid var(--border-subtle);">
+							<button class="btn-secondary" @onclick="TestCloudConnectionAsync" disabled="@_isTestingCloud">
+								@if (_isTestingCloud)
+								{
+									<span class="app-splash-spinner" style="width: 12px; height: 12px; margin: 0;"></span>
+									<span>Testing...</span>
+								}
+								else
+								{
+									<AppIcon Name="refresh" Size="13" />
+									<span>Test Connection</span>
+								}
+							</button>
+
+							<button class="btn-secondary" @onclick="OpenCloudPortal">
+								<AppIcon Name="globe" Size="13" />
+								<span>Open Web Portal</span>
+							</button>
+						</div>
+
+						@if (!string.IsNullOrEmpty(_cloudTestStatus))
+						{
+							<div style="padding: 10px 14px; border-radius: 6px; font-size: 12px; @(_cloudTestSuccess ? "background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); color: #34d399;" : "background: rgba(248, 113, 113, 0.1); border: 1px solid rgba(248, 113, 113, 0.3); color: #f87171;")">
+								@_cloudTestStatus
+							</div>
+						}
+
+						@if (!string.IsNullOrEmpty(_cloudSuccessMessage))
+						{
+							<div class="alert-success" style="padding: 10px 14px; border-radius: 6px; font-size: 12px;">
+								@_cloudSuccessMessage
+							</div>
+						}
+
+						@if (!string.IsNullOrEmpty(_cloudErrorMessage))
+						{
+							<div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; padding: 10px 14px; border-radius: 6px; font-size: 12px;">
+								@_cloudErrorMessage
+							</div>
+						}
+					</div>
+
+					<div style="display: flex; justify-content: flex-end; margin-top: 20px;">
+						<button class="btn-primary" @onclick="SaveCloudSettingsAsync">
+							<AppIcon Name="save" Size="14" />
+							<span>Save Sync Settings</span>
+						</button>
+					</div>
+				</div>
+			}
+			else if (_activeCategory == "about")
+			{
+				<!-- SECTION: ABOUT CAISSADESK -->
+				<div class="control-section-card">
+					<div class="about-brand-banner">
+						<div class="about-brand-lockup">
+							<div class="about-brand-emblem-wrap">
+								<img src="images/icon.svg" alt="CaissaDesk" class="about-brand-emblem" />
+								<div class="about-brand-emblem-glow"></div>
+							</div>
+							<div class="about-brand-text">
+								<div class="about-brand-title">
+									<strong class="about-brand-caissa">CAISSA</strong><span class="about-brand-desk">DESK</span>
+								</div>
+								<div class="about-brand-tagline">TOURNAMENT MANAGEMENT WORKBENCH</div>
+							</div>
+						</div>
+					</div>
+
+					<div class="card-section-header">
+						<h3 class="card-section-title">
+							<span class="nav-item-icon nav-icon-about" style="width: 28px; height: 28px;"><AppIcon Name="info" Size="16" /></span>
+							<span>@Loc["Settings_Nav_About"]</span>
+						</h3>
+						<p class="card-section-desc">@Loc["Settings_Nav_About_Desc"]</p>
+					</div>
+
+					<div class="update-settings-grid">
+						<div class="update-info-card">
+							<div class="update-info-label">Installed Version</div>
+							<div class="update-info-value">
+								<span class="version-badge version-badge-current">v1.0.0</span>
+								<span class="version-os-badge">@RuntimeInformation.OSDescription</span>
+							</div>
+						</div>
+
+						<div class="update-info-card">
+							<div class="update-info-label">Runtime Architecture</div>
+							<div class="update-info-value">
+								<span style="font-weight: 600; font-size: 13px; color: var(--text-primary);">.NET 10.0 Photino Blazor</span>
+								<span class="version-os-badge">@RuntimeInformation.ProcessArchitecture</span>
+							</div>
+						</div>
+
+						<div class="update-info-card">
+							<div class="update-info-label">Pairing Standards</div>
+							<div class="update-info-value">
+								<span style="font-weight: 600; font-size: 13px; color: var(--text-primary);">FIDE Swiss Rules (C.04.1 / C.04.3)</span>
+								<span class="badge badge-gold" style="font-size: 10px;">TRF16 &amp; TRF06</span>
+							</div>
+						</div>
+
+						<div class="update-info-card">
+							<div class="update-info-label">Caissa Chess Ecosystem</div>
+							<div class="update-info-value">
+								<span style="font-weight: 600; font-size: 13px; color: var(--text-primary);">CaissaDesk &bull; CaissaResults &bull; Caissalytics</span>
+							</div>
+						</div>
+					</div>
+				</div>
+			}
+		</main>
+	</div>
+</div>
+
+@code {
+	[Parameter, EditorRequired] public SettingsTab Tab { get; set; } = default!;
+
+	private string _activeCategory = "general";
+
+	private AppSettings _defaultsModel = new();
+	private AppSettings _enginesModel = new();
+	private AppSettings _cloudSyncModel = new();
+
+	private string? _defaultsSuccessMessage;
+	private string? _enginesSuccessMessage;
+	private string? _cloudSuccessMessage;
+	private bool _isTestingCloud;
+	private string? _cloudTestStatus;
+	private bool _cloudTestSuccess;
+
+	private bool _isInstalling;
+	private string? _installingEngineId;
+	private string _installStatus = "";
+	private string? _installerErrorMessage;
+	private string? _installerNoteMessage;
+
+	private readonly Dictionary<string, PairingResult> _testResults = new(StringComparer.OrdinalIgnoreCase);
+	private readonly Dictionary<string, long> _testDurations = new(StringComparer.OrdinalIgnoreCase);
+
+	protected override void OnInitialized()
+	{
+		Loc.OnLanguageChanged += StateHasChanged;
+		LoadFromSettings();
+	}
+
+	public void Dispose()
+	{
+		Loc.OnLanguageChanged -= StateHasChanged;
+	}
+
+	private void SetCategory(string category)
+	{
+		_activeCategory = category;
+	}
+
+	private string GetNavClass(string category)
+	{
+		return _activeCategory == category ? "control-nav-item nav-item-active" : "control-nav-item";
+	}
+
+	private void LoadFromSettings()
+	{
+		_defaultsModel = AppSettings.Settings.Clone();
+		_enginesModel = AppSettings.Settings.Clone();
+		_cloudSyncModel = AppSettings.Settings.Clone();
+	}
+
+	private async Task SaveDefaultsAsync()
+	{
+		_defaultsSuccessMessage = null;
+
+		var current = AppSettings.Settings.Clone();
+		current.DefaultChiefArbiter = _defaultsModel.DefaultChiefArbiter.Trim();
+		current.DefaultDeputyArbiter = _defaultsModel.DefaultDeputyArbiter.Trim();
+		current.DefaultOrganizer = _defaultsModel.DefaultOrganizer.Trim();
+		current.DefaultVenue = _defaultsModel.DefaultVenue.Trim();
+		current.DefaultFederation = string.IsNullOrWhiteSpace(_defaultsModel.DefaultFederation) ? "SVK" : _defaultsModel.DefaultFederation.Trim().ToUpperInvariant();
+		current.DefaultTotalRounds = Math.Max(1, _defaultsModel.DefaultTotalRounds);
+		current.DefaultSystem = _defaultsModel.DefaultSystem;
+		current.DefaultTimeControl = _defaultsModel.DefaultTimeControl;
+		current.DefaultTimeControlDetails = _defaultsModel.DefaultTimeControlDetails.Trim();
+		current.DefaultFideRated = _defaultsModel.DefaultFideRated;
+		current.DefaultSeedingPrecedence = _defaultsModel.DefaultSeedingPrecedence;
+
+		await AppSettings.SaveSettingsAsync(current);
+		LoadFromSettings();
+		_defaultsSuccessMessage = Loc["Settings_DefaultsSaved"];
+	}
+
+	private async Task SaveEnginesAsync()
+	{
+		_enginesSuccessMessage = null;
+
+		// Ensure chosen default engine is available
+		var targetEngine = EngineRegistry.GetEngine(_enginesModel.DefaultSwissEngineId);
+		if (!targetEngine.IsAvailable)
+		{
+			_enginesModel.DefaultSwissEngineId = "native_dutch";
+		}
+
+		var current = AppSettings.Settings.Clone();
+		current.DefaultSwissEngineId = _enginesModel.DefaultSwissEngineId;
+		current.CustomBbpPath = string.IsNullOrWhiteSpace(_enginesModel.CustomBbpPath) ? null : _enginesModel.CustomBbpPath.Trim();
+		current.CustomJavaPath = string.IsNullOrWhiteSpace(_enginesModel.CustomJavaPath) ? null : _enginesModel.CustomJavaPath.Trim();
+		current.CustomJavafoJarPath = string.IsNullOrWhiteSpace(_enginesModel.CustomJavafoJarPath) ? null : _enginesModel.CustomJavafoJarPath.Trim();
+
+		await AppSettings.SaveSettingsAsync(current);
+		LoadFromSettings();
+		_enginesSuccessMessage = Loc["Settings_EnginesSaved"];
+	}
+
+	private async Task InstallEngineAsync(string engineId)
+	{
+		_isInstalling = true;
+		_installingEngineId = engineId;
+		_installerErrorMessage = null;
+		_installerNoteMessage = null;
+		_installStatus = Loc["Settings_Downloading"];
+		StateHasChanged();
+
+		var progress = new Progress<EngineInstallProgress>(p =>
+		{
+			_installStatus = p.Message;
+			StateHasChanged();
+		});
+
+		try
+		{
+			var result = await EngineInstaller.InstallEngineAsync(engineId, progress);
+			if (result.Success)
+			{
+				_enginesModel = AppSettings.Settings.Clone();
+				_enginesSuccessMessage = Loc["Settings_InstallSuccess", engineId == "bbp" ? "bbpPairings" : "JaVaFo"];
+				_installerNoteMessage = result.Note;
+			}
+			else
+			{
+				_installerErrorMessage = Loc["Settings_InstallFailed", result.ErrorMessage ?? "Unknown"];
+			}
+		}
+		catch (Exception ex)
+		{
+			_installerErrorMessage = Loc["Settings_InstallFailed", ex.Message];
+		}
+		finally
+		{
+			_isInstalling = false;
+			_installingEngineId = null;
+			StateHasChanged();
+		}
+	}
+
+	private void RunEngineTest(string engineId)
+	{
+		_testResults.Remove(engineId);
+		_testDurations.Remove(engineId);
+
+		// Apply current inputs to registry before testing
+		EngineRegistry.ReloadEngines(_enginesModel.CustomBbpPath, _enginesModel.CustomJavaPath, _enginesModel.CustomJavafoJarPath);
+
+		var sw = System.Diagnostics.Stopwatch.StartNew();
+		var result = EngineRegistry.TestEngine(engineId);
+		sw.Stop();
+
+		_testResults[engineId] = result;
+		_testDurations[engineId] = Math.Max(1, sw.ElapsedMilliseconds);
+	}
+
+	private string? _cloudErrorMessage;
+
+	private async Task SaveCloudSettingsAsync()
+	{
+		_cloudSuccessMessage = null;
+		_cloudErrorMessage = null;
+
+		var current = AppSettings.Settings.Clone();
+		current.CaissaResultsUrl = string.IsNullOrWhiteSpace(_cloudSyncModel.CaissaResultsUrl) ? "http://localhost:5200" : _cloudSyncModel.CaissaResultsUrl.Trim();
+		current.CaissaResultsApiKey = string.IsNullOrWhiteSpace(_cloudSyncModel.CaissaResultsApiKey) ? null : _cloudSyncModel.CaissaResultsApiKey.Trim();
+		current.AutoSyncOnResultChange = _cloudSyncModel.AutoSyncOnResultChange;
+
+		await AppSettings.SaveSettingsAsync(current);
+		LoadFromSettings();
+
+		if (string.IsNullOrWhiteSpace(current.CaissaResultsApiKey))
+		{
+			_cloudErrorMessage = "Settings saved. Warning: Syncing and uploads are DISABLED until a valid API key is entered.";
+		}
+		else
+		{
+			_cloudSuccessMessage = "CaissaResults sync settings saved successfully.";
+		}
+		StateHasChanged();
+	}
+
+	private async Task TestCloudConnectionAsync()
+	{
+		_isTestingCloud = true;
+		_cloudTestStatus = null;
+		StateHasChanged();
+
+		if (string.IsNullOrWhiteSpace(_cloudSyncModel.CaissaResultsApiKey))
+		{
+			_cloudTestSuccess = false;
+			_cloudTestStatus = "✗ API Key is missing. An API key is required to authorize uploads.";
+			_isTestingCloud = false;
+			return;
+		}
+
+		try
+		{
+			var url = string.IsNullOrWhiteSpace(_cloudSyncModel.CaissaResultsUrl) ? "http://localhost:5200" : _cloudSyncModel.CaissaResultsUrl.Trim();
+			bool online = await CaissaResultsSync.PingServerAsync(url);
+			_cloudTestSuccess = online;
+			if (online)
+			{
+				_cloudTestStatus = $"✓ Connection verified! CaissaResults portal at '{url}' is online and accepting sync requests.";
+			}
+			else
+			{
+				_cloudTestStatus = $"✗ Cannot connect to CaissaResults at '{url}'. Make sure the CaissaResults web server is running.";
+			}
+		}
+		catch (Exception ex)
+		{
+			_cloudTestSuccess = false;
+			_cloudTestStatus = $"✗ Connection error: {ex.Message}";
+		}
+		finally
+		{
+			_isTestingCloud = false;
+			StateHasChanged();
+		}
+	}
+
+	private async Task OpenCloudPortal()
+	{
+		var url = string.IsNullOrWhiteSpace(_cloudSyncModel.CaissaResultsUrl) ? "http://localhost:5200" : _cloudSyncModel.CaissaResultsUrl.Trim();
+		try
+		{
+			await JS.InvokeVoidAsync("open", url, "_blank");
+		}
+		catch { }
+	}
+}
