@@ -65,4 +65,28 @@ public class CaissaSecurityTests
         Assert.Equal("Bearer", request.Headers.Authorization?.Scheme);
         Assert.Equal(ApiKey, request.Headers.Authorization?.Parameter);
     }
+
+    [Fact]
+    public void SignRequest_AddsNonceAndV2SignatureCoveringIt()
+    {
+        using var first = new HttpRequestMessage(HttpMethod.Post, "https://example.test/api/sync/publish");
+        using var second = new HttpRequestMessage(HttpMethod.Post, "https://example.test/api/sync/publish");
+
+        CaissaSecurity.SignRequest(first, "/api/sync/publish", "{}", ApiKey, includeBearerToken: false);
+        CaissaSecurity.SignRequest(second, "/api/sync/publish", "{}", ApiKey, includeBearerToken: false);
+
+        var nonce = first.Headers.GetValues(CaissaSecurity.HeaderNonce).Single();
+        var timestamp = first.Headers.GetValues(CaissaSecurity.HeaderTimestamp).Single();
+        var expectedV2 = CaissaSecurity.ComputeHmacSha256(ApiKey, CaissaSecurity.BuildStringToSignV2(
+            "POST", "/api/sync/publish", timestamp, CaissaSecurity.ComputeSha256("{}"), nonce));
+
+        Assert.Equal(32, nonce.Length);
+        Assert.Equal(expectedV2, first.Headers.GetValues(CaissaSecurity.HeaderSignatureV2).Single());
+        Assert.NotEqual(nonce, second.Headers.GetValues(CaissaSecurity.HeaderNonce).Single());
+
+        // The v1 signature is unchanged, so servers without nonce support keep working
+        var expectedV1 = CaissaSecurity.ComputeHmacSha256(ApiKey,
+            CaissaSecurity.BuildStringToSign("POST", "/api/sync/publish", timestamp, CaissaSecurity.ComputeSha256("{}")));
+        Assert.Equal(expectedV1, first.Headers.GetValues(CaissaSecurity.HeaderSignature).Single());
+    }
 }

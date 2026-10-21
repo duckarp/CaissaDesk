@@ -9,6 +9,15 @@ public static class CaissaSecurity
     public const string HeaderSignature = "X-Caissa-Signature";
     public const string HeaderTournamentKey = "X-Caissa-Tournament-Key";
 
+    /// <summary>Single-use random value that lets the server reject replayed requests.</summary>
+    public const string HeaderNonce = "X-Caissa-Nonce";
+
+    /// <summary>
+    /// HMAC over the v1 string-to-sign plus the nonce. Sent alongside the v1 <see cref="HeaderSignature"/>
+    /// so servers that don't know about nonces keep accepting requests.
+    /// </summary>
+    public const string HeaderSignatureV2 = "X-Caissa-Signature-V2";
+
     /// <summary>
     /// Computes the SHA-256 hash of a string, returning a lowercase hex string.
     /// </summary>
@@ -67,6 +76,14 @@ public static class CaissaSecurity
         var normalizedHash = (bodySha256 ?? string.Empty).Trim().ToLowerInvariant();
 
         return $"{normalizedTimestamp}\n{normalizedMethod}\n{normalizedPath}\n{normalizedHash}";
+    }
+
+    /// <summary>
+    /// String-to-sign for <see cref="HeaderSignatureV2"/>: the v1 canonical string followed by the nonce.
+    /// </summary>
+    public static string BuildStringToSignV2(string method, string pathAndQuery, string timestamp, string bodySha256, string nonce)
+    {
+        return $"{BuildStringToSign(method, pathAndQuery, timestamp, bodySha256)}\n{(nonce ?? string.Empty).Trim()}";
     }
 
     /// <summary>
@@ -152,6 +169,14 @@ public static class CaissaSecurity
 
             request.Headers.Remove(HeaderSignature);
             request.Headers.Add(HeaderSignature, signature);
+
+            var nonce = GenerateSecureKey(16);
+            var signatureV2 = ComputeHmacSha256(apiKey, BuildStringToSignV2(method, pathAndQuery, timestamp, bodyHash, nonce));
+
+            request.Headers.Remove(HeaderNonce);
+            request.Headers.Add(HeaderNonce, nonce);
+            request.Headers.Remove(HeaderSignatureV2);
+            request.Headers.Add(HeaderSignatureV2, signatureV2);
         }
     }
 }
