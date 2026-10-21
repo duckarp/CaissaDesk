@@ -13,6 +13,7 @@
 @inject IEngineInstallerService EngineInstaller
 @inject ICaissaResultsSyncService CaissaResultsSync
 @inject IJSRuntime JS
+@inject ILogger<SettingsControlCenter> Logger
 @implements IDisposable
 
 <div class="control-center-container">
@@ -137,29 +138,29 @@
 							<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
 								<div class="form-group">
 									<label class="form-label">@Loc["Tournament_ChiefArbiter"]</label>
-									<input type="text" class="form-input" @bind="_defaultsModel.DefaultChiefArbiter" placeholder="e.g. IA Tomas K." />
+									<input type="text" class="form-input" @bind="_defaultsModel.DefaultChiefArbiter" placeholder="@Loc["Settings_PlaceholderChiefArbiter"]" />
 								</div>
 								<div class="form-group">
 									<label class="form-label">@Loc["Tournament_DeputyArbiter"]</label>
-									<input type="text" class="form-input" @bind="_defaultsModel.DefaultDeputyArbiter" placeholder="e.g. FA John D." />
+									<input type="text" class="form-input" @bind="_defaultsModel.DefaultDeputyArbiter" placeholder="@Loc["Settings_PlaceholderDeputyArbiter"]" />
 								</div>
 							</div>
 
 							<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
 								<div class="form-group">
 									<label class="form-label">@Loc["Tournament_Venue"]</label>
-									<input type="text" class="form-input" @bind="_defaultsModel.DefaultVenue" placeholder="e.g. Chess Club" />
+									<input type="text" class="form-input" @bind="_defaultsModel.DefaultVenue" placeholder="@Loc["Settings_PlaceholderVenue"]" />
 								</div>
 								<div class="form-group">
 									<label class="form-label">@Loc["Tournament_Organizer"]</label>
-									<input type="text" class="form-input" @bind="_defaultsModel.DefaultOrganizer" placeholder="e.g. Slovak Chess Academy" />
+									<input type="text" class="form-input" @bind="_defaultsModel.DefaultOrganizer" placeholder="@Loc["Settings_PlaceholderOrganizer"]" />
 								</div>
 							</div>
 
 							<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
 								<div class="form-group">
 									<label class="form-label">@Loc["Tournament_Federation"]</label>
-									<input type="text" class="form-input" @bind="_defaultsModel.DefaultFederation" placeholder="e.g. SVK" maxlength="3" />
+									<input type="text" class="form-input" @bind="_defaultsModel.DefaultFederation" placeholder="@Loc["Settings_PlaceholderFederation"]" maxlength="3" />
 								</div>
 								<div class="form-group">
 									<label class="form-label">@Loc["Tournament_SeedingPrecedence"]</label>
@@ -199,7 +200,7 @@
 								</div>
 								<div class="form-group">
 									<label class="form-label">@Loc["Tournament_TimeControlSpec"]</label>
-									<input type="text" class="form-input" @bind="_defaultsModel.DefaultTimeControlDetails" placeholder="e.g. 15m + 5s" />
+									<input type="text" class="form-input" @bind="_defaultsModel.DefaultTimeControlDetails" placeholder="@Loc["Settings_PlaceholderTimeControl"]" />
 								</div>
 							</div>
 
@@ -339,7 +340,7 @@
 								<!-- Native Dutch Column -->
 								<div style="background-color: var(--bg-canvas); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 6px;">
 									<div style="display: flex; align-items: center; justify-content: space-between;">
-										<span style="font-weight: 700; font-size: 13px; color: var(--text-primary);">Native Swiss (simplified Dutch)</span>
+										<span style="font-weight: 700; font-size: 13px; color: var(--text-primary);">@Loc["Settings_EngineNativeTitle"]</span>
 										<span class="badge badge-blue" style="font-size: 10px;">@Loc["Settings_EngineNativeBadge"]</span>
 									</div>
 									<div style="font-size: 12px; color: var(--text-secondary); line-height: 1.4;">
@@ -406,7 +407,7 @@
 							@if (_testResults.TryGetValue("native_dutch", out var nativeTestResult))
 							{
 								<div style="font-size: 12px; padding: 8px 12px; border-radius: 6px; background-color: @(nativeTestResult.Success ? "rgba(35, 134, 54, 0.12)" : "rgba(218, 54, 51, 0.12)"); color: @(nativeTestResult.Success ? "var(--accent-primary)" : "var(--accent-danger)");">
-									@(nativeTestResult.Success ? Loc["Settings_TestSuccess", nativeTestResult.Pairings.Count, _testDurations.GetValueOrDefault("native_dutch", 1)] : Loc["Settings_TestFailed", nativeTestResult.ErrorMessage ?? "Unknown"])
+									@(nativeTestResult.Success ? Loc["Settings_TestSuccess", nativeTestResult.Pairings.Count, _testDurations.GetValueOrDefault("native_dutch", 1)] : Loc["Settings_TestFailed", nativeTestResult.ErrorMessage ?? Loc["Settings_UnknownError"]])
 								</div>
 							}
 						</div>
@@ -444,7 +445,7 @@
 									   class="form-input"
 									   style="font-family: var(--font-mono); font-size: 12px;"
 									   @bind="_enginesModel.CustomBbpPath"
-									   placeholder="/usr/local/bin/bbpPairings or C:\Program Files\bbpPairings\bbpPairings.exe" />
+									   placeholder="@Loc["Settings_PlaceholderBbpPath"]" />
 							</div>
 
 							<div style="display: flex; align-items: center; justify-content: flex-end; gap: 8px;">
@@ -468,7 +469,7 @@
 							@if (_testResults.TryGetValue("bbp", out var bbpTestResult))
 							{
 								<div style="font-size: 12px; padding: 8px 12px; border-radius: 6px; background-color: @(bbpTestResult.Success ? "rgba(35, 134, 54, 0.12)" : "rgba(218, 54, 51, 0.12)"); color: @(bbpTestResult.Success ? "var(--accent-primary)" : "var(--accent-danger)");">
-									@(bbpTestResult.Success ? Loc["Settings_TestSuccess", bbpTestResult.Pairings.Count, _testDurations.GetValueOrDefault("bbp", 1)] : Loc["Settings_TestFailed", bbpTestResult.ErrorMessage ?? "Unknown"])
+									@(bbpTestResult.Success ? Loc["Settings_TestSuccess", bbpTestResult.Pairings.Count, _testDurations.GetValueOrDefault("bbp", 1)] : Loc["Settings_TestFailed", bbpTestResult.ErrorMessage ?? Loc["Settings_UnknownError"]])
 								</div>
 							}
 						</div>
@@ -500,7 +501,7 @@
 										   class="form-input"
 										   style="font-family: var(--font-mono); font-size: 12px;"
 										   @bind="_enginesModel.CustomJavaPath"
-										   placeholder="@(javafoEngine?.JavaPath ?? "e.g. /usr/bin/java")" />
+										   placeholder="@(javafoEngine?.JavaPath ?? Loc["Settings_PlaceholderJavaPath"])" />
 								</div>
 
 								<div class="form-group">
@@ -509,7 +510,7 @@
 										   class="form-input"
 										   style="font-family: var(--font-mono); font-size: 12px;"
 										   @bind="_enginesModel.CustomJavafoJarPath"
-										   placeholder="@(javafoEngine?.JarPath ?? "e.g. /opt/caissadesk/javafo.jar")" />
+										   placeholder="@(javafoEngine?.JarPath ?? Loc["Settings_PlaceholderJarPath"])" />
 								</div>
 							</div>
 
@@ -534,7 +535,7 @@
 							@if (_testResults.TryGetValue("javafo", out var javafoTestResult))
 							{
 								<div style="font-size: 12px; padding: 8px 12px; border-radius: 6px; background-color: @(javafoTestResult.Success ? "rgba(35, 134, 54, 0.12)" : "rgba(218, 54, 51, 0.12)"); color: @(javafoTestResult.Success ? "var(--accent-primary)" : "var(--accent-danger)");">
-									@(javafoTestResult.Success ? Loc["Settings_TestSuccess", javafoTestResult.Pairings.Count, _testDurations.GetValueOrDefault("javafo", 1)] : Loc["Settings_TestFailed", javafoTestResult.ErrorMessage ?? "Unknown"])
+									@(javafoTestResult.Success ? Loc["Settings_TestSuccess", javafoTestResult.Pairings.Count, _testDurations.GetValueOrDefault("javafo", 1)] : Loc["Settings_TestFailed", javafoTestResult.ErrorMessage ?? Loc["Settings_UnknownError"]])
 								</div>
 							}
 						</div>
@@ -562,31 +563,44 @@
 
 					<div class="panel-card" style="display: flex; flex-direction: column; gap: 16px;">
 						<div style="font-size: 13px; color: var(--text-secondary); line-height: 1.5;">
-							Publish your tournaments, live round pairings, and tournament standings to the <strong>CaissaResults</strong> web portal so players, coaches, and arbiters can follow results live on their phones and browsers.
+							@Loc["Settings_SyncIntro"]
 						</div>
 
 						<div style="display: flex; flex-direction: column; gap: 14px; margin-top: 4px;">
 							<div>
-								<label class="form-label" style="display: block; margin-bottom: 6px; font-weight: 500;">CaissaResults Server URL</label>
+								<label class="form-label" style="display: block; margin-bottom: 6px; font-weight: 500;">@Loc["Settings_SyncServerUrl"]</label>
 								<input type="text" class="form-input" style="width: 100%; max-width: 500px;" @bind="_cloudSyncModel.CaissaResultsUrl" placeholder="http://localhost:5200" />
-								<div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">The base URL of the CaissaResults web service.</div>
+								<div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">@Loc["Settings_SyncServerUrlHint"]</div>
 							</div>
 
 							<div>
 								<label class="form-label" style="display: block; margin-bottom: 6px; font-weight: 500;">
-									API Key / Server Token <span style="color: #ef4444; font-weight: 700;">*</span>
+									@Loc["Settings_SyncApiKey"] <span style="color: #ef4444; font-weight: 700;">*</span>
 								</label>
-								<input type="password" class="form-input" style="width: 100%; max-width: 500px;" @bind="_cloudSyncModel.CaissaResultsApiKey" placeholder="Enter server API key (Required for syncing and uploads)" />
+								<input type="password" class="form-input" style="width: 100%; max-width: 500px;" @bind="_cloudSyncModel.CaissaResultsApiKey" placeholder="@Loc["Settings_SyncApiKeyPlaceholder"]" />
 								<div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
-									Required for secure, tamper-proof uploads. Web synchronization and uploads are disabled if this key is not configured.
+									@Loc["Settings_SyncApiKeyHint"]
 								</div>
 							</div>
 
 							<div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
 								<input type="checkbox" id="autoSyncCheck" @bind="_cloudSyncModel.AutoSyncOnResultChange" style="cursor: pointer;" />
 								<label for="autoSyncCheck" style="font-size: 13px; color: var(--text-primary); cursor: pointer;">
-									Auto-sync live results when entering/editing game results in workbench
+									@Loc["Settings_SyncAutoSync"]
 								</label>
+							</div>
+
+							<div style="display: flex; flex-direction: column; gap: 6px;">
+								<div style="display: flex; align-items: center; gap: 10px;">
+									<input type="checkbox" id="allowLanHttpCheck" @bind="_cloudSyncModel.AllowHttpOnPrivateNetworks" style="cursor: pointer;" />
+									<label for="allowLanHttpCheck" style="font-size: 13px; color: var(--text-primary); cursor: pointer;">
+										@Loc["Settings_SyncAllowLanHttp"]
+									</label>
+								</div>
+								<div style="background-color: rgba(210, 153, 34, 0.12); border: 1px solid var(--accent-warning); border-radius: 6px; padding: 8px 12px; color: var(--accent-warning); font-size: 12px; display: flex; align-items: flex-start; gap: 8px; max-width: 640px;">
+									<span style="flex-shrink: 0; margin-top: 1px;"><AppIcon Name="alert" Size="14" /></span>
+									<span>@Loc["Settings_SyncAllowLanHttpWarning"]</span>
+								</div>
 							</div>
 						</div>
 
@@ -595,18 +609,18 @@
 								@if (_isTestingCloud)
 								{
 									<span class="app-splash-spinner" style="width: 12px; height: 12px; margin: 0;"></span>
-									<span>Testing...</span>
+									<span>@Loc["Settings_SyncTesting"]</span>
 								}
 								else
 								{
 									<AppIcon Name="refresh" Size="13" />
-									<span>Test Connection</span>
+									<span>@Loc["Settings_SyncTestConnection"]</span>
 								}
 							</button>
 
 							<button class="btn-secondary" @onclick="OpenCloudPortal">
 								<AppIcon Name="globe" Size="13" />
-								<span>Open Web Portal</span>
+								<span>@Loc["Settings_SyncOpenPortal"]</span>
 							</button>
 						</div>
 
@@ -635,7 +649,7 @@
 					<div style="display: flex; justify-content: flex-end; margin-top: 20px;">
 						<button class="btn-primary" @onclick="SaveCloudSettingsAsync">
 							<AppIcon Name="save" Size="14" />
-							<span>Save Sync Settings</span>
+							<span>@Loc["Settings_SyncSave"]</span>
 						</button>
 					</div>
 				</div>
@@ -654,7 +668,7 @@
 								<div class="about-brand-title">
 									<strong class="about-brand-caissa">CAISSA</strong><span class="about-brand-desk">DESK</span>
 								</div>
-								<div class="about-brand-tagline">TOURNAMENT MANAGEMENT WORKBENCH</div>
+								<div class="about-brand-tagline">@Loc["Settings_AboutTagline"]</div>
 							</div>
 						</div>
 					</div>
@@ -669,7 +683,7 @@
 
 					<div class="update-settings-grid">
 						<div class="update-info-card">
-							<div class="update-info-label">Installed Version</div>
+							<div class="update-info-label">@Loc["Settings_AboutInstalledVersion"]</div>
 							<div class="update-info-value">
 								<span class="version-badge version-badge-current">v1.0.0</span>
 								<span class="version-os-badge">@RuntimeInformation.OSDescription</span>
@@ -677,7 +691,7 @@
 						</div>
 
 						<div class="update-info-card">
-							<div class="update-info-label">Runtime Architecture</div>
+							<div class="update-info-label">@Loc["Settings_AboutRuntime"]</div>
 							<div class="update-info-value">
 								<span style="font-weight: 600; font-size: 13px; color: var(--text-primary);">.NET 10.0 Photino Blazor</span>
 								<span class="version-os-badge">@RuntimeInformation.ProcessArchitecture</span>
@@ -685,15 +699,15 @@
 						</div>
 
 						<div class="update-info-card">
-							<div class="update-info-label">Pairing Standards</div>
+							<div class="update-info-label">@Loc["Settings_AboutPairingStandards"]</div>
 							<div class="update-info-value">
-								<span style="font-weight: 600; font-size: 13px; color: var(--text-primary);">FIDE Swiss Rules (C.04.1 / C.04.3)</span>
+								<span style="font-weight: 600; font-size: 13px; color: var(--text-primary);">@Loc["Settings_AboutPairingRules"]</span>
 								<span class="badge badge-gold" style="font-size: 10px;">TRF16 &amp; TRF06</span>
 							</div>
 						</div>
 
 						<div class="update-info-card">
-							<div class="update-info-label">Caissa Chess Ecosystem</div>
+							<div class="update-info-label">@Loc["Settings_AboutEcosystem"]</div>
 							<div class="update-info-value">
 								<span style="font-weight: 600; font-size: 13px; color: var(--text-primary);">CaissaDesk &bull; CaissaResults &bull; Caissalytics</span>
 							</div>
@@ -850,7 +864,7 @@
 			}
 			else
 			{
-				_installerErrorMessage = Loc["Settings_InstallFailed", result.ErrorMessage ?? "Unknown"];
+				_installerErrorMessage = Loc["Settings_InstallFailed", result.ErrorMessage ?? Loc["Settings_UnknownError"]];
 			}
 		}
 		catch (Exception ex)
@@ -909,6 +923,7 @@
 		current.CaissaResultsUrl = string.IsNullOrWhiteSpace(_cloudSyncModel.CaissaResultsUrl) ? "http://localhost:5200" : _cloudSyncModel.CaissaResultsUrl.Trim();
 		current.CaissaResultsApiKey = string.IsNullOrWhiteSpace(_cloudSyncModel.CaissaResultsApiKey) ? null : _cloudSyncModel.CaissaResultsApiKey.Trim();
 		current.AutoSyncOnResultChange = _cloudSyncModel.AutoSyncOnResultChange;
+		current.AllowHttpOnPrivateNetworks = _cloudSyncModel.AllowHttpOnPrivateNetworks;
 
 		try
 		{
@@ -924,11 +939,11 @@
 
 		if (string.IsNullOrWhiteSpace(current.CaissaResultsApiKey))
 		{
-			_cloudErrorMessage = "Settings saved. Warning: Syncing and uploads are DISABLED until a valid API key is entered.";
+			_cloudErrorMessage = Loc["Settings_SyncSavedNoKey"];
 		}
 		else
 		{
-			_cloudSuccessMessage = "CaissaResults sync settings saved successfully.";
+			_cloudSuccessMessage = Loc["Settings_SyncSaved"];
 		}
 		StateHasChanged();
 	}
@@ -942,7 +957,7 @@
 		if (string.IsNullOrWhiteSpace(_cloudSyncModel.CaissaResultsApiKey))
 		{
 			_cloudTestSuccess = false;
-			_cloudTestStatus = "✗ API Key is missing. An API key is required to authorize uploads.";
+			_cloudTestStatus = Loc["Settings_SyncTestNoKey"];
 			_isTestingCloud = false;
 			return;
 		}
@@ -950,21 +965,30 @@
 		try
 		{
 			var url = string.IsNullOrWhiteSpace(_cloudSyncModel.CaissaResultsUrl) ? "http://localhost:5200" : _cloudSyncModel.CaissaResultsUrl.Trim();
+			var transportStatus = GetTransportStatusMessage(url, _cloudSyncModel.AllowHttpOnPrivateNetworks);
+			if (transportStatus != null)
+			{
+				// Signed uploads to this URL would be refused, so a reachable server is not a working setup
+				_cloudTestSuccess = false;
+				_cloudTestStatus = transportStatus;
+				return;
+			}
+
 			bool online = await CaissaResultsSync.PingServerAsync(url);
 			_cloudTestSuccess = online;
 			if (online)
 			{
-				_cloudTestStatus = $"✓ Connection verified! CaissaResults portal at '{url}' is online and accepting sync requests.";
+				_cloudTestStatus = Loc["Settings_SyncTestOk", url];
 			}
 			else
 			{
-				_cloudTestStatus = $"✗ Cannot connect to CaissaResults at '{url}'. Make sure the CaissaResults web server is running.";
+				_cloudTestStatus = Loc["Settings_SyncTestFailed", url];
 			}
 		}
 		catch (Exception ex)
 		{
 			_cloudTestSuccess = false;
-			_cloudTestStatus = $"✗ Connection error: {ex.Message}";
+			_cloudTestStatus = Loc["Settings_SyncTestError", ex.Message];
 		}
 		finally
 		{
@@ -980,6 +1004,22 @@
 		{
 			await JS.InvokeVoidAsync("open", url, "_blank");
 		}
-		catch { }
+		catch (Exception ex)
+		{
+			Logger.LogWarning(ex, "Could not open the CaissaResults portal at {Url}", url);
+		}
+	}
+
+	/// <summary>Localized reason why signed sync requests to <paramref name="url"/> would be refused, or null when allowed.</summary>
+	private string? GetTransportStatusMessage(string url, bool allowPrivateNetworkHttp)
+	{
+		if (CaissaResultsSyncService.GetInsecureTransportError(url, allowPrivateNetworkHttp) == null) return null;
+		if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+		{
+			return Loc["Settings_SyncTestInvalidUrl", url];
+		}
+		return allowPrivateNetworkHttp
+			? Loc["Settings_SyncTestInsecurePublic", uri.Host]
+			: Loc["Settings_SyncTestInsecure", uri.Host];
 	}
 }

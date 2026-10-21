@@ -17,6 +17,12 @@ public class Tournament
     public SeedingPrecedence SeedingPrecedence { get; set; } = SeedingPrecedence.FideFirst;
     public int TotalRounds { get; set; } = 7;
     public bool FideRated { get; set; }
+
+    /// <summary>
+    /// Colour of the top seed on board 1 in round 1 (the "initial colour", TRF XXC). Defaults to White,
+    /// which is also what tournaments saved before this property existed deserialize to.
+    /// </summary>
+    public FirstRoundColor TopSeedFirstRoundColor { get; set; } = FirstRoundColor.White;
     public string PairingEngineId { get; set; } = "native_dutch";
     public List<Caissa.Shared.Tiebreak.TiebreakType> TiebreakOrder { get; set; } =
         Caissa.Shared.Tiebreak.TiebreakExtensions.GetDefaultList(Caissa.Shared.Tiebreak.TiebreakPreset.FideStandardSwiss);

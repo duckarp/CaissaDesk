@@ -31,5 +31,12 @@ public class AppSettings
     public string? CaissaResultsApiKey { get; set; }
     public bool AutoSyncOnResultChange { get; set; } = false;
 
+    /// <summary>
+    /// When true, signed sync requests may use unencrypted http:// for private/link-local LAN
+    /// addresses (RFC 1918, 169.254/16, fc00::/7, fe80::/10, single-label and .local hostnames).
+    /// Public hosts always require https://. Off by default.
+    /// </summary>
+    public bool AllowHttpOnPrivateNetworks { get; set; } = false;
+
     public AppSettings Clone() => (AppSettings)MemberwiseClone();
 }

@@ -46,9 +46,11 @@ public class CaissaResultsSyncService : ICaissaResultsSyncService
     /// <summary>
     /// Returns an error message when signed (credential-bearing) requests must not be sent to
     /// <paramref name="baseUrl"/>: plain http:// is only allowed for loopback hosts (a local
-    /// development server); anywhere else the request would travel unencrypted. Returns null when OK.
+    /// development server), and — when <paramref name="allowPrivateNetworkHttp"/> is set — for
+    /// private/link-local LAN hosts (see <see cref="IsPrivateNetworkHost"/>). Public hosts always
+    /// require https://. Returns null when OK.
     /// </summary>
-    public static string? GetInsecureTransportError(string baseUrl)
+    public static string? GetInsecureTransportError(string baseUrl, bool allowPrivateNetworkHttp = false)
     {
         if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
         {
@@ -57,12 +59,65 @@ public class CaissaResultsSyncService : ICaissaResultsSyncService
         if (uri.Scheme == Uri.UriSchemeHttps) return null;
         if (uri.Scheme == Uri.UriSchemeHttp)
         {
-            return uri.IsLoopback
-                ? null
-                : $"Refusing to send credentials over unencrypted HTTP to '{uri.Host}'. Use an https:// CaissaResults URL in Settings (plain http:// is only allowed for localhost).";
+            if (uri.IsLoopback) return null;
+            if (allowPrivateNetworkHttp)
+            {
+                return IsPrivateNetworkHost(uri)
+                    ? null
+                    : $"Refusing to send credentials over unencrypted HTTP to '{uri.Host}'. Unencrypted http:// is only allowed for localhost and private-network (LAN) addresses; use https:// for public servers.";
+            }
+            return $"Refusing to send credentials over unencrypted HTTP to '{uri.Host}'. Use an https:// CaissaResults URL in Settings (plain http:// is only allowed for localhost, or for LAN addresses when enabled in Settings).";
         }
         return $"Unsupported URL scheme '{uri.Scheme}' for the CaissaResults server. Use https://.";
     }
+
+    /// <summary>
+    /// True when <paramref name="uri"/> points at a private or link-local network: IPv4 RFC 1918
+    /// (10/8, 172.16/12, 192.168/16), IPv4 link-local 169.254/16, IPv6 unique-local fc00::/7 and
+    /// link-local fe80::/10 (including IPv4-mapped IPv6 forms of the IPv4 ranges), single-label
+    /// hostnames (e.g. <c>http://results-pc</c>) and mDNS <c>.local</c> names. Loopback is not
+    /// considered here (it is always allowed separately).
+    /// </summary>
+    public static bool IsPrivateNetworkHost(Uri uri)
+    {
+        ArgumentNullException.ThrowIfNull(uri);
+        var host = uri.IdnHost;
+        if (uri.HostNameType is UriHostNameType.IPv4 or UriHostNameType.IPv6)
+        {
+            return System.Net.IPAddress.TryParse(uri.DnsSafeHost.Trim('[', ']'), out var address) && IsPrivateNetworkAddress(address);
+        }
+        if (uri.HostNameType != UriHostNameType.Dns) return false;
+
+        host = host.TrimEnd('.');
+        if (host.Length == 0) return false;
+        if (!host.Contains('.')) return true;
+        return host.EndsWith(".local", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>True for RFC 1918, IPv4 link-local, IPv6 ULA (fc00::/7) and IPv6 link-local (fe80::/10).</summary>
+    public static bool IsPrivateNetworkAddress(System.Net.IPAddress address)
+    {
+        ArgumentNullException.ThrowIfNull(address);
+        if (address.IsIPv4MappedToIPv6) address = address.MapToIPv4();
+
+        var bytes = address.GetAddressBytes();
+        if (address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+        {
+            return bytes[0] == 10
+                || (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31)
+                || (bytes[0] == 192 && bytes[1] == 168)
+                || (bytes[0] == 169 && bytes[1] == 254);
+        }
+        if (address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+        {
+            return (bytes[0] & 0xFE) == 0xFC                       // fc00::/7
+                || (bytes[0] == 0xFE && (bytes[1] & 0xC0) == 0x80);  // fe80::/10
+        }
+        return false;
+    }
+
+    private string? GetTransportError(string baseUrl) =>
+        GetInsecureTransportError(baseUrl, _settingsService.Settings.AllowHttpOnPrivateNetworks);
 
     public async Task<bool> PingServerAsync(string? serverUrl = null, CancellationToken cancellationToken = default)
     {
@@ -98,7 +153,7 @@ public class CaissaResultsSyncService : ICaissaResultsSyncService
         }
 
         var baseUrl = GetBaseUrl();
-        var transportError = GetInsecureTransportError(baseUrl);
+        var transportError = GetTransportError(baseUrl);
         if (transportError != null)
         {
             _logger.LogWarning("Publish blocked: {Reason}", transportError);
@@ -184,7 +239,7 @@ public class CaissaResultsSyncService : ICaissaResultsSyncService
         }
 
         var baseUrl = GetBaseUrl();
-        var transportError = GetInsecureTransportError(baseUrl);
+        var transportError = GetTransportError(baseUrl);
         if (transportError != null)
         {
             _logger.LogWarning("Round sync blocked: {Reason}", transportError);
@@ -246,7 +301,7 @@ public class CaissaResultsSyncService : ICaissaResultsSyncService
         }
 
         var baseUrl = GetBaseUrl();
-        var transportError = GetInsecureTransportError(baseUrl);
+        var transportError = GetTransportError(baseUrl);
         if (transportError != null)
         {
             _logger.LogWarning("Delete blocked: {Reason}", transportError);
