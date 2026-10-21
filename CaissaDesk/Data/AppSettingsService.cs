@@ -11,6 +11,15 @@ public interface IAppSettingsService
     AppSettings Settings { get; }
     Task LoadSettingsAsync();
     Task SaveSettingsAsync(AppSettings newSettings);
+
+    /// <summary>Applies <paramref name="mutate"/> to a copy of the current settings and saves it.</summary>
+    Task UpdateSettingsAsync(Action<AppSettings> mutate)
+    {
+        var copy = Settings.Clone();
+        mutate(copy);
+        return SaveSettingsAsync(copy);
+    }
+
     event Action? OnSettingsChanged;
 }
 
@@ -19,6 +28,7 @@ public class AppSettingsService : IAppSettingsService
     private readonly IPairingEngineRegistry _engineRegistry;
     private readonly string? _customConfigPath;
     private readonly ILogger<AppSettingsService> _logger;
+    private readonly Lock _saveLock = new();
     private AppSettings _settings = new();
 
     public AppSettings Settings => _settings;
@@ -123,6 +133,32 @@ public class AppSettingsService : IAppSettingsService
     /// </summary>
     public Task SaveSettingsAsync(AppSettings newSettings)
     {
+        // Saves come from the UI and from background work (update checks): serialize the file writes
+        lock (_saveLock)
+        {
+            SaveSettingsCore(newSettings);
+        }
+
+        OnSettingsChanged?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Read-modify-write under the save lock, so concurrent updates of different fields are not lost.</summary>
+    public Task UpdateSettingsAsync(Action<AppSettings> mutate)
+    {
+        lock (_saveLock)
+        {
+            var copy = _settings.Clone();
+            mutate(copy);
+            SaveSettingsCore(copy);
+        }
+
+        OnSettingsChanged?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    private void SaveSettingsCore(AppSettings newSettings)
+    {
         var settings = newSettings.Clone();
         string path = GetConfigFilePath();
         var dict = new Dictionary<string, object>();
@@ -173,8 +209,5 @@ public class AppSettingsService : IAppSettingsService
 
         // Notify pairing engine registry
         _engineRegistry.ReloadEngines(_settings.CustomBbpPath, _settings.CustomJavaPath, _settings.CustomJavafoJarPath);
-
-        OnSettingsChanged?.Invoke();
-        return Task.CompletedTask;
     }
 }

@@ -6,6 +6,7 @@ using CaissaDesk.Core.Notifications;
 using CaissaDesk.Core.Arbiter;
 using CaissaDesk.Core.PairingEngine;
 using CaissaDesk.Core.Roster;
+using CaissaDesk.Core.Updates;
 using CaissaDesk.Data;
 using CaissaDesk.Localization;
 using CaissaDesk.Logging;
@@ -44,7 +45,7 @@ internal class Program
         };
 
         log.LogInformation("CaissaDesk {Version} starting on {OS} (.NET {Runtime}).",
-            typeof(Program).Assembly.GetName().Version, RuntimeInformation.OSDescription, Environment.Version);
+            AppVersion.Current, RuntimeInformation.OSDescription, Environment.Version);
 
         SetLinuxProgramName("caissadesk", log);
 
@@ -58,6 +59,7 @@ internal class Program
         });
         appBuilder.Services.AddHttpClient();
         appBuilder.Services.AddScoutingHttpClients();
+        UpdateService.AddUpdateHttpClient(appBuilder.Services);
         appBuilder.Services.AddSingleton<IAppWindowProvider, AppWindowProvider>();
         appBuilder.Services.AddSingleton<ITiebreakService, TiebreakService>();
         appBuilder.Services.AddSingleton<ITournamentRepository>(sp =>
@@ -80,6 +82,12 @@ internal class Program
         appBuilder.Services.AddSingleton<IPlayerLookupService, PlayerLookupService>();
         appBuilder.Services.AddSingleton<INotificationService, NotificationService>();
         appBuilder.Services.AddSingleton<IExternalLinkService, ExternalLinkService>();
+        appBuilder.Services.AddSingleton<IUpdateService>(sp =>
+            new UpdateService(
+                sp.GetRequiredService<IHttpClientFactory>(),
+                sp.GetRequiredService<IAppSettingsService>(),
+                sp.GetRequiredService<ILogger<UpdateService>>(),
+                sp.GetRequiredService<IAppWindowProvider>()));
         appBuilder.Services.AddScoped<WorkspaceState>();
         appBuilder.Services.AddScoped<LocalizationService>(sp =>
             new LocalizationService(sp.GetRequiredService<IAppSettingsService>(), logger: sp.GetRequiredService<ILogger<LocalizationService>>()));
@@ -166,6 +174,8 @@ internal class Program
             }
         }
 
+        StartBackgroundUpdateCheck(app.Services.GetRequiredService<IUpdateService>(), log);
+
         try
         {
             app.Run();
@@ -180,6 +190,26 @@ internal class Program
         {
             fileLoggerProvider.Dispose();
         }
+    }
+
+    /// <summary>
+    /// Checks GitHub Releases shortly after startup, off the UI thread, when "check on startup" is enabled
+    /// and the last check is old enough (see UpdateService.ShouldAutoCheck). Failures are only logged.
+    /// </summary>
+    private static void StartBackgroundUpdateCheck(IUpdateService updateService, ILogger log)
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(3));
+                await updateService.CheckIfDueAsync();
+            }
+            catch (Exception ex)
+            {
+                log.LogWarning(ex, "Background update check failed.");
+            }
+        });
     }
 
     private static void SetLinuxProgramName(string name, ILogger log)

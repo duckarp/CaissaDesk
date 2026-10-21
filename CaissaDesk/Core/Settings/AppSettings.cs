@@ -38,5 +38,15 @@ public class AppSettings
     /// </summary>
     public bool AllowHttpOnPrivateNetworks { get; set; } = false;
 
+    // Application updates (GitHub Releases)
+    /// <summary>GitHub "owner/repo" whose releases are checked for updates.</summary>
+    public string UpdateRepository { get; set; } = "duckarp/CaissaDesk";
+    public bool CheckForUpdatesOnStartup { get; set; } = true;
+    public bool IncludePrereleaseUpdates { get; set; } = false;
+    /// <summary>When the release API last answered; automatic checks are skipped for a while after it.</summary>
+    public DateTimeOffset? UpdateLastCheckedAt { get; set; }
+    /// <summary>Newest version seen by the last check, so a pending update is shown again after a restart.</summary>
+    public string? UpdateLatestKnownVersion { get; set; }
+
     public AppSettings Clone() => (AppSettings)MemberwiseClone();
 }
