@@ -1,22 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk.Razor">
 
+	<!-- Version, Nullable, ImplicitUsings etc. come from ../Directory.Build.props -->
 	<PropertyGroup>
 		<OutputType>WinExe</OutputType>
 		<TargetFramework>net10.0</TargetFramework>
-		<Nullable>enable</Nullable>
-		<ImplicitUsings>enable</ImplicitUsings>
-		<Version>1.0.0</Version>
-		<AssemblyVersion>1.0.0.0</AssemblyVersion>
-		<FileVersion>1.0.0.0</FileVersion>
-		<InformationalVersion>1.0.0</InformationalVersion>
 		<GenerateEmbeddedFilesManifest>true</GenerateEmbeddedFilesManifest>
 		<ApplicationIcon>icon.ico</ApplicationIcon>
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
-		<PackageReference Include="Microsoft.Extensions.FileProviders.Embedded" Version="10.0.11" />
-		<PackageReference Include="Microsoft.Extensions.Http" Version="10.0.11" />
+		<PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.13" />
+		<PackageReference Include="Microsoft.Extensions.FileProviders.Embedded" Version="10.0.13" />
+		<PackageReference Include="Microsoft.Extensions.Http" Version="10.0.13" />
 		<PackageReference Include="Photino.Blazor" Version="4.0.13" />
 	</ItemGroup>
 
@@ -24,10 +19,17 @@
 		<ProjectReference Include="..\Caissa.Shared\Caissa.Shared.csproj" />
 	</ItemGroup>
 
+	<!--
+		wwwroot is embedded into the assembly (ManifestEmbeddedFileProvider) and that is what the
+		published app serves. For local development (dotnet run / build output) wwwroot is still
+		copied next to the binary so Program.cs's physical-file override picks it up, but it is
+		NOT copied into publish output (no duplicate payload next to the single-file executable).
+	-->
 	<ItemGroup>
 		<EmbeddedResource Include="wwwroot\**" />
 		<Content Update="wwwroot\**">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<CopyToPublishDirectory>Never</CopyToPublishDirectory>
 		</Content>
 		<Content Include="icon.ico">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

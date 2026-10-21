@@ -1,0 +1,20 @@
+<Project>
+
+  <!-- Shared build settings for all projects in the solution. -->
+  <PropertyGroup>
+    <!-- Single source of truth for the product version. The release workflow overrides it
+         from the git tag: dotnet publish -p:Version=1.2.3 -->
+    <Version Condition="'$(Version)' == ''">1.0.0</Version>
+
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+  <!-- Reproducible builds on CI servers (GitHub Actions sets GITHUB_ACTIONS=true, most CIs set CI=true). -->
+  <PropertyGroup Condition="'$(GITHUB_ACTIONS)' == 'true' Or '$(CI)' == 'true' Or '$(TF_BUILD)' == 'true'">
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+</Project>

@@ -100,6 +100,13 @@ Pre-built standalone desktop packages for **Linux (x64)** and **Windows (x64)** 
    ```
 *(Requires `webkit2gtk-4.1` or `webkit2gtk-4.0` installed via your distribution package manager: `sudo apt install libwebkit2gtk-4.1-0` on Ubuntu/Debian).*
 
+### Verifying Downloads
+Each release also ships a `SHA256SUMS` file. Download it next to the archives and run:
+```bash
+sha256sum -c SHA256SUMS --ignore-missing
+```
+On Windows (PowerShell): `Get-FileHash CaissaDesk-win-x64.zip -Algorithm SHA256` and compare with the value in `SHA256SUMS`.
+
 ---
 
 ## 🛠️ Building from Source
@@ -132,7 +139,15 @@ Use the included publisher scripts to build single-file executables:
 ./publish.sh all     # or ./publish.sh linux / ./publish.sh windows
 
 # Windows
-publish.bat
+publish.bat          # or publish.bat windows / publish.bat linux
+```
+
+Output goes to `dist/<rid>/`. The UI assets (`wwwroot`) are embedded in the executable, so the single `CaissaDesk` / `CaissaDesk.exe` file is all you need to distribute.
+
+### Versioning
+The product version is defined once in `Directory.Build.props` (`<Version>`) and shown in the app header. Release builds take it from the git tag: pushing tag `v1.2.3` publishes with `-p:Version=1.2.3`. To build a specific version locally:
+```bash
+dotnet publish CaissaDesk/CaissaDesk.csproj -c Release -r linux-x64 -p:Version=1.2.3
 ```
 
 ---

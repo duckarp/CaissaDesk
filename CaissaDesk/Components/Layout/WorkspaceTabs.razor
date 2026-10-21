@@ -15,7 +15,7 @@
 			<strong class="brand-caissa">CAISSA</strong><span class="brand-desk">DESK</span>
 		</span>
 		<span class="brand-badge" title="CaissaDesk Desktop Workstation">
-			<span>v1.0.0</span>
+			<span>v@(AppVersion)</span>
 		</span>
 	</div>
 
@@ -63,6 +63,23 @@
 
 @code {
 	private bool _showCreateModal = false;
+
+	// Product version from the assembly informational version (set via <Version> in
+	// Directory.Build.props or -p:Version=... in the release workflow), without the "+commit" suffix.
+	private static readonly string AppVersion = GetAppVersion();
+
+	private static string GetAppVersion()
+	{
+		var assembly = typeof(WorkspaceTabs).Assembly;
+		var informational = System.Reflection.CustomAttributeExtensions
+			.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(assembly)?.InformationalVersion;
+		if (!string.IsNullOrWhiteSpace(informational))
+		{
+			var plus = informational.IndexOf('+');
+			return plus >= 0 ? informational[..plus] : informational;
+		}
+		return assembly.GetName().Version?.ToString(3) ?? "0.0.0";
+	}
 
 	protected override void OnInitialized()
 	{
