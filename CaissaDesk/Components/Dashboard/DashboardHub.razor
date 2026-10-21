@@ -24,8 +24,9 @@
 		</div>
 
 		<div style="display: flex; align-items: center; gap: 10px;">
-			<label class="btn-secondary" style="cursor: pointer; margin: 0;" title="@Loc["Dashboard_ImportCdesk"]">
-				<InputFile OnChange="ImportCdeskFileAsync" style="display: none;" accept=".cdesk,.json" />
+			@* The file input stays focusable (visually hidden, not display:none) so the import works from the keyboard *@
+			<label class="btn-secondary file-picker-btn" style="cursor: pointer; margin: 0;" title="@Loc["Dashboard_ImportCdesk"]">
+				<InputFile OnChange="ImportCdeskFileAsync" class="sr-only" accept=".cdesk,.json" />
 				<AppIcon Name="download" Size="14" />
 				<span>@Loc["Dashboard_ImportCdesk"]</span>
 			</label>
@@ -78,12 +79,12 @@
 
 	@if (!string.IsNullOrEmpty(_exportMessage))
 	{
-		<div class="panel-card" style="display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; margin-bottom: 20px; border-radius: 6px; font-size: 13px; background: @(_exportIsError ? "rgba(239, 68, 68, 0.1)" : "rgba(76, 175, 80, 0.1)"); border: 1px solid @(_exportIsError ? "rgba(239, 68, 68, 0.3)" : "rgba(76, 175, 80, 0.3)"); color: @(_exportIsError ? "var(--accent-danger-hover)" : "var(--accent-success)");">
+		<div class="panel-card" role="status" style="display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; margin-bottom: 20px; border-radius: 6px; font-size: 13px; background: @(_exportIsError ? "rgba(239, 68, 68, 0.1)" : "rgba(76, 175, 80, 0.1)"); border: 1px solid @(_exportIsError ? "rgba(239, 68, 68, 0.3)" : "rgba(76, 175, 80, 0.3)"); color: @(_exportIsError ? "var(--accent-danger-hover)" : "var(--accent-success)");">
 			<div style="display: flex; align-items: center; gap: 8px;">
 				<AppIcon Name="@(_exportIsError ? "warning" : "check")" Size="14" />
 				<span>@_exportMessage</span>
 			</div>
-			<button class="modal-close-btn" @onclick="() => _exportMessage = null" style="font-size: 12px; color: var(--text-secondary);">
+			<button type="button" class="modal-close-btn" @onclick="() => _exportMessage = null" style="font-size: 12px; color: var(--text-secondary);" title="@Loc["Common_Dismiss"]" aria-label="@Loc["Common_Dismiss"]">
 				<AppIcon Name="x" Size="12" />
 			</button>
 		</div>
@@ -94,7 +95,7 @@
 	{
 		<div style="text-align: center; padding: 60px 20px; color: var(--text-secondary);">
 			<div class="app-splash-spinner" style="margin: 0 auto 12px;"></div>
-			<div>Loading tournaments...</div>
+			<div>@Loc["Dashboard_Loading"]</div>
 		</div>
 	}
 	else if (_tournaments == null || _tournaments.Count == 0)
@@ -123,12 +124,12 @@
 	{
 		<!-- Navigation Tabs: Active vs Archived -->
 		<div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 16px;">
-			<div style="display: flex; align-items: center; background-color: var(--bg-surface-elevated); padding: 3px; border-radius: 6px; border: 1px solid var(--border-subtle);">
-				<button class="@(!_showArchived ? "workspace-tab tab-active" : "workspace-tab")" @onclick="() => _showArchived = false">
+			<div role="group" aria-label="@Loc["Nav_Tournaments"]" style="display: flex; align-items: center; background-color: var(--bg-surface-elevated); padding: 3px; border-radius: 6px; border: 1px solid var(--border-subtle);">
+				<button type="button" class="@(!_showArchived ? "workspace-tab tab-active" : "workspace-tab")" aria-pressed="@(!_showArchived ? "true" : "false")" @onclick="() => _showArchived = false">
 					<AppIcon Name="play" Size="12" />
 					<span>@Loc["Dashboard_TabActive", ActiveCount]</span>
 				</button>
-				<button class="@(_showArchived ? "workspace-tab tab-active" : "workspace-tab")" @onclick="() => _showArchived = true">
+				<button type="button" class="@(_showArchived ? "workspace-tab tab-active" : "workspace-tab")" aria-pressed="@(_showArchived ? "true" : "false")" @onclick="() => _showArchived = true">
 					<AppIcon Name="archive" Size="12" />
 					<span>@Loc["Dashboard_TabArchived", ArchivedCount]</span>
 				</button>
@@ -142,6 +143,7 @@
 						   class="form-input form-input-sm"
 						   style="padding-left: 30px; width: 100%;"
 						   placeholder="@Loc["Common_Search"]"
+						   aria-label="@Loc["Common_Search"]"
 						   @bind="_searchQuery"
 						   @bind:event="oninput" />
 					<span style="position: absolute; left: 10px; top: 0; bottom: 0; display: flex; align-items: center; justify-content: center; color: var(--text-muted); pointer-events: none;">
@@ -150,20 +152,20 @@
 				</div>
 
 				<!-- System Filter -->
-				<select class="form-select form-select-sm" style="width: auto;" @bind="_systemFilterString">
+				<select class="form-select form-select-sm" style="width: auto;" aria-label="@Loc["Dashboard_FilterSystemLabel"]" @bind="_systemFilterString">
 					<option value="">@Loc["Dashboard_FilterAllSystems"]</option>
 					<option value="@((int)TournamentSystem.SwissDutch)">@Loc["Tournament_SwissDutch"]</option>
 					<option value="@((int)TournamentSystem.RoundRobin)">@Loc["Tournament_RoundRobin"]</option>
 				</select>
 
 				<!-- Rating Filter -->
-				<select class="form-select form-select-sm" style="width: auto;" @bind="_fideFilterString">
+				<select class="form-select form-select-sm" style="width: auto;" aria-label="@Loc["Dashboard_FilterRatingLabel"]" @bind="_fideFilterString">
 					<option value="">@Loc["Dashboard_FilterAllRatings"]</option>
 					<option value="fide">@Loc["Dashboard_FilterFideOnly"]</option>
 				</select>
 
 				<!-- Sorting -->
-				<select class="form-select form-select-sm" style="width: auto;" @bind="_sortBy">
+				<select class="form-select form-select-sm" style="width: auto;" aria-label="@Loc["Dashboard_SortBy"]" @bind="_sortBy">
 					<option value="date_desc">@Loc["Dashboard_SortDateDesc"]</option>
 					<option value="date_asc">@Loc["Dashboard_SortDateAsc"]</option>
 					<option value="name_asc">@Loc["Dashboard_SortNameAsc"]</option>
@@ -232,7 +234,7 @@
 								<div style="display: flex; align-items: center; gap: 6px;">
 									@if (t.FideRated)
 									{
-										<span class="badge badge-gold" title="Official FIDE Rated Event">FIDE</span>
+										<span class="badge badge-gold" title="@Loc["Tournament_FideRated"]">FIDE</span>
 									}
 									@if (t.IsFinished)
 									{
@@ -246,17 +248,17 @@
 
 							<div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px;">
 								<span class="badge badge-blue">
-									@(t.System == TournamentSystem.SwissDutch ? "Swiss Dutch" : "Round Robin")
+									@(t.System == TournamentSystem.SwissDutch ? Loc["Dashboard_SystemSwissShort"] : Loc["Dashboard_SystemRoundRobinShort"])
 								</span>
 								<span class="badge badge-gray">
-									@t.TimeControl
+									@Loc.TimeControlLabel(t.TimeControl)
 								</span>
 								<span class="badge badge-gray">
-									@t.TotalRounds Rounds
+									@Loc["Workbench_TotalRounds", t.TotalRounds]
 								</span>
 								<span class="badge badge-green">
 									<AppIcon Name="users" Size="11" />
-									@t.PlayerCount Players
+									@Loc["Dashboard_PlayerCount", t.PlayerCount]
 								</span>
 							</div>
 
@@ -283,31 +285,32 @@
 
 						<div style="display: flex; align-items: center; justify-content: space-between; border-top: 1px solid var(--border-muted); padding-top: 12px; margin-top: 4px;">
 							<span style="font-size: 11px; color: var(--text-muted); font-family: var(--font-mono);">
-								@t.UpdatedAt.ToLocalTime().ToString("MMM dd, yyyy HH:mm")
+								@t.UpdatedAt.ToLocalTime().ToString("d MMM yyyy HH:mm", Loc.Culture())
 							</span>
 							<div style="display: flex; align-items: center; gap: 6px;">
 								@if (t.IsFinished)
 								{
-									<button class="btn-secondary" style="padding: 4px 8px; font-size: 11px;" title="@Loc["Dashboard_UnarchiveTournament"]" @onclick="() => RequestToggleArchive(t.Id, t.Name, false)">
+									<button class="btn-secondary" style="padding: 4px 8px; font-size: 11px;" title="@Loc["Dashboard_UnarchiveTournament"]" aria-label="@($"{Loc["Dashboard_UnarchiveTournament"]}: {t.Name}")" @onclick="() => RequestToggleArchive(t.Id, t.Name, false)">
 										<AppIcon Name="unarchive" Size="12" />
 									</button>
 								}
 								else
 								{
-									<button class="btn-secondary" style="padding: 4px 8px; font-size: 11px;" title="@Loc["Dashboard_ArchiveTournament"]" @onclick="() => RequestToggleArchive(t.Id, t.Name, true)">
+									<button class="btn-secondary" style="padding: 4px 8px; font-size: 11px;" title="@Loc["Dashboard_ArchiveTournament"]" aria-label="@($"{Loc["Dashboard_ArchiveTournament"]}: {t.Name}")" @onclick="() => RequestToggleArchive(t.Id, t.Name, true)">
 										<AppIcon Name="archive" Size="12" />
 									</button>
 								}
-								<button class="btn-secondary" style="padding: 4px 8px; font-size: 11px;" title="@Loc["Dashboard_EditTournamentTooltip"]" @onclick="() => OpenEditModalAsync(t.Id)">
+								<button class="btn-secondary" style="padding: 4px 8px; font-size: 11px;" title="@Loc["Dashboard_EditTournamentTooltip"]" aria-label="@($"{Loc["Dashboard_EditTournamentTooltip"]}: {t.Name}")" @onclick="() => OpenEditModalAsync(t.Id)">
 									<AppIcon Name="edit" Size="12" />
 								</button>
-								<button class="btn-secondary" style="padding: 4px 8px; font-size: 11px;" title="@Loc["Dashboard_ExportCdeskTooltip"]" @onclick="() => ExportCdeskAsync(t.Id, t.Name)">
+								<button class="btn-secondary" style="padding: 4px 8px; font-size: 11px;" title="@Loc["Dashboard_ExportCdeskTooltip"]" aria-label="@($"{Loc["Dashboard_ExportCdeskTooltip"]}: {t.Name}")" @onclick="() => ExportCdeskAsync(t.Id, t.Name)">
 									<AppIcon Name="download" Size="12" />
 								</button>
-								<button class="btn-danger" style="padding: 4px 8px; font-size: 11px;" title="@Loc["Dashboard_DeleteTooltip"]" @onclick="() => RequestDeleteTournament(t.Id, t.Name)">
+								<button class="btn-danger" style="padding: 4px 8px; font-size: 11px;" title="@Loc["Dashboard_DeleteTooltip"]" aria-label="@($"{Loc["Dashboard_DeleteTooltip"]}: {t.Name}")" @onclick="() => RequestDeleteTournament(t.Id, t.Name)">
 									<AppIcon Name="trash" Size="12" />
 								</button>
-								<button class="btn-primary" style="padding: 5px 12px; font-size: 12px;" @onclick="() => OpenTournamentAsync(t.Id)">
+								<button class="btn-primary" style="padding: 5px 12px; font-size: 12px;" aria-label="@($"{Loc["Common_Open"]}: {t.Name}")" @onclick="() => OpenTournamentAsync(t.Id)">
+
 									<span>@Loc["Common_Open"]</span>
 									<AppIcon Name="play" Size="11" />
 								</button>

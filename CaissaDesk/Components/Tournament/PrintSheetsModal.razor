@@ -32,26 +32,27 @@
 			<!-- Print Toolbar: Sheet Selector & Round Selector -->
 			<div class="no-print" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; background-color: var(--bg-surface-elevated); padding: 12px; border-radius: 8px; border: 1px solid var(--border-subtle);">
 				<!-- Sheet Type Pills -->
-				<div style="display: flex; flex-wrap: wrap; gap: 6px;">
-					<button type="button" class="@GetSheetTabClass(PrintSheetType.PairingsBoard)" @onclick="() => _sheetType = PrintSheetType.PairingsBoard">
+				<div role="group" aria-label="@Loc["Print_SheetTypeGroup"]" style="display: flex; flex-wrap: wrap; gap: 6px;">
+
+					<button type="button" class="@GetSheetTabClass(PrintSheetType.PairingsBoard)" aria-pressed="@(_sheetType == PrintSheetType.PairingsBoard ? "true" : "false")" @onclick="() => _sheetType = PrintSheetType.PairingsBoard">
 						<span>@Loc["Print_PairingsBoard"]</span>
 					</button>
-					<button type="button" class="@GetSheetTabClass(PrintSheetType.PairingsAlphabetical)" @onclick="() => _sheetType = PrintSheetType.PairingsAlphabetical">
+					<button type="button" class="@GetSheetTabClass(PrintSheetType.PairingsAlphabetical)" aria-pressed="@(_sheetType == PrintSheetType.PairingsAlphabetical ? "true" : "false")" @onclick="() => _sheetType = PrintSheetType.PairingsAlphabetical">
 						<span>@Loc["Print_PairingsAlpha"]</span>
 					</button>
-					<button type="button" class="@GetSheetTabClass(PrintSheetType.Standings)" @onclick="() => _sheetType = PrintSheetType.Standings">
+					<button type="button" class="@GetSheetTabClass(PrintSheetType.Standings)" aria-pressed="@(_sheetType == PrintSheetType.Standings ? "true" : "false")" @onclick="() => _sheetType = PrintSheetType.Standings">
 						<span>@Loc["Nav_Standings"]</span>
 					</button>
 					@if (Tournament.System == TournamentSystem.RoundRobin)
 					{
-						<button type="button" class="@GetSheetTabClass(PrintSheetType.CrossTable)" @onclick="() => _sheetType = PrintSheetType.CrossTable">
+						<button type="button" class="@GetSheetTabClass(PrintSheetType.CrossTable)" aria-pressed="@(_sheetType == PrintSheetType.CrossTable ? "true" : "false")" @onclick="() => _sheetType = PrintSheetType.CrossTable">
 							<span>@Loc["Print_BergerTable"]</span>
 						</button>
 					}
-					<button type="button" class="@GetSheetTabClass(PrintSheetType.MatchSlips)" @onclick="() => _sheetType = PrintSheetType.MatchSlips">
+					<button type="button" class="@GetSheetTabClass(PrintSheetType.MatchSlips)" aria-pressed="@(_sheetType == PrintSheetType.MatchSlips ? "true" : "false")" @onclick="() => _sheetType = PrintSheetType.MatchSlips">
 						<span>@Loc["Print_MatchSlips"]</span>
 					</button>
-					<button type="button" class="@GetSheetTabClass(PrintSheetType.FideTrf)" @onclick="() => _sheetType = PrintSheetType.FideTrf">
+					<button type="button" class="@GetSheetTabClass(PrintSheetType.FideTrf)" aria-pressed="@(_sheetType == PrintSheetType.FideTrf ? "true" : "false")" @onclick="() => _sheetType = PrintSheetType.FideTrf">
 						<span>@Loc["Print_FideTrf"]</span>
 					</button>
 				</div>
@@ -61,11 +62,11 @@
 					@if (_sheetType == PrintSheetType.PairingsBoard || _sheetType == PrintSheetType.PairingsAlphabetical || _sheetType == PrintSheetType.MatchSlips)
 					{
 						<div style="display: flex; align-items: center; gap: 6px;">
-							<span style="font-size: 12px; color: var(--text-secondary);">@Loc["Print_Round"]</span>
-							<select class="form-select form-select-sm" style="width: auto;" @bind="_selectedRound">
+							<label for="@($"{_titleId}-round")" style="font-size: 12px; color: var(--text-secondary);">@Loc["Print_Round"]</label>
+							<select class="form-select form-select-sm" id="@($"{_titleId}-round")" style="width: auto;" @bind="_selectedRound">
 								@foreach (var r in Tournament.Rounds.OrderBy(r => r.RoundNumber))
 								{
-									<option value="@r.RoundNumber">@Loc["Common_Round"] @r.RoundNumber</option>
+									<option value="@r.RoundNumber">@Loc["Pairings_RoundNum", r.RoundNumber]</option>
 								}
 							</select>
 						</div>
@@ -124,14 +125,14 @@
 						<table class="printable-table">
 							<thead>
 								<tr>
-									<th style="width: 45px; text-align: center;">Bd</th>
+									<th style="width: 45px; text-align: center;">@Loc["Print_ColBoard"]</th>
 									<th style="width: 65px; text-align: center;">@Loc["Common_White"]</th>
 									<th>@Loc["Print_WhitePlayerName"]</th>
-									<th style="width: 45px; text-align: center;">Fed</th>
-									<th style="width: 55px; text-align: right;">Elo</th>
+									<th style="width: 45px; text-align: center;">@Loc["Print_ColFed"]</th>
+									<th style="width: 55px; text-align: right;">@Loc["Print_ColElo"]</th>
 									<th style="width: 80px; text-align: center;">@Loc["Common_Result"]</th>
-									<th style="width: 55px; text-align: right;">Elo</th>
-									<th style="width: 45px; text-align: center;">Fed</th>
+									<th style="width: 55px; text-align: right;">@Loc["Print_ColElo"]</th>
+									<th style="width: 45px; text-align: center;">@Loc["Print_ColFed"]</th>
 									<th>@Loc["Print_BlackPlayerName"]</th>
 									<th style="width: 65px; text-align: center;">@Loc["Common_Black"]</th>
 								</tr>
@@ -146,20 +147,20 @@
 										<td style="text-align: center; font-weight: 700;">@pairing.BoardNumber</td>
 										<td style="text-align: center; font-size: 9pt; color: #666;">@(white != null ? $"#{white.StartRank}" : "-")</td>
 										<td style="font-weight: 600;">
-											@(white != null ? (!string.IsNullOrEmpty(white.Title) ? $"[{white.Title}] " : "") + white.FullName : "BYE")
+											@(white != null ? (!string.IsNullOrEmpty(white.Title) ? $"[{white.Title}] " : "") + white.FullName : Loc["Pairings_Bye"])
 										</td>
 										<td style="text-align: center; font-size: 9pt;">@(white?.Federation ?? "-")</td>
 										<td style="text-align: right; font-family: monospace;">@(white?.FideRating > 0 ? white.FideRating.ToString() : "-")</td>
 
 										<!-- Result Box -->
 										<td style="text-align: center; font-weight: 700; font-family: monospace; font-size: 11pt; border-left: 2px solid #222; border-right: 2px solid #222; background-color: #fafafa;">
-											@(pairing.Result == MatchResult.NotPlayed ? "   -   " : pairing.Result.ToDisplayString())
+											@(pairing.Result == MatchResult.NotPlayed ? "   -   " : Loc.ResultLabel(pairing.Result))
 										</td>
 
 										<td style="text-align: right; font-family: monospace;">@(black?.FideRating > 0 ? black.FideRating.ToString() : "-")</td>
 										<td style="text-align: center; font-size: 9pt;">@(black?.Federation ?? "-")</td>
 										<td style="font-weight: 600;">
-											@(black != null ? (!string.IsNullOrEmpty(black.Title) ? $"[{black.Title}] " : "") + black.FullName : "BYE")
+											@(black != null ? (!string.IsNullOrEmpty(black.Title) ? $"[{black.Title}] " : "") + black.FullName : Loc["Pairings_Bye"])
 										</td>
 										<td style="text-align: center; font-size: 9pt; color: #666;">@(black != null ? $"#{black.StartRank}" : "-")</td>
 									</tr>
@@ -198,11 +199,11 @@
 
 							if (white != null)
 							{
-								alphaList.Add((white, pairing.BoardNumber, "White", black != null ? black.FullName : "BYE", black?.FideRating ?? 0));
+								alphaList.Add((white, pairing.BoardNumber, "White", black != null ? black.FullName : Loc["Pairings_Bye"], black?.FideRating ?? 0));
 							}
 							if (black != null)
 							{
-								alphaList.Add((black, pairing.BoardNumber, "Black", white != null ? white.FullName : "BYE", white?.FideRating ?? 0));
+								alphaList.Add((black, pairing.BoardNumber, "Black", white != null ? white.FullName : Loc["Pairings_Bye"], white?.FideRating ?? 0));
 							}
 						}
 
@@ -211,10 +212,10 @@
 								<tr>
 									<th style="width: 40px; text-align: center;">@Loc["Common_Seed"]</th>
 									<th>@Loc["Common_Name"]</th>
-									<th style="width: 50px; text-align: center;">Fed</th>
-									<th style="width: 60px; text-align: right;">Elo</th>
+									<th style="width: 50px; text-align: center;">@Loc["Print_ColFed"]</th>
+									<th style="width: 60px; text-align: right;">@Loc["Print_ColElo"]</th>
 									<th style="width: 50px; text-align: center;">@Loc["Common_Board"]</th>
-									<th style="width: 60px; text-align: center;">Color</th>
+									<th style="width: 60px; text-align: center;">@Loc["Print_ColColor"]</th>
 									<th>@Loc["Print_Opponent"]</th>
 									<th style="width: 60px; text-align: right;">@Loc["Print_OppElo"]</th>
 								</tr>
@@ -254,12 +255,12 @@
 					<table class="printable-table">
 						<thead>
 							<tr>
-								<th style="width: 45px; text-align: center;">Rk</th>
+								<th style="width: 45px; text-align: center;">@Loc["Print_ColRank"]</th>
 								<th style="width: 45px; text-align: center;">@Loc["Common_Seed"]</th>
 								<th style="width: 45px; text-align: center;">@Loc["Common_Title"]</th>
 								<th>@Loc["Common_Name"]</th>
-								<th style="width: 45px; text-align: center;">Fed</th>
-								<th style="width: 60px; text-align: right;">Elo</th>
+								<th style="width: 45px; text-align: center;">@Loc["Print_ColFed"]</th>
+								<th style="width: 60px; text-align: right;">@Loc["Print_ColElo"]</th>
 								<th style="width: 50px; text-align: center;">@Loc["Common_Games"]</th>
 								<th style="width: 65px; text-align: right;">@Loc["Common_Points"]</th>
 								@foreach (var tb in tiebreaks)
@@ -292,7 +293,7 @@
 					</table>
 
 					<div style="margin-top: 24px; display: flex; justify-content: space-between; font-size: 9pt; color: #555;">
-						<div>Tiebreaks: @string.Join(" • ", tiebreaks.Select(t => t.ToFullName()))</div>
+						<div>@Loc["Print_TiebreaksLine", string.Join(" • ", tiebreaks.Select(t => Loc.TiebreakLabel(t)))]</div>
 						<div>@Loc["Print_ChiefArbiterSig"]</div>
 					</div>
 				}
@@ -313,7 +314,7 @@
 							<tr>
 								<th style="width: 35px; text-align: center;">#</th>
 								<th style="width: 170px;">@Loc["Common_Name"]</th>
-								<th style="width: 50px; text-align: right;">Elo</th>
+								<th style="width: 50px; text-align: right;">@Loc["Print_ColElo"]</th>
 								@foreach (var p in sortedPlayers)
 								{
 									<th style="width: 30px; text-align: center; font-family: monospace;">@p.StartRank</th>
@@ -368,7 +369,7 @@
 								<div class="match-slip">
 									<div style="display: flex; justify-content: space-between; border-bottom: 1.5px solid #333; padding-bottom: 4px; margin-bottom: 8px;">
 										<span style="font-weight: 800; font-size: 13pt;">@Loc["Print_BoardCard", pairing.BoardNumber]</span>
-										<span style="font-size: 10pt; color: #555;">@Loc["Common_Round"] @_selectedRound</span>
+										<span style="font-size: 10pt; color: #555;">@Loc["Pairings_RoundNum", _selectedRound]</span>
 									</div>
 
 									<div style="font-size: 10pt; margin-bottom: 10px;">

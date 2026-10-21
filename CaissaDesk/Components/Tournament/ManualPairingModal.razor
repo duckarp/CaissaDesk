@@ -22,14 +22,14 @@
 
 		<div class="modal-body" style="display: flex; flex-direction: column; gap: 16px;">
 			<div class="form-group">
-				<label class="form-label">@Loc["Manual_BoardNumber"]</label>
-				<input type="number" class="form-input" min="1" max="500" @bind="_boardNumber" />
+				<label class="form-label" for="@($"{_titleId}-board")">@Loc["Manual_BoardNumber"]</label>
+				<input type="number" class="form-input" id="@($"{_titleId}-board")" min="1" max="500" @bind="_boardNumber" />
 			</div>
 
 			<!-- White Player Selector -->
 			<div class="form-group">
-				<label class="form-label">@Loc["Manual_WhitePlayer"]</label>
-				<select class="form-select" @bind="_whitePlayerId">
+				<label class="form-label" for="@($"{_titleId}-white")">@Loc["Manual_WhitePlayer"]</label>
+				<select class="form-select" id="@($"{_titleId}-white")" @bind="_whitePlayerId">
 					<option value="">@Loc["Manual_SelectWhite"]</option>
 					@foreach (var p in Tournament.Players.OrderBy(p => p.StartRank))
 					{
@@ -42,8 +42,8 @@
 
 			<!-- Black Player Selector (or Bye) -->
 			<div class="form-group">
-				<label class="form-label">@Loc["Manual_BlackPlayer"]</label>
-				<select class="form-select" @bind="_blackPlayerId">
+				<label class="form-label" for="@($"{_titleId}-black")">@Loc["Manual_BlackPlayer"]</label>
+				<select class="form-select" id="@($"{_titleId}-black")" @bind="_blackPlayerId">
 					<option value="">@Loc["Manual_NoneBye"]</option>
 					@foreach (var p in Tournament.Players.OrderBy(p => p.StartRank))
 					{
@@ -59,8 +59,8 @@
 
 			<!-- Initial Match Result -->
 			<div class="form-group">
-				<label class="form-label">@Loc["Common_Result"]</label>
-				<select class="form-select" @bind="_result">
+				<label class="form-label" for="@($"{_titleId}-result")">@Loc["Common_Result"]</label>
+				<select class="form-select" id="@($"{_titleId}-result")" @bind="_result">
 					<option value="@MatchResult.NotPlayed">@Loc["Result_ResetNotPlayed"]</option>
 					<option value="@MatchResult.WhiteWin">@Loc["Result_WhiteWin"]</option>
 					<option value="@MatchResult.Draw">@Loc["Result_Draw"]</option>
@@ -77,8 +77,8 @@
 
 			<!-- Remarks -->
 			<div class="form-group">
-				<label class="form-label">@Loc["Result_ArbiterRemarks"]</label>
-				<input type="text" class="form-input" placeholder="@Loc["Result_RemarksPlaceholder"]" @bind="_remarks" />
+				<label class="form-label" for="@($"{_titleId}-remarks")">@Loc["Result_ArbiterRemarks"]</label>
+				<input type="text" class="form-input" id="@($"{_titleId}-remarks")" placeholder="@Loc["Result_RemarksPlaceholder"]" @bind="_remarks" />
 			</div>
 		</div>
 
@@ -186,7 +186,7 @@
 			_whitePlayerId = "";
 			_blackPlayerId = "";
 			_result = MatchResult.NotPlayed;
-			_remarks = "Manual Pairing";
+			_remarks = Loc["Manual_DefaultRemark"];
 		}
 	}
 

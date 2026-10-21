@@ -39,45 +39,37 @@
 					<div class="panel-title" style="margin-bottom: 8px;">@Loc["Attendance_LateRegTitle"]</div>
 					<div style="display: grid; grid-template-columns: 1.5fr 1.5fr 1fr 1fr 1fr; gap: 10px; margin-bottom: 10px;">
 						<div>
-							<label class="form-label">@Loc["Common_LastName"]</label>
-							<input type="text" class="form-input" placeholder="e.g. Anand" @bind="_lateLastName" />
+							<label class="form-label" for="@($"{_titleId}-last")">@Loc["Common_LastName"]</label>
+							<input type="text" class="form-input" id="@($"{_titleId}-last")" placeholder="@Loc["Player_PlaceholderLastName"]" @bind="_lateLastName" />
 						</div>
 						<div>
-							<label class="form-label">@Loc["Common_FirstName"]</label>
-							<input type="text" class="form-input" placeholder="e.g. Viswanathan" @bind="_lateFirstName" />
+							<label class="form-label" for="@($"{_titleId}-first")">@Loc["Common_FirstName"]</label>
+							<input type="text" class="form-input" id="@($"{_titleId}-first")" placeholder="@Loc["Player_PlaceholderFirstName"]" @bind="_lateFirstName" />
 						</div>
 						<div>
-							<label class="form-label">@Loc["Common_Title"]</label>
-							<select class="form-select" @bind="_lateTitle">
-								<option value="">None</option>
-								<option value="GM">GM</option>
-								<option value="IM">IM</option>
-								<option value="FM">FM</option>
-								<option value="CM">CM</option>
-								<option value="WGM">WGM</option>
-								<option value="WIM">WIM</option>
-								<option value="WFM">WFM</option>
-								<option value="WCM">WCM</option>
-								<option value="AGM">AGM</option>
-								<option value="AIM">AIM</option>
-								<option value="AFM">AFM</option>
-								<option value="ACM">ACM</option>
+							<label class="form-label" for="@($"{_titleId}-title")">@Loc["Common_Title"]</label>
+							<select class="form-select" id="@($"{_titleId}-title")" @bind="_lateTitle">
+								<option value="">@Loc["Common_None"]</option>
+								@foreach (var titleCode in LocalizationExtensions.TitleCodes)
+								{
+									<option value="@titleCode">@titleCode</option>
+								}
 							</select>
 						</div>
 						<div>
-							<label class="form-label">@Loc["Common_Federation"]</label>
-							<input type="text" class="form-input" @bind="_lateFed" maxlength="3" />
+							<label class="form-label" for="@($"{_titleId}-fed")">@Loc["Common_Federation"]</label>
+							<input type="text" class="form-input" id="@($"{_titleId}-fed")" @bind="_lateFed" maxlength="3" />
 						</div>
 						<div>
-							<label class="form-label">@Loc["Roster_FideElo"]</label>
-							<input type="number" class="form-input" @bind="_lateRating" min="0" max="3000" />
+							<label class="form-label" for="@($"{_titleId}-elo")">@Loc["Roster_FideElo"]</label>
+							<input type="number" class="form-input" id="@($"{_titleId}-elo")" @bind="_lateRating" min="0" max="3000" />
 						</div>
 					</div>
 
 					<div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
 						<div style="display: flex; align-items: center; gap: 8px;">
-							<span class="form-label" style="margin: 0;">@Loc["Attendance_MissedRounds"]</span>
-							<select class="form-select" style="width: auto;" @bind="_lateByeType">
+							<label class="form-label" for="@($"{_titleId}-missed")" style="margin: 0;">@Loc["Attendance_MissedRounds"]</label>
+							<select class="form-select" id="@($"{_titleId}-missed")" style="width: auto;" @bind="_lateByeType">
 								<option value="@ByeType.HalfPoint">@Loc["Bye_HalfPerRound"]</option>
 								<option value="@ByeType.ZeroPoint">@Loc["Bye_ZeroPerRound"]</option>
 								<option value="@ByeType.None">@Loc["Bye_NoByes"]</option>
@@ -104,7 +96,7 @@
 							@for (int r = 1; r <= Tournament.TotalRounds; r++)
 							{
 								int roundNum = r;
-								<th style="width: 65px; text-align: center;">R@(roundNum)</th>
+								<th style="width: 65px; text-align: center;">@Loc["Attendance_RoundShort", roundNum]</th>
 							}
 							<th style="width: 100px; text-align: center;">@Loc["Common_Actions"]</th>
 						</tr>
@@ -129,7 +121,7 @@
 								</td>
 								<td style="text-align: center;">
 									<span class="@(player.Status == PlayerStatus.Active ? "badge badge-green" : "badge badge-gray")">
-										@player.Status
+										@Loc.PlayerStatusLabel(player.Status)
 									</span>
 								</td>
 
@@ -155,13 +147,13 @@
 											if (existingPairing != null && existingPairing.IsBye)
 											{
 												<span class="badge badge-gold" style="font-size: 10px;" title="@existingPairing.Remarks">
-													@(existingPairing.Result == MatchResult.ByeHalf ? "½ Bye" :
-													  existingPairing.Result is MatchResult.ByeFull or MatchResult.ByeFullRequested ? "1 Bye" : "0 Bye")
+													@Loc.ByeShortLabel(existingPairing.Result == MatchResult.ByeHalf ? ByeType.HalfPoint :
+													  existingPairing.Result is MatchResult.ByeFull or MatchResult.ByeFullRequested ? ByeType.FullPoint : ByeType.ZeroPoint)
 												</span>
 											}
 											else if (existingPairing != null)
 											{
-												<span class="badge badge-blue" style="font-size: 10px;" title="Paired">Paired</span>
+												<span class="badge badge-blue" style="font-size: 10px;" title="@Loc["Attendance_Paired"]">@Loc["Attendance_Paired"]</span>
 											}
 											else
 											{
@@ -174,9 +166,10 @@
 											<button type="button"
 													class="@GetByeButtonClass(currentBye)"
 													style="padding: 2px 6px; font-size: 11px; min-width: 44px; cursor: pointer;"
-													title="Click to cycle: None -> ½ Pt -> 0 Pt"
+													title="@Loc["Attendance_CycleByeTooltip"]"
+													aria-label="@Loc["Attendance_ByeCellLabel", player.FullName, roundNum, currentBye == ByeType.None ? Loc["Bye_NoByes"] : Loc.ByeShortLabel(currentBye)]"
 													@onclick="() => CycleByeRequest(player, roundNum)">
-												@GetByeDisplayLabel(currentBye)
+												@Loc.ByeShortLabel(currentBye)
 											</button>
 										}
 									</td>
@@ -185,13 +178,13 @@
 								<td style="text-align: center;">
 									@if (player.Status == PlayerStatus.Active)
 									{
-										<button class="btn-danger" style="padding: 3px 8px; font-size: 11px;" title="Withdraw player from future rounds" @onclick="() => WithdrawPlayer(player.Id)">
+										<button class="btn-danger" style="padding: 3px 8px; font-size: 11px;" title="@Loc["Attendance_WithdrawTooltip"]" @onclick="() => WithdrawPlayer(player.Id)">
 											@Loc["Attendance_Withdraw"]
 										</button>
 									}
 									else
 									{
-										<button class="btn-secondary" style="padding: 3px 8px; font-size: 11px;" title="Reactivate player" @onclick="() => ReactivatePlayer(player.Id)">
+										<button class="btn-secondary" style="padding: 3px 8px; font-size: 11px;" title="@Loc["Attendance_ReactivateTooltip"]" @onclick="() => ReactivatePlayer(player.Id)">
 											@Loc["Attendance_Reactivate"]
 										</button>
 									}
@@ -276,14 +269,6 @@
 		_ => "btn-secondary"
 	};
 
-	private string GetByeDisplayLabel(ByeType bye) => bye switch
-	{
-		ByeType.HalfPoint => "½ Bye",
-		ByeType.ZeroPoint => "0 Bye",
-		ByeType.FullPoint => "1 Bye",
-		_ => "-"
-	};
-
 	private async Task CycleByeRequest(Player player, int roundNumber)
 	{
 		if (Tournament == null) return;
@@ -303,7 +288,7 @@
 	private async Task WithdrawPlayer(string playerId)
 	{
 		if (Tournament == null) return;
-		ArbiterService.WithdrawPlayer(Tournament, playerId, "Withdrawn by arbiter");
+		ArbiterService.WithdrawPlayer(Tournament, playerId, Loc["Attendance_WithdrawnReason"]);
 		await OnSaved.InvokeAsync();
 	}
 

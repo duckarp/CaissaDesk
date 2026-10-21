@@ -31,7 +31,7 @@
 		<div class="modal-body">
 			<!-- Instant FIDE ID lookup tool -->
 			<div class="panel-card" style="margin-bottom: 16px; background-color: var(--bg-surface-elevated);">
-				<label class="form-label" style="display: flex; align-items: center; justify-content: space-between;">
+				<label class="form-label" for="@($"{_titleId}-lookup")" style="display: flex; align-items: center; justify-content: space-between;">
 					<span>@Loc["Roster_FideAutoLookup"]</span>
 					@if (_isSearching)
 					{
@@ -39,7 +39,7 @@
 					}
 				</label>
 				<div style="display: flex; gap: 8px;">
-					<input type="text" class="form-input" style="flex: 1;" placeholder="@Loc["Roster_FideLookupPrompt"]" @bind="_form.FideId" @bind:event="oninput" />
+					<input type="text" class="form-input" id="@($"{_titleId}-lookup")" style="flex: 1;" placeholder="@Loc["Roster_FideLookupPrompt"]" @bind="_form.FideId" @bind:event="oninput" />
 					<button class="btn-secondary" @onclick="LookupAsync" disabled="@(_isSearching || !_form.CanLookup)">
 						<AppIcon Name="search" Size="13" />
 						<span>@Loc["Roster_Fetch"]</span>
@@ -47,7 +47,7 @@
 				</div>
 				@if (!string.IsNullOrEmpty(_lookupMessage))
 				{
-					<div style="color: @(_lookupIsError ? "var(--accent-danger-hover)" : "var(--accent-success)"); font-size: 11px; margin-top: 6px;">
+					<div role="status" style="color: @(_lookupIsError ? "var(--accent-danger-hover)" : "var(--accent-success)"); font-size: 11px; margin-top: 6px;">
 						@_lookupMessage
 					</div>
 				}
@@ -55,87 +55,79 @@
 
 			<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
 				<div class="form-group">
-					<label class="form-label">@Loc["Common_LastName"] <span style="color: #ef4444;">*</span></label>
-					<input type="text" class="form-input" @bind="_form.LastName" placeholder="e.g. Kasparov" />
+					<label class="form-label" for="@($"{_titleId}-last")">@Loc["Common_LastName"] <span style="color: #ef4444;" aria-hidden="true">*</span></label>
+					<input type="text" class="form-input" id="@($"{_titleId}-last")" @bind="_form.LastName" placeholder="@Loc["Player_PlaceholderLastName"]" aria-required="true" />
 				</div>
 				<div class="form-group">
-					<label class="form-label">@Loc["Common_FirstName"]</label>
-					<input type="text" class="form-input" @bind="_form.FirstName" placeholder="e.g. Garry" />
+					<label class="form-label" for="@($"{_titleId}-first")">@Loc["Common_FirstName"]</label>
+					<input type="text" class="form-input" id="@($"{_titleId}-first")" @bind="_form.FirstName" placeholder="@Loc["Player_PlaceholderFirstName"]" />
 				</div>
 			</div>
 
 			<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
 				<div class="form-group">
-					<label class="form-label">@Loc["Common_Title"]</label>
-					<select class="form-select" @bind="_form.Title">
-						<option value="">None</option>
-						<option value="GM">GM (Grandmaster)</option>
-						<option value="IM">IM (International Master)</option>
-						<option value="FM">FM (FIDE Master)</option>
-						<option value="CM">CM (Candidate Master)</option>
-						<option value="WGM">WGM (Woman Grandmaster)</option>
-						<option value="WIM">WIM (Woman Int. Master)</option>
-						<option value="WFM">WFM (Woman FIDE Master)</option>
-						<option value="WCM">WCM (Woman Cand. Master)</option>
-						<option value="AGM">AGM (Arena Grandmaster)</option>
-						<option value="AIM">AIM (Arena Int. Master)</option>
-						<option value="AFM">AFM (Arena FIDE Master)</option>
-						<option value="ACM">ACM (Arena Cand. Master)</option>
+					<label class="form-label" for="@($"{_titleId}-title")">@Loc["Common_Title"]</label>
+					<select class="form-select" id="@($"{_titleId}-title")" @bind="_form.Title">
+						<option value="">@Loc["Common_None"]</option>
+						@foreach (var titleCode in LocalizationExtensions.TitleCodes)
+						{
+							<option value="@titleCode">@Loc.TitleOptionLabel(titleCode)</option>
+						}
 					</select>
 				</div>
 
 				<div class="form-group">
-					<label class="form-label">@Loc["Common_Federation"]</label>
-					<input type="text" class="form-input" @bind="_form.Federation" placeholder="e.g. SVK" maxlength="3" />
+					<label class="form-label" for="@($"{_titleId}-fed")">@Loc["Common_Federation"]</label>
+					<input type="text" class="form-input" id="@($"{_titleId}-fed")" @bind="_form.Federation" placeholder="@Loc["Player_PlaceholderFederation"]" maxlength="3" />
 				</div>
 			</div>
 
 			<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
 				<div class="form-group">
-					<label class="form-label">@Loc["Roster_FideElo"]</label>
-					<input type="number" class="form-input" @bind="_form.FideRating" min="0" max="3000" />
+					<label class="form-label" for="@($"{_titleId}-elo")">@Loc["Roster_FideElo"]</label>
+					<input type="number" class="form-input" id="@($"{_titleId}-elo")" @bind="_form.FideRating" min="0" max="3000" />
 				</div>
 
 				<div class="form-group">
-					<label class="form-label">@Loc["Common_NationalRating"]</label>
-					<input type="number" class="form-input" @bind="_form.NationalRating" min="0" max="3000" />
+					<label class="form-label" for="@($"{_titleId}-nat-elo")">@Loc["Common_NationalRating"]</label>
+					<input type="number" class="form-input" id="@($"{_titleId}-nat-elo")" @bind="_form.NationalRating" min="0" max="3000" />
 				</div>
 			</div>
 
 			<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
 				<div class="form-group">
-					<label class="form-label">@Loc["Common_Club"]</label>
-					<input type="text" class="form-input" @bind="_form.Club" placeholder="e.g. ŠK Slovan Bratislava" />
+					<label class="form-label" for="@($"{_titleId}-club")">@Loc["Common_Club"]</label>
+					<input type="text" class="form-input" id="@($"{_titleId}-club")" @bind="_form.Club" placeholder="@Loc["Player_PlaceholderClub"]" />
 				</div>
 
 				<div class="form-group">
-					<label class="form-label">@Loc["Roster_BirthYear"]</label>
-					<input type="number" class="form-input" @bind="_form.BirthYear" min="1900" max="2026" />
+					<label class="form-label" for="@($"{_titleId}-birth")">@Loc["Roster_BirthYear"]</label>
+					<input type="number" class="form-input" id="@($"{_titleId}-birth")" @bind="_form.BirthYear" min="1900" max="2026" />
 				</div>
 			</div>
 
 			<div style="display: grid; grid-template-columns: @(IsEdit ? "1fr 1fr 1fr" : "1fr 1fr"); gap: 12px;">
 				<div class="form-group">
-					<label class="form-label">@Loc["Common_Gender"]</label>
-					<select class="form-select" @bind="_form.Gender">
+					<label class="form-label" for="@($"{_titleId}-gender")">@Loc["Common_Gender"]</label>
+					<select class="form-select" id="@($"{_titleId}-gender")" @bind="_form.Gender">
 						<option value="M">@Loc["Common_Male"]</option>
 						<option value="F">@Loc["Common_Female"]</option>
 					</select>
 				</div>
 
 				<div class="form-group">
-					<label class="form-label">@Loc["Common_NationalId"]</label>
-					<input type="text" class="form-input" @bind="_form.NationalId" placeholder="e.g. 12345" />
+					<label class="form-label" for="@($"{_titleId}-nat-id")">@Loc["Common_NationalId"]</label>
+					<input type="text" class="form-input" id="@($"{_titleId}-nat-id")" @bind="_form.NationalId" placeholder="@Loc["Player_PlaceholderNationalId"]" />
 				</div>
 
 				@if (IsEdit)
 				{
 					<div class="form-group">
-						<label class="form-label">@Loc["Common_Status"]</label>
-						<select class="form-select" @bind="_form.Status">
-							<option value="@PlayerStatus.Active">Active</option>
-							<option value="@PlayerStatus.Paused">Paused</option>
-							<option value="@PlayerStatus.Withdrawn">Withdrawn</option>
+						<label class="form-label" for="@($"{_titleId}-status")">@Loc["Common_Status"]</label>
+						<select class="form-select" id="@($"{_titleId}-status")" @bind="_form.Status">
+							<option value="@PlayerStatus.Active">@Loc.PlayerStatusLabel(PlayerStatus.Active)</option>
+							<option value="@PlayerStatus.Paused">@Loc.PlayerStatusLabel(PlayerStatus.Paused)</option>
+							<option value="@PlayerStatus.Withdrawn">@Loc.PlayerStatusLabel(PlayerStatus.Withdrawn)</option>
 						</select>
 					</div>
 				}
@@ -221,7 +213,7 @@
 			{
 				PlayerLookupStatus.Found => (Loc["Roster_FideLookupSuccess", outcome.MatchedName ?? ""], false),
 				PlayerLookupStatus.NotFound => (Loc["Roster_FideLookupNotFound"], true),
-				_ => ($"Lookup failed: {outcome.FailureMessage}", true)
+				_ => (Loc["Roster_FideLookupFailed", outcome.FailureMessage ?? Loc["Settings_UnknownError"]], true)
 			};
 		}
 		finally

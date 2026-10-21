@@ -9,49 +9,53 @@
 @implements IDisposable
 
 <header class="app-header">
-	<div class="app-brand" @onclick="Workspace.SelectDashboard" title="CaissaDesk - Chess Tournament Management Workstation">
-		<img src="images/icon.svg" alt="CaissaDesk" class="brand-logo-icon" />
-		<span class="brand-title">
+	<button type="button" class="app-brand" @onclick="Workspace.SelectDashboard" title="@Loc["App_Title"]" aria-label="@Loc["App_BrandLabel", AppVersion]">
+		<img src="images/icon.svg" alt="" class="brand-logo-icon" />
+		<span class="brand-title" aria-hidden="true">
 			<strong class="brand-caissa">CAISSA</strong><span class="brand-desk">DESK</span>
 		</span>
-		<span class="brand-badge" title="CaissaDesk Desktop Workstation">
+		<span class="brand-badge" title="@Loc["App_VersionTooltip"]" aria-hidden="true">
 			<span>v@(AppVersion)</span>
 		</span>
-	</div>
+	</button>
 
 	<div class="header-actions">
-		<button class="btn-secondary" title="@Loc["Nav_Settings"]" @onclick="() => Workspace.CreateSettingsTab()">
+		<button type="button" class="btn-secondary" title="@Loc["Nav_Settings"]" @onclick="() => Workspace.CreateSettingsTab()">
 			<AppIcon Name="settings" Size="14" />
 			<span>@Loc["Nav_Settings"]</span>
 		</button>
-		<button class="btn-primary" @onclick="OpenCreateTournamentModal">
+		<button type="button" class="btn-primary" @onclick="OpenCreateTournamentModal">
 			<AppIcon Name="plus" Size="14" />
 			<span>@Loc["Nav_NewTournament"]</span>
 		</button>
 	</div>
 </header>
 
-<nav class="workspace-tabs-container">
+<nav class="workspace-tabs-container" aria-label="@Loc["Nav_OpenTabs"]">
 	<div class="tab-list">
 		@foreach (var tab in Workspace.Tabs)
 		{
 			bool isActive = tab == Workspace.ActiveTab;
-			string tabClass = isActive ? "workspace-tab tab-active" : "workspace-tab";
+			string tabClass = isActive ? "workspace-tab workspace-tab-group tab-active" : "workspace-tab workspace-tab-group";
+			string tabTitle = tab is DashboardTab ? Loc["Nav_Dashboard"] : tab is SettingsTab ? Loc["Nav_Settings"] : tab.Title;
 
-			<button class="@tabClass" @onclick="() => Workspace.SelectTab(tab.Id)">
-				<span class="tab-icon">
-					<AppIcon Name="@tab.Icon" Size="14" />
-				</span>
-				<span>@(tab is DashboardTab ? Loc["Nav_Dashboard"] : tab is SettingsTab ? Loc["Nav_Settings"] : tab.Title)</span>
+			@* Two sibling buttons (select, close) inside the tab pill: interactive content must not be nested *@
+			<div @key="tab.Id" class="@tabClass">
+				<button type="button" class="workspace-tab-select" aria-current="@(isActive ? "page" : null)" @onclick="() => Workspace.SelectTab(tab.Id)">
+					<span class="tab-icon">
+						<AppIcon Name="@tab.Icon" Size="14" />
+					</span>
+					<span>@tabTitle</span>
+				</button>
 				@if (tab.CanClose)
 				{
-					<span class="tab-close-btn" @onclick="() => Workspace.CloseTab(tab.Id)" @onclick:stopPropagation="true" title="@Loc["Nav_CloseTab"]">
+					<button type="button" class="tab-close-btn" @onclick="() => Workspace.CloseTab(tab.Id)" title="@Loc["Nav_CloseTab"]" aria-label="@Loc["Nav_CloseTabLabel", tabTitle]">
 						<AppIcon Name="x" Size="10" />
-					</span>
+					</button>
 				}
-			</button>
+			</div>
 		}
-		<button class="new-tab-btn" title="@Loc["Nav_NewTournament"]" @onclick="OpenCreateTournamentModal" type="button">
+		<button class="new-tab-btn" title="@Loc["Nav_NewTournament"]" aria-label="@Loc["Nav_NewTournament"]" @onclick="OpenCreateTournamentModal" type="button">
 			<AppIcon Name="plus" Size="13" />
 		</button>
 	</div>

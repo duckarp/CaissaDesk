@@ -49,7 +49,7 @@
 						</h2>
 						@if (_tournament.FideRated)
 						{
-							<span class="badge badge-gold" title="FIDE Rated Tournament">FIDE</span>
+							<span class="badge badge-gold" title="@Loc["Tournament_FideRated"]">FIDE</span>
 						}
 						@if (_tournament.IsFinished)
 						{
@@ -62,7 +62,7 @@
 					<div style="display: flex; align-items: center; gap: 12px; margin-top: 3px; font-size: 12px; color: var(--text-secondary);">
 						<span>@(_tournament.System == TournamentSystem.SwissDutch ? Loc["Tournament_SwissDutch"] : Loc["Tournament_RoundRobin"])</span>
 						<span>•</span>
-						<span>@_tournament.TimeControl (@_tournament.TimeControlDetails)</span>
+						<span>@Loc.TimeControlLabel(_tournament.TimeControl) (@_tournament.TimeControlDetails)</span>
 						<span>•</span>
 						<span>@Loc["Workbench_TotalRounds", _tournament.TotalRounds]</span>
 						@if (!string.IsNullOrEmpty(_tournament.ChiefArbiter))
@@ -76,20 +76,20 @@
 
 			<!-- Sub-view Navigation Pills -->
 			<div style="display: flex; align-items: center; gap: 10px;">
-				<div style="display: flex; align-items: center; background-color: var(--bg-surface-elevated); padding: 3px; border-radius: 6px; border: 1px solid var(--border-subtle);">
-					<button class="@GetNavButtonClass(TournamentView.Roster)" @onclick="() => SetView(TournamentView.Roster)">
+				<div role="group" aria-label="@Loc["Workbench_ViewsGroup"]" style="display: flex; align-items: center; background-color: var(--bg-surface-elevated); padding: 3px; border-radius: 6px; border: 1px solid var(--border-subtle);">
+					<button type="button" class="@GetNavButtonClass(TournamentView.Roster)" aria-pressed="@(Tab.CurrentView == TournamentView.Roster ? "true" : "false")" @onclick="() => SetView(TournamentView.Roster)">
 						<AppIcon Name="users" Size="13" />
 						<span>@Loc["Workbench_PlayersTab", _tournament.Players.Count]</span>
 					</button>
-					<button class="@GetNavButtonClass(TournamentView.Pairings)" @onclick="() => SetView(TournamentView.Pairings)">
+					<button type="button" class="@GetNavButtonClass(TournamentView.Pairings)" aria-pressed="@(Tab.CurrentView == TournamentView.Pairings ? "true" : "false")" @onclick="() => SetView(TournamentView.Pairings)">
 						<AppIcon Name="pairings" Size="13" />
 						<span>@Loc["Workbench_RoundsTab", _tournament.Rounds.Count]</span>
 					</button>
-					<button class="@GetNavButtonClass(TournamentView.Standings)" @onclick="() => SetView(TournamentView.Standings)">
+					<button type="button" class="@GetNavButtonClass(TournamentView.Standings)" aria-pressed="@(Tab.CurrentView == TournamentView.Standings ? "true" : "false")" @onclick="() => SetView(TournamentView.Standings)">
 						<AppIcon Name="medal" Size="13" />
 						<span>@Loc["Nav_Standings"]</span>
 					</button>
-					<button class="@GetNavButtonClass(TournamentView.Settings)" @onclick="() => SetView(TournamentView.Settings)">
+					<button type="button" class="@GetNavButtonClass(TournamentView.Settings)" aria-pressed="@(Tab.CurrentView == TournamentView.Settings ? "true" : "false")" @onclick="() => SetView(TournamentView.Settings)">
 						<AppIcon Name="settings" Size="13" />
 						<span>@Loc["Nav_Settings"]</span>
 					</button>
@@ -105,26 +105,26 @@
 				}
 				<button class="btn-secondary" 
 						style="height: 34px; padding: 0 12px; gap: 6px; @(isSyncEnabled ? "border-color: rgba(16, 185, 129, 0.4); color: #34d399;" : "opacity: 0.6; color: var(--text-muted);")" 
-						title="@(isSyncEnabled ? "Publish to CaissaResults Web Portal" : "Syncing disabled: Configure API key in Settings")" 
+						title="@(isSyncEnabled ? Loc["Workbench_PublishTooltip"] : Loc["Workbench_PublishDisabledTooltip"])" 
 						@onclick="PublishToCaissaResultsAsync" 
 						disabled="@(_isSyncingToWeb || !isSyncEnabled)">
 					@if (_isSyncingToWeb)
 					{
 						<span class="app-splash-spinner" style="width: 12px; height: 12px; margin: 0;"></span>
-						<span>Syncing...</span>
+						<span>@Loc["Workbench_Publishing"]</span>
 					}
 					else
 					{
 						<AppIcon Name="cloud" Size="14" />
-						<span>Publish to Web</span>
+						<span>@Loc["Workbench_PublishBtn"]</span>
 					}
 				</button>
 
 				@if (_hasPublishedToWeb)
 				{
-					<button class="btn-secondary" style="height: 34px; padding: 0 10px; gap: 6px; color: var(--accent-info-hover);" title="Open in CaissaResults Web Portal" @onclick="OpenWebPortal">
+					<button class="btn-secondary" style="height: 34px; padding: 0 10px; gap: 6px; color: var(--accent-info-hover);" title="@Loc["Workbench_ViewWebTooltip"]" @onclick="OpenWebPortal">
 						<AppIcon Name="globe" Size="14" />
-						<span>View Web</span>
+						<span>@Loc["Workbench_ViewWebBtn"]</span>
 					</button>
 				}
 			</div>
@@ -132,12 +132,12 @@
 
 		@if (!string.IsNullOrEmpty(_webSyncStatusMessage))
 		{
-			<div style="margin: 12px 20px 0 20px; padding: 8px 14px; border-radius: 6px; font-size: 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; @(_hasPublishedToWeb ? "background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.3); color: #34d399;" : "background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171;")">
+			<div role="status" style="margin: 12px 20px 0 20px; padding: 8px 14px; border-radius: 6px; font-size: 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; @(_hasPublishedToWeb ? "background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.3); color: #34d399;" : "background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171;")">
 				<div style="display: flex; align-items: center; gap: 8px;">
 					<AppIcon Name="@(_hasPublishedToWeb ? "check" : "alert")" Size="14" />
 					<span>@_webSyncStatusMessage</span>
 				</div>
-				<button style="background: none; border: none; cursor: pointer; color: inherit; opacity: 0.7; padding: 2px;" @onclick="() => _webSyncStatusMessage = null">✕</button>
+				<button type="button" style="background: none; border: none; cursor: pointer; color: inherit; opacity: 0.7; padding: 2px;" title="@Loc["Common_Dismiss"]" aria-label="@Loc["Common_Dismiss"]" @onclick="() => _webSyncStatusMessage = null"><AppIcon Name="x" Size="12" /></button>
 			</div>
 		}
 
@@ -257,7 +257,7 @@
 		if (_tournament == null) return;
 		if (!CaissaResultsSync.IsSyncConfigured)
 		{
-			_webSyncStatusMessage = "Upload disabled: CaissaResults API Key is not configured. Please enter the API key in Settings.";
+			_webSyncStatusMessage = Loc["Workbench_PublishNotConfigured"];
 			StateHasChanged();
 			return;
 		}
@@ -271,18 +271,20 @@
 			if (result.Success)
 			{
 				_hasPublishedToWeb = true;
-				_webSyncStatusMessage = "Successfully published to CaissaResults!";
+				_webSyncStatusMessage = Loc["Workbench_PublishSuccess"];
 				await TournamentRepo.SaveAsync(_tournament);
 			}
 			else
 			{
-				_webSyncStatusMessage = result.Message;
+				// The service message is a technical detail (HTTP status, transport error) and stays untranslated
+				_webSyncStatusMessage = Loc["Workbench_PublishFailed", string.IsNullOrEmpty(result.Message) ? Loc["Settings_UnknownError"] : result.Message];
 			}
 		}
 		catch (Exception ex)
 		{
 			Logger.LogError(ex, "Publishing tournament {TournamentId} to CaissaResults failed.", _tournament.Id);
-			_webSyncStatusMessage = $"Sync error: {ex.Message}";
+			_webSyncStatusMessage = Loc["Workbench_PublishError", ex.Message];
+
 		}
 		finally
 		{

@@ -22,22 +22,22 @@
 
 		<div class="modal-body">
 			<div class="form-group">
-				<label class="form-label">@Loc["Tournament_Name"]</label>
-				<input type="text" class="form-input" @bind="_name" placeholder="e.g. Autumn Open 2026" autofocus />
+				<label class="form-label" for="@($"{_titleId}-f1")">@Loc["Tournament_Name"]</label>
+				<input id="@($"{_titleId}-f1")" type="text" class="form-input" @bind="_name" placeholder="@Loc["Tournament_PlaceholderName"]" autofocus />
 			</div>
 
 			<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
 				<div class="form-group">
-					<label class="form-label">@Loc["Tournament_System"]</label>
-					<select class="form-select" @bind="_system">
+					<label class="form-label" for="@($"{_titleId}-f2")">@Loc["Tournament_System"]</label>
+					<select id="@($"{_titleId}-f2")" class="form-select" @bind="_system">
 						<option value="@TournamentSystem.SwissDutch">@Loc["Tournament_SwissDutch"]</option>
 						<option value="@TournamentSystem.RoundRobin">@Loc["Tournament_RoundRobin"]</option>
 					</select>
 				</div>
 
 				<div class="form-group">
-					<label class="form-label">@Loc["Tournament_TimeControl"]</label>
-					<select class="form-select" @bind="_timeControl">
+					<label class="form-label" for="@($"{_titleId}-f3")">@Loc["Tournament_TimeControl"]</label>
+					<select id="@($"{_titleId}-f3")" class="form-select" @bind="_timeControl">
 						<option value="@TimeControlCategory.Rapid">@Loc["TimeControl_Rapid"]</option>
 						<option value="@TimeControlCategory.Blitz">@Loc["TimeControl_Blitz"]</option>
 						<option value="@TimeControlCategory.Standard">@Loc["TimeControl_Standard"]</option>
@@ -47,37 +47,38 @@
 
 			<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
 				<div class="form-group">
-					<label class="form-label">@Loc["Tournament_TimeControlSpec"]</label>
-					<input type="text" class="form-input" @bind="_timeControlSpec" placeholder="e.g. 15m + 10s" />
+					<label class="form-label" for="@($"{_titleId}-f4")">@Loc["Tournament_TimeControlSpec"]</label>
+					<input id="@($"{_titleId}-f4")" type="text" class="form-input" @bind="_timeControlSpec" placeholder="@Loc["Settings_PlaceholderTimeControl"]" />
 				</div>
 
 				<div class="form-group">
-					<label class="form-label">@Loc["Tournament_TotalRounds"]</label>
-					<input type="number" class="form-input" @bind="_totalRounds" min="1" max="25" />
-				</div>
-			</div>
-
-			<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-				<div class="form-group">
-					<label class="form-label">@Loc["Tournament_ChiefArbiter"]</label>
-					<input type="text" class="form-input" @bind="_chiefArbiter" placeholder="e.g. IA Tomas K." />
-				</div>
-
-				<div class="form-group">
-					<label class="form-label">@Loc["Tournament_Venue"]</label>
-					<input type="text" class="form-input" @bind="_venue" placeholder="e.g. Chess Hall" />
+					<label class="form-label" for="@($"{_titleId}-f5")">@Loc["Tournament_TotalRounds"]</label>
+					<input id="@($"{_titleId}-f5")" type="number" class="form-input" @bind="_totalRounds" min="1" max="25" />
 				</div>
 			</div>
 
 			<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
 				<div class="form-group">
-					<label class="form-label">@Loc["Tournament_Federation"]</label>
-					<input type="text" class="form-input" @bind="_federation" placeholder="e.g. SVK" maxlength="3" />
+					<label class="form-label" for="@($"{_titleId}-f6")">@Loc["Tournament_ChiefArbiter"]</label>
+					<input id="@($"{_titleId}-f6")" type="text" class="form-input" @bind="_chiefArbiter" placeholder="@Loc["Settings_PlaceholderChiefArbiter"]" />
 				</div>
 
 				<div class="form-group">
-					<label class="form-label">@Loc["Tournament_SeedingPrecedence"]</label>
-					<select class="form-select" @bind="_seeding">
+					<label class="form-label" for="@($"{_titleId}-f7")">@Loc["Tournament_Venue"]</label>
+					<input id="@($"{_titleId}-f7")" type="text" class="form-input" @bind="_venue" placeholder="@Loc["Settings_PlaceholderVenue"]" />
+				</div>
+			</div>
+
+			<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+				<div class="form-group">
+					<label class="form-label" for="@($"{_titleId}-f8")">@Loc["Tournament_Federation"]</label>
+					<input id="@($"{_titleId}-f8")" type="text" class="form-input" @bind="_federation" placeholder="@Loc["Settings_PlaceholderFederation"]"
+ maxlength="3" />
+				</div>
+
+				<div class="form-group">
+					<label class="form-label" for="@($"{_titleId}-f9")">@Loc["Tournament_SeedingPrecedence"]</label>
+					<select id="@($"{_titleId}-f9")" class="form-select" @bind="_seeding">
 						<option value="@SeedingPrecedence.FideFirst">@Loc["Tournament_FideFirst"]</option>
 						<option value="@SeedingPrecedence.NationalFirst">@Loc["Tournament_NationalFirst"]</option>
 					</select>
@@ -85,8 +86,8 @@
 			</div>
 
 			<div class="form-group">
-				<label class="form-label">@Loc["Tournament_TopSeedColor"]</label>
-				<select class="form-select" @bind="_topSeedColor">
+				<label class="form-label" for="@($"{_titleId}-f10")">@Loc["Tournament_TopSeedColor"]</label>
+				<select id="@($"{_titleId}-f10")" class="form-select" @bind="_topSeedColor">
 					<option value="@TopSeedColorWhite">@Loc["Common_White"]</option>
 					<option value="@TopSeedColorBlack">@Loc["Common_Black"]</option>
 					<option value="@TopSeedColorRandom">@Loc["Tournament_TopSeedColorRandom"]</option>
@@ -95,8 +96,8 @@
 			</div>
 
 			<div style="display: flex; align-items: center; gap: 8px; margin-top: 6px;">
-				<input type="checkbox" id="fideRatedCheck" @bind="_fideRated" style="cursor: pointer; width: 16px; height: 16px; accent-color: var(--brand-gold);" />
-				<label for="fideRatedCheck" style="font-size: 13px; color: var(--text-primary); cursor: pointer; user-select: none;">
+				<input type="checkbox" id="@($"{_titleId}-fide-rated")" @bind="_fideRated" style="cursor: pointer; width: 16px; height: 16px; accent-color: var(--brand-gold);" />
+				<label for="@($"{_titleId}-fide-rated")" style="font-size: 13px; color: var(--text-primary); cursor: pointer; user-select: none;">
 					@Loc["Tournament_FideRated"]
 				</label>
 			</div>
@@ -119,13 +120,14 @@
 	[Parameter] public EventCallback<Tournament> OnCreated { get; set; }
 
 	private bool _wasOpen = false;
-	private string _name = "Club Championship 2026";
+	// Filled from the application defaults by LoadDefaults()
+	private string _name = "";
 	private TournamentSystem _system = TournamentSystem.SwissDutch;
 	private TimeControlCategory _timeControl = TimeControlCategory.Rapid;
-	private string _timeControlSpec = "15m + 10s";
+	private string _timeControlSpec = "";
 	private int _totalRounds = 7;
-	private string _chiefArbiter = "Tomas K.";
-	private string _venue = "Chess Club";
+	private string _chiefArbiter = "";
+	private string _venue = "";
 	private string _federation = "SVK";
 	private SeedingPrecedence _seeding = SeedingPrecedence.FideFirst;
 	private bool _fideRated = true;
@@ -153,7 +155,8 @@
 	private void LoadDefaults()
 	{
 		var s = AppSettings.Settings;
-		_name = $"Open {DateTime.Today.Year}";
+		_name = Loc["Tournament_DefaultName", DateTime.Today.Year];
+
 		_system = s.DefaultSystem;
 		_timeControl = s.DefaultTimeControl;
 		_timeControlSpec = s.DefaultTimeControlDetails;

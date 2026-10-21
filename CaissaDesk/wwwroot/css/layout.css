@@ -291,3 +291,41 @@
   from { opacity: 0; }
   to { opacity: 1; }
 }
+
+/* Accessibility helpers */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Keyboard focus ring for controls that have no focus style of their own */
+button:focus-visible,
+a:focus-visible,
+[tabindex]:not([tabindex="-1"]):focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+/* Dialog boxes take focus programmatically (tabindex=-1) and need no ring */
+.modal-content:focus {
+  outline: none;
+}
+
+/* Engine choice cards are selected through a visually hidden radio */
+.engine-choice-card:focus-within {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+/* Label-styled file pickers: show the focus ring of the visually hidden file input */
+.file-picker-btn:focus-within {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
