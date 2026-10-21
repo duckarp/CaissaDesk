@@ -1,6 +1,6 @@
 # CaissaDesk: Implementation Plan & Architectural Roadmap
 
-A modern, high-performance, open-source chess tournament management workstation and Swiss-Manager alternative built with **.NET 10** and **Photino.Blazor**.
+A modern, high-performance, open-source chess tournament management workstation built with **.NET 10** and **Photino.Blazor**.
 
 ---
 

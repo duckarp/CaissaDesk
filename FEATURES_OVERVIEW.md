@@ -1,6 +1,6 @@
 # CaissaDesk: Feature Status & Roadmap Overview
 
-A modern, high-performance, open-source chess tournament management workstation and Swiss-Manager replacement built on **.NET 10** and **Photino.Blazor**.
+A modern, high-performance, open-source chess tournament management workstation built on **.NET 10** and **Photino.Blazor**.
 
 ---
 
@@ -82,7 +82,7 @@ A modern, high-performance, open-source chess tournament management workstation 
    - *Planned*: Bulk import from CSV, Excel (`.xlsx`), or plain text roster files (e.g. from Google Forms or national federation registration lists).
 
 2. **Chess-Results.com Direct Upload**:
-   - `ChessResultsScoutingService` currently scrapes tournament info; direct upload/FTP publishing or generating custom Swiss-Manager `.tun`/upload packages for Chess-Results is not yet implemented.
+   - `ChessResultsScoutingService` currently scrapes tournament info; direct upload/FTP publishing or generating custom upload packages for online servers is not yet implemented.
 
 3. **Team & Special Tournament Systems**:
    - Team Swiss and Team Round Robin (match points vs. game points, board order rosters).

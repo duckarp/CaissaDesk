@@ -12,7 +12,7 @@
 [![Tests](https://img.shields.io/badge/Tests-86%20Passing-success.svg?style=flat-square)](https://github.com/duckarp/CaissaDesk/actions)
 [![License](https://img.shields.io/badge/License-GPLv3-blue.svg?style=flat-square)](LICENSE)
 
-*Caissalytics' sister desktop workstation: a modern, lightweight, open-source replacement for legacy tournament software like Swiss-Manager. Built with .NET 10, Photino.Blazor native desktop shell, SQLite, and FIDE-certified pairing engines.*
+*Caissalytics' sister desktop workstation: a modern, lightweight, open-source alternative to legacy tournament software. Built with .NET 10, Photino.Blazor native desktop shell, SQLite, and FIDE-certified pairing engines.*
 
 [Key Features](#-key-features) • [Pairing Engines](#-fide-pairing-engines) • [Tiebreak Systems](#-fide-tiebreak-engine) • [Downloads](#-installation--downloads) • [Building](#-building-from-source)
 
