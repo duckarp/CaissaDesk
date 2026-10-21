@@ -3,6 +3,7 @@ using Caissa.Shared.Tiebreak;
 using CaissaDesk.Components;
 using CaissaDesk.Core.Arbiter;
 using CaissaDesk.Core.PairingEngine;
+using CaissaDesk.Core.Roster;
 using CaissaDesk.Data;
 using CaissaDesk.Localization;
 using CaissaDesk.Logging;
@@ -72,6 +73,9 @@ internal class Program
         appBuilder.Services.AddSingleton<INationalScoutingService, NationalScoutingService>();
         appBuilder.Services.AddSingleton<ICaissaResultsSyncService, CaissaResultsSyncService>();
         appBuilder.Services.AddSingleton<IChessResultsScoutingService, ChessResultsScoutingService>();
+        appBuilder.Services.AddSingleton<IRoundGenerationService, RoundGenerationService>();
+        appBuilder.Services.AddSingleton<IRosterService, RosterService>();
+        appBuilder.Services.AddSingleton<IPlayerLookupService, PlayerLookupService>();
         appBuilder.Services.AddScoped<WorkspaceState>();
         appBuilder.Services.AddScoped<LocalizationService>(sp =>
             new LocalizationService(sp.GetRequiredService<IAppSettingsService>()));
