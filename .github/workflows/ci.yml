@@ -21,11 +21,4 @@ jobs:
           dotnet-version: '10.0.x'
 
       - name: Build and Test
-        run: |
-          if ! dotnet test --configuration Release --logger "console;verbosity=detailed" > test.log 2>&1; then
-            cat test.log
-            ERR=$(grep -E "(FAILED|Failed|Error|Exception)" test.log | head -n 5 | tr '\r\n' ' | ')
-            echo "::error title=BuildTestFailed::$ERR"
-            exit 1
-          fi
-          cat test.log
+        run: dotnet test --configuration Release

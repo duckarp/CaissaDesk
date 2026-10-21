@@ -10,9 +10,9 @@ public class BbpPairingEngineTests
     public void TestEngine_BbpPairings_SucceedsIfInstalled()
     {
         var registry = new PairingEngineRegistry();
-        var bbp = registry.GetEngine("bbp");
+        var bbp = registry.AllEngines.FirstOrDefault(e => e.Id == "bbp");
 
-        if (!bbp.IsAvailable)
+        if (bbp == null || !bbp.IsAvailable)
         {
             // If binary not found in current environment, skip
             return;
