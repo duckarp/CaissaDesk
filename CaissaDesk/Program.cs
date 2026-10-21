@@ -82,7 +82,7 @@ internal class Program
         appBuilder.Services.AddSingleton<IExternalLinkService, ExternalLinkService>();
         appBuilder.Services.AddScoped<WorkspaceState>();
         appBuilder.Services.AddScoped<LocalizationService>(sp =>
-            new LocalizationService(sp.GetRequiredService<IAppSettingsService>()));
+            new LocalizationService(sp.GetRequiredService<IAppSettingsService>(), logger: sp.GetRequiredService<ILogger<LocalizationService>>()));
         appBuilder.Services.AddScoped<ILocalizationService>(sp => sp.GetRequiredService<LocalizationService>());
 
         // Configure file provider supporting both physical wwwroot and embedded resources

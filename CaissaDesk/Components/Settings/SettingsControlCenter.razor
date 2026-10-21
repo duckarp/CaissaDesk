@@ -12,7 +12,8 @@
 @inject IPairingEngineRegistry EngineRegistry
 @inject IEngineInstallerService EngineInstaller
 @inject ICaissaResultsSyncService CaissaResultsSync
-@inject IJSRuntime JS
+@inject IExternalLinkService ExternalLinks
+@inject INotificationService Notifications
 @inject ILogger<SettingsControlCenter> Logger
 @implements IDisposable
 
@@ -855,7 +856,7 @@
 
 		try
 		{
-			var result = await EngineInstaller.InstallEngineAsync(engineId, progress);
+			var result = await EngineInstaller.TryInstallEngineAsync(engineId, Logger, progress);
 			if (result.Success)
 			{
 				_enginesModel = AppSettings.Settings.Clone();
@@ -997,16 +998,12 @@
 		}
 	}
 
-	private async Task OpenCloudPortal()
+	private void OpenCloudPortal()
 	{
 		var url = string.IsNullOrWhiteSpace(_cloudSyncModel.CaissaResultsUrl) ? "http://localhost:5200" : _cloudSyncModel.CaissaResultsUrl.Trim();
-		try
+		if (!ExternalLinks.TryOpen(url))
 		{
-			await JS.InvokeVoidAsync("open", url, "_blank");
-		}
-		catch (Exception ex)
-		{
-			Logger.LogWarning(ex, "Could not open the CaissaResults portal at {Url}", url);
+			Notifications.ShowError(Loc["Toast_OpenLinkFailed", url]);
 		}
 	}
 

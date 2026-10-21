@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
 using CaissaDesk.Data;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CaissaDesk.Localization;
 
@@ -7,6 +9,7 @@ public class LocalizationService : ILocalizationService
 {
     private readonly IAppSettingsService? _settingsService;
     private readonly bool _loadPersistedSettings;
+    private readonly ILogger _logger;
     private string _currentLanguage = "en";
     private readonly ConcurrentDictionary<string, LanguageInfo> _languages = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, string>> _dictionaries = new(StringComparer.OrdinalIgnoreCase);
@@ -18,9 +21,10 @@ public class LocalizationService : ILocalizationService
     public IReadOnlyList<LanguageInfo> SupportedLanguages =>
         _languages.Values.OrderBy(l => l.Code == "en" ? 0 : l.Code == "sk" ? 1 : 2).ThenBy(l => l.Name).ToList();
 
-    public LocalizationService(IAppSettingsService? settingsService = null, bool loadPersistedSettings = true)
+    public LocalizationService(IAppSettingsService? settingsService = null, bool loadPersistedSettings = true, ILogger<LocalizationService>? logger = null)
     {
         _settingsService = settingsService;
+        _logger = logger ?? NullLogger<LocalizationService>.Instance;
         _loadPersistedSettings = loadPersistedSettings;
 
         RegisterBuiltInLanguages();
@@ -113,7 +117,7 @@ public class LocalizationService : ILocalizationService
             catch (Exception ex)
             {
                 // Language still switches for this session; it just won't persist
-                Console.WriteLine($"Error saving language preference: {ex.Message}");
+                _logger.LogWarning(ex, "Could not save language preference {Language}.", _currentLanguage);
             }
         }
         else if (_loadPersistedSettings)
