@@ -18,9 +18,6 @@ riderModule.iml
 *.suo
 .vscode/
 
-# Project Exclusions
-CaissaResults/
-
 # Local databases, pairing engines & runtime files
 *.db
 *.db-journal

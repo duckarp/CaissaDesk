@@ -28,65 +28,36 @@ This document provides a persistent reference mapping the relationship, shared f
 
 ---
 
-## 3. Directory Structure & Asset Mapping
+## 3. Directory Structure
 
 ```
-CaissaDesk/
-├── CaissaDesk.slnx                            <-- Unified solution (.slnx format)
-├── IMPLEMENTATION_PLAN.md                     <-- Roadmap
-├── PROJECT_OVERVIEW.md                        <-- This persistent architecture reference
-├── icon.svg / icon.ico / icon-*.png           <-- Assets
-├── Caissa.Shared/                             <-- Zero-drift shared class library (.NET 10)
-│   ├── Models/ (Tournament, Player, Round, Pairing, Enums)
-│   ├── Tiebreak/ (TiebreakService, TiebreakModels, ITiebreakService)
-│   ├── PairingEngine/ (TrfHandler - FIDE TRF exporter/importer)
-│   └── Sync/ (TournamentSyncPayload, LiveRoundUpdate, SyncResult, DTOs)
-├── CaissaResults/                             <-- Chess-Results Web Portal (ASP.NET Core Blazor, .NET 10)
-│   ├── Program.cs                             <-- Kestrel, SignalR Hub, REST/Sync API, SSR + InteractiveServer
-│   ├── Hubs/TournamentHub.cs                 <-- Real-time SignalR tournament room broadcast
-│   ├── Data/ (ICaissaResultsRepository, SQLite persistence, demo tournament seeder)
-│   ├── Endpoints/SyncApiEndpoints.cs          <-- REST API (/api/sync/publish, /api/tournaments, /api/tournaments/{id}/trf)
-│   ├── Services/TournamentWebQueryService.cs  <-- TPR performance calculations, crosstables, standings
-│   └── Components/
-│       ├── Pages/Home.razor                   <-- Tournament directory, search, filtering, sync instructions
-│       └── Pages/TournamentPortal.razor       <-- Live standings, round pairings, starting list, crosstable, player cards
-└── CaissaDesk/                                <-- Desktop Arbiter Workstation (Photino.Blazor)
-    ├── Components/Tournament/TournamentWorkbench.razor <-- 1-Click "Publish to Web" & "View Web"
-    ├── Components/Settings/SettingsControlCenter.razor <-- CaissaResults cloud server configuration & connection test
-    └── Data/CaissaResultsSyncService.cs       <-- HTTP sync client for CaissaResults portal
-    ├── Core/                              <-- Shared standalone chess domain
-    │   ├── BoardPosition.cs
-    │   ├── FenParser.cs
-    │   ├── Move.cs / Square.cs / Piece.cs
-    │   ├── MoveGenerator.cs               <-- Legal move generation & check/stalemate detection
-    │   ├── MoveNode.cs / GameTree.cs      <-- Tree navigation
-    │   ├── SanParser.cs / PgnHandler.cs   <-- SAN & PGN parsers
-    │   ├── GameResultHelper.cs
-    │   ├── TimeControlInfo.cs
-    │   ├── DateHelper.cs
-    │   └── MaterialHelper.cs
-    ├── Data/                              <-- External scouting and tournament services
-    │   ├── FideModels.cs                  <-- FidePlayerCard, FideSearchResult, ChessResultsTournamentEntry
-    │   ├── IFideScoutingService.cs        <-- Scraping ratings.fide.com for instant player lookup
-    │   ├── FideScoutingService.cs
-    │   ├── IChessResultsScoutingService.cs<-- Scraping chess-results.com
-    │   └── ChessResultsScoutingService.cs
-    ├── Localization/                      <-- Bilingual UI engine
-    │   ├── ILocalizationService.cs
-    │   ├── LanguageInfo.cs
-    │   └── LocalizationService.cs         <-- English (en) & Slovak (sk) tournament terminology
-    └── wwwroot/
-        ├── index.html                     <-- Loading splash with gold spinner & knight branding
-        ├── css/
-        │   ├── theme.css                  <-- Dark theme palette + Gold/Amber brand tokens
-        │   ├── tabs.css                   <-- App header, workspace tabs, brand styling
-        │   └── layout.css                 <-- Workspace containers, data tables, panels
-        ├── js/
-        │   ├── soundService.js            <-- Acoustic feedback handler
-        │   └── workspaceStorage.js
-        ├── sounds/                        <-- Lichess wooden moves, check, victory sounds
-        └── images/icon.svg                <-- Gold knight SVG
+CaissaDesk/                                    <-- public repository
+├── CaissaDesk.slnx                            <-- Solution (.slnx format)
+├── Directory.Build.props                      <-- Shared build settings & product version
+├── Caissa.Shared/                             <-- Shared class library (also consumed by CaissaResults)
+│   ├── Tournament/  (Tournament, Player, Round, Pairing, enums, FIDE countries)
+│   ├── Tiebreak/    (TiebreakService — FIDE C.07, March 2026)
+│   ├── PairingEngine/ (TrfHandler — FIDE TRF export/import)
+│   ├── Security/    (CaissaSecurity — request signing, nonce, tournament keys)
+│   └── Sync/        (TournamentSyncPayload, LiveRoundUpdate, SyncResult, DTOs)
+├── CaissaDesk/                                <-- Desktop arbiter workstation (Photino.Blazor)
+│   ├── Components/
+│   │   ├── Tournament/  (TournamentWorkbench + RosterView, PairingsView, StandingsView, TournamentSettingsView, modals)
+│   │   ├── Dashboard/, Settings/, Layout/, Common/ (ConfirmDialog, ToastHost), Icons/
+│   ├── Core/
+│   │   ├── Pairing/, PairingEngine/  (native Dutch, bbpPairings, JaVaFo, Berger, round generation, installer)
+│   │   ├── Arbiter/, Roster/, Standings/, Notifications/, Settings/
+│   ├── Data/        (SQLite repository, settings, FIDE / national / chess-results scouting, CaissaResults sync client)
+│   ├── Localization/ (English & Slovak)
+│   ├── Logging/     (rolling file logger in local app data)
+│   └── wwwroot/     (index.html, css/, icons — served from embedded resources)
+└── CaissaDesk.Tests/                          <-- xunit tests
 ```
+
+**CaissaResults** (the public results web portal) lives in a separate **private** repository. It consumes
+`Caissa.Shared` and the CaissaDesk sync client through a pinned git submodule of this repository, so
+changes to `Caissa.Shared` (models, `MatchResult` values, tiebreaks, the sync/security protocol) must stay
+backwards compatible or be rolled out to the server first.
 
 ---
 
