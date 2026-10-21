@@ -152,4 +152,80 @@ public class AppSettingsServiceTests
             if (File.Exists(tempConfigPath)) File.Delete(tempConfigPath);
         }
     }
+
+    [Fact]
+    public async Task AppSettingsService_Save_LeavesNoTempFiles()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), $"desk_settings_dir_{Guid.NewGuid():N}");
+        string configPath = Path.Combine(dir, "desk_settings.json");
+        try
+        {
+            var service = new AppSettingsService(new PairingEngineRegistry(), configPath);
+            var updated = service.Settings.Clone();
+            updated.DefaultVenue = "Atomic Hall";
+
+            await service.SaveSettingsAsync(updated);
+            updated.DefaultVenue = "Atomic Hall 2";
+            await service.SaveSettingsAsync(updated);
+
+            Assert.Equal(new[] { configPath }, Directory.GetFiles(dir));
+            Assert.Equal("Atomic Hall 2", new AppSettingsService(new PairingEngineRegistry(), configPath).Settings.DefaultVenue);
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task AppSettingsService_SaveFailure_ThrowsAndKeepsStateUnchanged()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), $"desk_settings_dir_{Guid.NewGuid():N}");
+        // A directory sitting at the config path makes the final replace fail
+        string configPath = Path.Combine(dir, "desk_settings.json");
+        Directory.CreateDirectory(configPath);
+        try
+        {
+            var service = new AppSettingsService(new PairingEngineRegistry(), configPath);
+            string originalVenue = service.Settings.DefaultVenue;
+
+            bool eventFired = false;
+            service.OnSettingsChanged += () => eventFired = true;
+
+            var updated = service.Settings.Clone();
+            updated.DefaultVenue = "Never Persisted";
+
+            await Assert.ThrowsAnyAsync<Exception>(() => service.SaveSettingsAsync(updated));
+
+            Assert.False(eventFired);
+            Assert.Equal(originalVenue, service.Settings.DefaultVenue);
+            Assert.Empty(Directory.GetFiles(dir)); // temp file cleaned up
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void AppSettingsService_CorruptFile_IsBackedUpAndDefaultsUsed()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), $"desk_settings_dir_{Guid.NewGuid():N}");
+        string configPath = Path.Combine(dir, "desk_settings.json");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(configPath, "{ \"DefaultVenue\": \"Half written");
+        try
+        {
+            var service = new AppSettingsService(new PairingEngineRegistry(), configPath);
+
+            Assert.Equal(new AppSettings().DefaultVenue, service.Settings.DefaultVenue);
+            var backups = Directory.GetFiles(dir, "desk_settings.json.corrupt-*");
+            Assert.Single(backups);
+            Assert.Contains("Half written", File.ReadAllText(backups[0]));
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        }
+    }
 }

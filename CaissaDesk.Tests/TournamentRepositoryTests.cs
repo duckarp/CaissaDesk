@@ -74,11 +74,15 @@ public class TournamentRepositoryTests
             var imported = await repo.ImportJsonAsync(json);
             Assert.NotNull(imported);
             Assert.Equal("Unit Test Championship", imported.Name);
+            Assert.NotEqual(tournamentId, imported.Id); // existing tournament is never overwritten
 
-            // Delete imported
+            // Delete imported copy; original stays
             await repo.DeleteAsync(imported.Id);
-            var afterDelete = await repo.GetByIdAsync(tournamentId);
-            Assert.Null(afterDelete);
+            Assert.Null(await repo.GetByIdAsync(imported.Id));
+            Assert.NotNull(await repo.GetByIdAsync(tournamentId));
+
+            await repo.DeleteAsync(tournamentId);
+            Assert.Null(await repo.GetByIdAsync(tournamentId));
         }
         finally
         {
@@ -308,6 +312,122 @@ public class TournamentRepositoryTests
         finally
         {
             if (File.Exists(dbPath)) File.Delete(dbPath);
+        }
+    }
+
+    private static void DeleteDbFiles(string dbPath)
+    {
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        foreach (var f in new[] { dbPath, dbPath + "-wal", dbPath + "-shm" })
+        {
+            if (File.Exists(f)) File.Delete(f);
+        }
+    }
+
+    [Fact]
+    public async Task ImportJson_WithExistingId_CreatesNewTournamentInsteadOfOverwriting()
+    {
+        var (repo, dbPath) = CreateTestRepo();
+        try
+        {
+            var original = new Tournament { Name = "Original", Players = [new Player { StartRank = 1, FullName = "A" }] };
+            await repo.SaveAsync(original);
+            string originalSyncKey = original.SyncKey;
+
+            string json = await repo.ExportJsonAsync(original.Id);
+
+            // Same tournament edited after export; importing the old file must not clobber it
+            original.Name = "Original (edited)";
+            await repo.SaveAsync(original);
+
+            var imported = await repo.ImportJsonAsync(json);
+
+            Assert.NotEqual(original.Id, imported.Id);
+            Assert.False(string.IsNullOrWhiteSpace(imported.SyncKey));
+            Assert.NotEqual(originalSyncKey, imported.SyncKey);
+
+            var stillOriginal = await repo.GetByIdAsync(original.Id);
+            Assert.NotNull(stillOriginal);
+            Assert.Equal("Original (edited)", stillOriginal.Name);
+            Assert.Equal(originalSyncKey, stillOriginal.SyncKey);
+
+            var reloadedImport = await repo.GetByIdAsync(imported.Id);
+            Assert.NotNull(reloadedImport);
+            Assert.Equal("Original", reloadedImport.Name);
+            Assert.Equal(imported.SyncKey, reloadedImport.SyncKey);
+
+            Assert.Equal(2, (await repo.GetAllSummariesAsync()).Count);
+        }
+        finally
+        {
+            DeleteDbFiles(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task ImportJson_WithUnknownId_KeepsIdButRegeneratesSyncKey()
+    {
+        var (repo, dbPath) = CreateTestRepo();
+        try
+        {
+            var t = new Tournament { Name = "Foreign", SyncKey = "leaked-secret" };
+            string json = System.Text.Json.JsonSerializer.Serialize(t);
+
+            var imported = await repo.ImportJsonAsync(json);
+
+            Assert.Equal(t.Id, imported.Id);
+            Assert.NotEqual("leaked-secret", imported.SyncKey);
+            Assert.False(string.IsNullOrWhiteSpace(imported.SyncKey));
+        }
+        finally
+        {
+            DeleteDbFiles(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task ExportJson_DoesNotContainSyncKey()
+    {
+        var (repo, dbPath) = CreateTestRepo();
+        try
+        {
+            var t = new Tournament { Name = "Secret Holder", SyncKey = "super-secret-sync-key" };
+            await repo.SaveAsync(t);
+
+            string json = await repo.ExportJsonAsync(t.Id);
+
+            Assert.DoesNotContain("SyncKey", json, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("super-secret-sync-key", json);
+            Assert.Contains("Secret Holder", json);
+
+            // Local copy keeps its key for CaissaResults signing
+            var local = await repo.GetByIdAsync(t.Id);
+            Assert.Equal("super-secret-sync-key", local!.SyncKey);
+        }
+        finally
+        {
+            DeleteDbFiles(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task Initialize_EnablesWalJournalMode()
+    {
+        var (repo, dbPath) = CreateTestRepo();
+        try
+        {
+            await repo.InitializeAsync();
+
+            using var conn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dbPath}");
+            await conn.OpenAsync();
+            using var cmd = new Microsoft.Data.Sqlite.SqliteCommand("PRAGMA journal_mode;", conn);
+            var mode = (string?)await cmd.ExecuteScalarAsync();
+
+            Assert.Equal("wal", mode, ignoreCase: true);
+        }
+        finally
+        {
+            DeleteDbFiles(dbPath);
         }
     }
 }

@@ -1,5 +1,7 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Caissa.Shared.Models;
+using Caissa.Shared.Security;
 using Microsoft.Data.Sqlite;
 
 namespace CaissaDesk.Data;
@@ -40,8 +42,13 @@ public class TournamentRepository : ITournamentRepository
         {
             if (_isInitialized) return;
 
-            using var conn = new SqliteConnection(_connectionString);
-            await conn.OpenAsync();
+            using var conn = await OpenConnectionAsync();
+
+            // WAL is persistent per database file; busy_timeout is per connection (see OpenConnectionAsync)
+            using (var walCmd = new SqliteCommand("PRAGMA journal_mode=WAL;", conn))
+            {
+                await walCmd.ExecuteNonQueryAsync();
+            }
 
             string createSql = """
                 CREATE TABLE IF NOT EXISTS tournaments (
@@ -95,13 +102,21 @@ public class TournamentRepository : ITournamentRepository
         }
     }
 
+    private async Task<SqliteConnection> OpenConnectionAsync()
+    {
+        var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync();
+        using var cmd = new SqliteCommand("PRAGMA busy_timeout=5000;", conn);
+        await cmd.ExecuteNonQueryAsync();
+        return conn;
+    }
+
     public async Task<IReadOnlyList<TournamentSummary>> GetAllSummariesAsync(bool? isFinished = null)
     {
         await InitializeAsync();
         var list = new List<TournamentSummary>();
 
-        using var conn = new SqliteConnection(_connectionString);
-        await conn.OpenAsync();
+        using var conn = await OpenConnectionAsync();
 
         string sql = isFinished.HasValue
             ? """
@@ -152,8 +167,7 @@ public class TournamentRepository : ITournamentRepository
     {
         await InitializeAsync();
 
-        using var conn = new SqliteConnection(_connectionString);
-        await conn.OpenAsync();
+        using var conn = await OpenConnectionAsync();
 
         string sql = "SELECT json_data FROM tournaments WHERE id = @id LIMIT 1;";
         using var cmd = new SqliteCommand(sql, conn);
@@ -172,8 +186,7 @@ public class TournamentRepository : ITournamentRepository
         tournament.UpdatedAt = DateTime.UtcNow;
         string json = JsonSerializer.Serialize(tournament, JsonOptions);
 
-        using var conn = new SqliteConnection(_connectionString);
-        await conn.OpenAsync();
+        using var conn = await OpenConnectionAsync();
 
         string upsertSql = """
             INSERT INTO tournaments (
@@ -232,8 +245,7 @@ public class TournamentRepository : ITournamentRepository
     {
         await InitializeAsync();
 
-        using var conn = new SqliteConnection(_connectionString);
-        await conn.OpenAsync();
+        using var conn = await OpenConnectionAsync();
 
         string sql = "DELETE FROM tournaments WHERE id = @id;";
         using var cmd = new SqliteCommand(sql, conn);
@@ -246,7 +258,10 @@ public class TournamentRepository : ITournamentRepository
         var tournament = await GetByIdAsync(id)
             ?? throw new KeyNotFoundException($"Tournament with id '{id}' not found.");
 
-        return JsonSerializer.Serialize(tournament, new JsonSerializerOptions { WriteIndented = true });
+        // SyncKey is the per-tournament secret used to sign CaissaResults requests; it must never leave this machine.
+        var node = JsonSerializer.SerializeToNode(tournament)!.AsObject();
+        node.Remove(nameof(Tournament.SyncKey));
+        return node.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
     }
 
     public async Task<Tournament> ImportJsonAsync(string jsonContent)
@@ -254,14 +269,27 @@ public class TournamentRepository : ITournamentRepository
         var tournament = JsonSerializer.Deserialize<Tournament>(jsonContent, JsonOptions)
             ?? throw new FormatException("Invalid tournament JSON structure.");
 
-        // If ID collides or is empty, assign new ID
-        if (string.IsNullOrWhiteSpace(tournament.Id))
+        // Never overwrite an existing tournament: assign a new ID if empty or already present
+        if (string.IsNullOrWhiteSpace(tournament.Id) || await ExistsAsync(tournament.Id))
         {
             tournament.Id = Guid.NewGuid().ToString("N");
         }
 
+        // Imported files must not carry (or share) a sync secret
+        tournament.SyncKey = CaissaSecurity.GenerateSecureKey(16);
+
         await SaveAsync(tournament);
         return tournament;
+    }
+
+    private async Task<bool> ExistsAsync(string id)
+    {
+        await InitializeAsync();
+
+        using var conn = await OpenConnectionAsync();
+        using var cmd = new SqliteCommand("SELECT 1 FROM tournaments WHERE id = @id LIMIT 1;", conn);
+        cmd.Parameters.AddWithValue("@id", id);
+        return await cmd.ExecuteScalarAsync() != null;
     }
 
     public async Task<Tournament> CreateDemoTournamentAsync()

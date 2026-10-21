@@ -749,7 +749,7 @@
 
 								<div class="form-group">
 									<label class="form-label">@Loc["Tournament_Name"]</label>
-									<input type="text" class="form-input" @bind="_tournament.Name" />
+									<input type="text" class="form-input" @bind="Details.Name" />
 								</div>
 
 								<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
@@ -757,46 +757,46 @@
 										<label class="form-label">@Loc["Tournament_TotalRounds"]</label>
 										<input type="number"
 											   class="form-input"
-											   style="@(_tournament.TotalRounds < _tournament.MinAllowedRounds ? "border-color: var(--accent-danger);" : "")"
-											   @bind="_tournament.TotalRounds"
+											   style="@(Details.TotalRounds < _tournament.MinAllowedRounds ? "border-color: var(--accent-danger);" : "")"
+											   @bind="Details.TotalRounds"
 											   min="@_tournament.MinAllowedRounds"
 											   max="50" />
-										<div style="font-size: 11px; color: @(_tournament.TotalRounds < _tournament.MinAllowedRounds ? "var(--accent-danger)" : "var(--text-secondary)"); margin-top: 4px;">
+										<div style="font-size: 11px; color: @(Details.TotalRounds < _tournament.MinAllowedRounds ? "var(--accent-danger)" : "var(--text-secondary)"); margin-top: 4px;">
 											@Loc["Tournament_MinRoundsNotice", _tournament.MinAllowedRounds, _tournament.FinishedRoundsCount]
 										</div>
 									</div>
 									<div class="form-group">
 										<label class="form-label">@Loc["Tournament_Venue"]</label>
-										<input type="text" class="form-input" @bind="_tournament.Venue" placeholder="e.g. Chess Hall" />
+										<input type="text" class="form-input" @bind="Details.Venue" placeholder="e.g. Chess Hall" />
 									</div>
 								</div>
 
 								<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
 									<div class="form-group">
 										<label class="form-label">@Loc["Tournament_ChiefArbiter"]</label>
-										<input type="text" class="form-input" @bind="_tournament.ChiefArbiter" placeholder="e.g. IA Tomas K." />
+										<input type="text" class="form-input" @bind="Details.ChiefArbiter" placeholder="e.g. IA Tomas K." />
 									</div>
 									<div class="form-group">
 										<label class="form-label">@Loc["Tournament_DeputyArbiter"]</label>
-										<input type="text" class="form-input" @bind="_tournament.DeputyArbiter" placeholder="e.g. FA John D." />
+										<input type="text" class="form-input" @bind="Details.DeputyArbiter" placeholder="e.g. FA John D." />
 									</div>
 								</div>
 
 								<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
 									<div class="form-group">
 										<label class="form-label">@Loc["Tournament_Organizer"]</label>
-										<input type="text" class="form-input" @bind="_tournament.Organizer" placeholder="e.g. Chess Club" />
+										<input type="text" class="form-input" @bind="Details.Organizer" placeholder="e.g. Chess Club" />
 									</div>
 									<div class="form-group">
 										<label class="form-label">@Loc["Tournament_Federation"]</label>
-										<input type="text" class="form-input" @bind="_tournament.Federation" placeholder="e.g. SVK" maxlength="3" />
+										<input type="text" class="form-input" @bind="Details.Federation" placeholder="e.g. SVK" maxlength="3" />
 									</div>
 								</div>
 
 								<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
 									<div class="form-group">
 										<label class="form-label">@Loc["Tournament_TimeControl"]</label>
-										<select class="form-select" @bind="_tournament.TimeControl">
+										<select class="form-select" @bind="Details.TimeControl">
 											<option value="@TimeControlCategory.Rapid">@Loc["TimeControl_Rapid"]</option>
 											<option value="@TimeControlCategory.Blitz">@Loc["TimeControl_Blitz"]</option>
 											<option value="@TimeControlCategory.Standard">@Loc["TimeControl_Standard"]</option>
@@ -804,32 +804,32 @@
 									</div>
 									<div class="form-group">
 										<label class="form-label">@Loc["Tournament_TimeControlSpec"]</label>
-										<input type="text" class="form-input" @bind="_tournament.TimeControlDetails" placeholder="e.g. 15m + 5s" />
+										<input type="text" class="form-input" @bind="Details.TimeControlDetails" placeholder="e.g. 15m + 5s" />
 									</div>
 								</div>
 
 								<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
 									<div class="form-group">
 										<label class="form-label">@Loc["Tournament_StartDate"]</label>
-										<input type="date" class="form-input" value="@_tournament.StartDate.ToString("yyyy-MM-dd")" @onchange="OnStartDateChanged" />
+										<input type="date" class="form-input" value="@Details.StartDate.ToString("yyyy-MM-dd")" @onchange="OnStartDateChanged" />
 									</div>
 									<div class="form-group">
 										<label class="form-label">@Loc["Tournament_EndDate"]</label>
-										<input type="date" class="form-input" value="@_tournament.EndDate.ToString("yyyy-MM-dd")" @onchange="OnEndDateChanged" />
+										<input type="date" class="form-input" value="@Details.EndDate.ToString("yyyy-MM-dd")" @onchange="OnEndDateChanged" />
 									</div>
 								</div>
 
 								<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
 									<div class="form-group">
 										<label class="form-label">@Loc["Tournament_SeedingPrecedence"]</label>
-										<select class="form-select" @bind="_tournament.SeedingPrecedence">
+										<select class="form-select" @bind="Details.SeedingPrecedence">
 											<option value="@SeedingPrecedence.FideFirst">@Loc["Tournament_FideFirst"]</option>
 											<option value="@SeedingPrecedence.NationalFirst">@Loc["Tournament_NationalFirst"]</option>
 										</select>
 									</div>
 									<div class="form-group" style="display: flex; align-items: flex-end; padding-bottom: 8px;">
 										<div style="display: flex; align-items: center; gap: 8px;">
-											<input type="checkbox" id="wbFideRated" @bind="_tournament.FideRated" style="cursor: pointer; width: 16px; height: 16px; accent-color: var(--brand-gold);" />
+											<input type="checkbox" id="wbFideRated" @bind="Details.FideRated" style="cursor: pointer; width: 16px; height: 16px; accent-color: var(--brand-gold);" />
 											<label for="wbFideRated" style="font-size: 13px; color: var(--text-primary); cursor: pointer; user-select: none;">
 												@Loc["Tournament_FideRated"]
 											</label>
@@ -1431,7 +1431,9 @@
 @code {
 	[Parameter, EditorRequired] public TournamentTab Tab { get; set; } = default!;
 
-	private Tournament? _tournament;
+	// Always read through the tab: the dashboard edit modal and WorkspaceState.OpenTournament replace
+	// Tab.Tournament with a fresh instance, and a cached copy here would overwrite those edits on next save.
+	private Tournament? _tournament => Tab.Tournament;
 	private bool _showAddPlayerModal = false;
 	private bool _showResultDialog = false;
 	private bool _showAttendanceModal = false;
@@ -1576,14 +1578,9 @@
 		_isLoading = true;
 		try
 		{
-			if (Tab.Tournament != null)
+			if (Tab.Tournament == null)
 			{
-				_tournament = Tab.Tournament;
-			}
-			else
-			{
-				_tournament = await TournamentRepo.GetByIdAsync(Tab.TournamentId);
-				Tab.Tournament = _tournament;
+				Tab.Tournament = await TournamentRepo.GetByIdAsync(Tab.TournamentId);
 			}
 
 			if (_tournament != null && _tournament.Rounds.Count > 0)
@@ -1599,6 +1596,8 @@
 
 	private void SetView(TournamentView view)
 	{
+		// Leaving (or re-entering) settings drops unsaved edits so the form never shows stale values
+		DiscardDetailsDraft();
 		Tab.SetView(view);
 	}
 
@@ -2352,27 +2351,79 @@
 	private async Task GeneratePairingsAsync()
 	{
 		if (_tournament == null || _tournament.Players.Count < 2) return;
+		_pairingErrorMessage = null;
 
+		// Pair against an empty history; the live rounds are only replaced once pairing succeeded
+		List<Round> newRounds;
 		if (_tournament.System == TournamentSystem.RoundRobin)
 		{
-			var engine = new BergerPairingEngine();
-			_tournament.Rounds = engine.GenerateAllRounds(_tournament);
-			_tournament.TotalRounds = _tournament.Rounds.Count;
-			_activeRoundNumber = 1;
+			try
+			{
+				newRounds = WithRoundHistory([], () => new BergerPairingEngine().GenerateAllRounds(_tournament));
+			}
+			catch (Exception ex)
+			{
+				_pairingErrorMessage = ex.Message;
+				return;
+			}
+
+			if (newRounds.Count == 0)
+			{
+				_pairingErrorMessage = "Failed to generate round-robin pairings.";
+				return;
+			}
 		}
 		else
 		{
-			var engine = EngineRegistry.GetEngine(_tournament.PairingEngineId);
-			var result = engine.GenerateRoundPairings(_tournament, 1);
-			if (result.Success)
+			var result = GenerateRoundWithHistory([], 1);
+			if (!result.Success)
 			{
-				_tournament.Rounds = [new Round { RoundNumber = 1, Pairings = result.Pairings }];
-				_activeRoundNumber = 1;
+				_pairingErrorMessage = result.ErrorMessage ?? "Failed to generate round pairings.";
+				return;
 			}
+			newRounds = [new Round { RoundNumber = 1, Pairings = result.Pairings }];
 		}
+
+		_tournament.Rounds = newRounds;
+		if (_tournament.System == TournamentSystem.RoundRobin)
+		{
+			_tournament.TotalRounds = newRounds.Count;
+		}
+		_activeRoundNumber = 1;
 
 		await TournamentRepo.SaveAsync(_tournament);
 		Tab.NotifyChanged();
+	}
+
+	/// <summary>
+	/// Runs <paramref name="generate"/> while the tournament temporarily exposes <paramref name="history"/>
+	/// as its rounds, so engines can pair against a hypothetical history without the live rounds being lost.
+	/// </summary>
+	private T WithRoundHistory<T>(List<Round> history, Func<T> generate)
+	{
+		var liveRounds = _tournament!.Rounds;
+		_tournament.Rounds = history;
+		try
+		{
+			return generate();
+		}
+		finally
+		{
+			_tournament.Rounds = liveRounds;
+		}
+	}
+
+	private PairingResult GenerateRoundWithHistory(List<Round> history, int roundNumber)
+	{
+		try
+		{
+			var engine = EngineRegistry.GetEngine(_tournament!.PairingEngineId);
+			return WithRoundHistory(history, () => engine.GenerateRoundPairings(_tournament, roundNumber));
+		}
+		catch (Exception ex)
+		{
+			return PairingResult.Fail(ex.Message);
+		}
 	}
 
 	private string? _pairingErrorMessage;
@@ -2397,8 +2448,7 @@
 			}
 		}
 
-		var engine = EngineRegistry.GetEngine(_tournament.PairingEngineId);
-		var result = engine.GenerateRoundPairings(_tournament, nextRoundNumber);
+		var result = GenerateRoundWithHistory(_tournament.Rounds, nextRoundNumber);
 		if (result.Success)
 		{
 			_tournament.Rounds.Add(new Round { RoundNumber = nextRoundNumber, Pairings = result.Pairings });
@@ -2473,20 +2523,18 @@
 		}
 		else
 		{
-			_tournament.Rounds.RemoveAll(r => r.RoundNumber == roundNumber);
-
-			var engine = EngineRegistry.GetEngine(_tournament.PairingEngineId);
-			var result = engine.GenerateRoundPairings(_tournament, roundNumber);
-			if (result.Success)
-			{
-				_tournament.Rounds.Add(new Round { RoundNumber = roundNumber, Pairings = result.Pairings });
-				_activeRoundNumber = roundNumber;
-			}
-			else
+			// Pair against the history without this round; keep the existing round if the engine fails
+			var history = _tournament.Rounds.Where(r => r.RoundNumber != roundNumber).ToList();
+			var result = GenerateRoundWithHistory(history, roundNumber);
+			if (!result.Success)
 			{
 				_pairingErrorMessage = result.ErrorMessage ?? $"Failed to regenerate pairings for Round {roundNumber}.";
-				_activeRoundNumber = Math.Max(1, roundNumber - 1);
+				return;
 			}
+
+			_tournament.Rounds.RemoveAll(r => r.RoundNumber == roundNumber);
+			_tournament.Rounds.Add(new Round { RoundNumber = roundNumber, Pairings = result.Pairings });
+			_activeRoundNumber = roundNumber;
 		}
 
 		await TournamentRepo.SaveAsync(_tournament);
@@ -2521,8 +2569,7 @@
 	private async Task RegeneratePairingsAsync()
 	{
 		if (_tournament == null) return;
-		_pairingErrorMessage = null;
-		_tournament.Rounds.Clear();
+		// GeneratePairingsAsync pairs against an empty history and only replaces the rounds on success
 		await GeneratePairingsAsync();
 	}
 
@@ -2683,11 +2730,35 @@
 	private string? _settingsErrorMessage;
 	private string? _settingsSuccessMessage;
 
+	// Settings form edits a draft; the live tournament only changes on a validated save.
+	// The draft is rebuilt whenever the tab's tournament instance is replaced.
+	private TournamentDetailsDraft? _detailsDraft;
+	private Tournament? _detailsDraftSource;
+
+	private TournamentDetailsDraft Details
+	{
+		get
+		{
+			if (_detailsDraft == null || !ReferenceEquals(_detailsDraftSource, _tournament))
+			{
+				_detailsDraft = TournamentDetailsDraft.From(_tournament!);
+				_detailsDraftSource = _tournament;
+			}
+			return _detailsDraft;
+		}
+	}
+
+	private void DiscardDetailsDraft()
+	{
+		_detailsDraft = null;
+		_detailsDraftSource = null;
+	}
+
 	private void OnStartDateChanged(ChangeEventArgs e)
 	{
 		if (_tournament != null && DateTime.TryParse(e.Value?.ToString(), out var dt))
 		{
-			_tournament.StartDate = dt;
+			Details.StartDate = dt;
 		}
 	}
 
@@ -2695,7 +2766,7 @@
 	{
 		if (_tournament != null && DateTime.TryParse(e.Value?.ToString(), out var dt))
 		{
-			_tournament.EndDate = dt;
+			Details.EndDate = dt;
 		}
 	}
 
@@ -2705,20 +2776,17 @@
 		_settingsErrorMessage = null;
 		_settingsSuccessMessage = null;
 
-		if (string.IsNullOrWhiteSpace(_tournament.Name))
+		switch (Details.TryApplyTo(_tournament))
 		{
-			_settingsErrorMessage = Loc["Tournament_Name"] + " is required.";
-			return;
+			case TournamentDetailsValidation.NameRequired:
+				_settingsErrorMessage = Loc["Tournament_Name"] + " is required.";
+				return;
+			case TournamentDetailsValidation.TooFewRounds:
+				_settingsErrorMessage = Loc["Tournament_MinRoundsError", _tournament.MinAllowedRounds];
+				return;
 		}
 
-		if (!_tournament.TrySetTotalRounds(_tournament.TotalRounds, out var err))
-		{
-			_settingsErrorMessage = Loc["Tournament_MinRoundsError", _tournament.MinAllowedRounds];
-			return;
-		}
-
-		_tournament.Federation = string.IsNullOrWhiteSpace(_tournament.Federation) ? "SVK" : _tournament.Federation.Trim().ToUpperInvariant();
-
+		DiscardDetailsDraft();
 		await TournamentRepo.SaveAsync(_tournament);
 		Tab.NotifyChanged();
 		_settingsSuccessMessage = Loc["Tournament_DetailsSaved"];

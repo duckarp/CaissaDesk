@@ -46,26 +46,60 @@ public class AppSettingsService : IAppSettingsService
 
     private void LoadSettingsSync()
     {
+        string path;
         try
         {
-            string path = GetConfigFilePath();
-            if (File.Exists(path))
-            {
-                string json = File.ReadAllText(path);
-                var loaded = JsonSerializer.Deserialize<AppSettings>(json, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                });
-                if (loaded != null)
-                {
-                    _settings = loaded;
-                    _engineRegistry.ReloadEngines(_settings.CustomBbpPath, _settings.CustomJavaPath, _settings.CustomJavafoJarPath);
-                }
-            }
+            path = GetConfigFilePath();
+            if (!File.Exists(path)) return;
         }
-        catch
+        catch (Exception ex)
         {
-            // Use defaults if config cannot be read
+            Console.WriteLine($"Error locating settings file: {ex.Message}");
+            return;
+        }
+
+        AppSettings? loaded;
+        try
+        {
+            string json = File.ReadAllText(path);
+            loaded = JsonSerializer.Deserialize<AppSettings>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+        }
+        catch (JsonException ex)
+        {
+            // Keep the unreadable file so the user's settings can be recovered, then fall back to defaults
+            BackUpCorruptFile(path, ex);
+            return;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error reading settings: {ex.Message}");
+            return;
+        }
+
+        if (loaded == null)
+        {
+            BackUpCorruptFile(path, null);
+            return;
+        }
+
+        _settings = loaded;
+        _engineRegistry.ReloadEngines(_settings.CustomBbpPath, _settings.CustomJavaPath, _settings.CustomJavafoJarPath);
+    }
+
+    private static void BackUpCorruptFile(string path, Exception? ex)
+    {
+        try
+        {
+            string backupPath = $"{path}.corrupt-{DateTime.Now:yyyyMMdd-HHmmss}";
+            File.Copy(path, backupPath, overwrite: true);
+            Console.WriteLine($"Settings file is corrupt ({ex?.Message ?? "empty"}); backed up to {backupPath}, using defaults.");
+        }
+        catch (Exception backupEx)
+        {
+            Console.WriteLine($"Settings file is corrupt and could not be backed up: {backupEx.Message}");
         }
     }
 
@@ -76,48 +110,58 @@ public class AppSettingsService : IAppSettingsService
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Persists settings atomically. Throws if the file cannot be written; in that case the
+    /// in-memory settings are left unchanged and <see cref="OnSettingsChanged"/> is not raised.
+    /// </summary>
     public Task SaveSettingsAsync(AppSettings newSettings)
     {
-        _settings = newSettings.Clone();
+        var settings = newSettings.Clone();
+        string path = GetConfigFilePath();
+        var dict = new Dictionary<string, object>();
 
+        // Read existing dictionary to preserve Language or other keys
+        if (File.Exists(path))
+        {
+            try
+            {
+                string existingJson = File.ReadAllText(path);
+                var existing = JsonSerializer.Deserialize<Dictionary<string, object>>(existingJson);
+                if (existing != null) dict = existing;
+            }
+            catch { }
+        }
+
+        // Serialize updated settings into dictionary
+        string settingsJson = JsonSerializer.Serialize(settings);
+        var updatedProps = JsonSerializer.Deserialize<Dictionary<string, object>>(settingsJson);
+        if (updatedProps != null)
+        {
+            foreach (var (k, v) in updatedProps)
+            {
+                dict[k] = v;
+            }
+        }
+
+        string finalJson = JsonSerializer.Serialize(dict, new JsonSerializerOptions { WriteIndented = true });
+
+        // Write to a temp file in the same directory, then atomically replace the real file
+        string tempPath = $"{path}.{Guid.NewGuid():N}.tmp";
         try
         {
-            string path = GetConfigFilePath();
-            var dict = new Dictionary<string, object>();
-
-            // Read existing dictionary to preserve Language or other keys
-            if (File.Exists(path))
-            {
-                try
-                {
-                    string existingJson = File.ReadAllText(path);
-                    var existing = JsonSerializer.Deserialize<Dictionary<string, object>>(existingJson);
-                    if (existing != null) dict = existing;
-                }
-                catch { }
-            }
-
-            // Serialize updated settings into dictionary
-            string settingsJson = JsonSerializer.Serialize(_settings);
-            var updatedProps = JsonSerializer.Deserialize<Dictionary<string, object>>(settingsJson);
-            if (updatedProps != null)
-            {
-                foreach (var (k, v) in updatedProps)
-                {
-                    dict[k] = v;
-                }
-            }
-
-            string finalJson = JsonSerializer.Serialize(dict, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(path, finalJson);
-
-            // Notify pairing engine registry
-            _engineRegistry.ReloadEngines(_settings.CustomBbpPath, _settings.CustomJavaPath, _settings.CustomJavafoJarPath);
+            File.WriteAllText(tempPath, finalJson);
+            File.Move(tempPath, path, overwrite: true);
         }
-        catch (Exception ex)
+        catch
         {
-            Console.WriteLine($"Error saving settings: {ex.Message}");
+            try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
+            throw;
         }
+
+        _settings = settings;
+
+        // Notify pairing engine registry
+        _engineRegistry.ReloadEngines(_settings.CustomBbpPath, _settings.CustomJavaPath, _settings.CustomJavafoJarPath);
 
         OnSettingsChanged?.Invoke();
         return Task.CompletedTask;

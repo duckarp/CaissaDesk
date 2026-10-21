@@ -122,6 +122,14 @@
 						</div>
 					}
 
+					@if (!string.IsNullOrEmpty(_defaultsErrorMessage))
+					{
+						<div style="background-color: rgba(218, 54, 51, 0.12); border: 1px solid var(--accent-danger); border-radius: 6px; padding: 10px 14px; color: var(--accent-danger); font-size: 13px; display: flex; align-items: center; gap: 8px; margin-bottom: 16px;">
+							<AppIcon Name="alert" Size="16" />
+							<span>@_defaultsErrorMessage</span>
+						</div>
+					}
+
 					<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 20px; align-items: start;">
 						<div class="panel-card" style="display: flex; flex-direction: column; gap: 14px;">
 							<div class="panel-title">@Loc["Settings_DefaultArbiterVenueCard"]</div>
@@ -229,6 +237,14 @@
 						<div style="background-color: rgba(35, 134, 54, 0.12); border: 1px solid var(--accent-primary); border-radius: 6px; padding: 10px 14px; color: var(--accent-primary); font-size: 13px; display: flex; align-items: center; gap: 8px; margin-bottom: 16px;">
 							<AppIcon Name="check" Size="16" />
 							<span>@_enginesSuccessMessage</span>
+						</div>
+					}
+
+					@if (!string.IsNullOrEmpty(_enginesErrorMessage))
+					{
+						<div style="background-color: rgba(218, 54, 51, 0.12); border: 1px solid var(--accent-danger); border-radius: 6px; padding: 10px 14px; color: var(--accent-danger); font-size: 13px; display: flex; align-items: center; gap: 8px; margin-bottom: 16px;">
+							<AppIcon Name="alert" Size="16" />
+							<span>@_enginesErrorMessage</span>
 						</div>
 					}
 
@@ -699,7 +715,9 @@
 	private AppSettings _cloudSyncModel = new();
 
 	private string? _defaultsSuccessMessage;
+	private string? _defaultsErrorMessage;
 	private string? _enginesSuccessMessage;
+	private string? _enginesErrorMessage;
 	private string? _cloudSuccessMessage;
 	private bool _isTestingCloud;
 	private string? _cloudTestStatus;
@@ -745,6 +763,7 @@
 	private async Task SaveDefaultsAsync()
 	{
 		_defaultsSuccessMessage = null;
+		_defaultsErrorMessage = null;
 
 		var current = AppSettings.Settings.Clone();
 		current.DefaultChiefArbiter = _defaultsModel.DefaultChiefArbiter.Trim();
@@ -759,7 +778,15 @@
 		current.DefaultFideRated = _defaultsModel.DefaultFideRated;
 		current.DefaultSeedingPrecedence = _defaultsModel.DefaultSeedingPrecedence;
 
-		await AppSettings.SaveSettingsAsync(current);
+		try
+		{
+			await AppSettings.SaveSettingsAsync(current);
+		}
+		catch (Exception ex)
+		{
+			_defaultsErrorMessage = Loc["Settings_SaveFailed", ex.Message];
+			return;
+		}
 		LoadFromSettings();
 		_defaultsSuccessMessage = Loc["Settings_DefaultsSaved"];
 	}
@@ -767,6 +794,7 @@
 	private async Task SaveEnginesAsync()
 	{
 		_enginesSuccessMessage = null;
+		_enginesErrorMessage = null;
 
 		// Ensure chosen default engine is available
 		var targetEngine = EngineRegistry.GetEngine(_enginesModel.DefaultSwissEngineId);
@@ -781,7 +809,15 @@
 		current.CustomJavaPath = string.IsNullOrWhiteSpace(_enginesModel.CustomJavaPath) ? null : _enginesModel.CustomJavaPath.Trim();
 		current.CustomJavafoJarPath = string.IsNullOrWhiteSpace(_enginesModel.CustomJavafoJarPath) ? null : _enginesModel.CustomJavafoJarPath.Trim();
 
-		await AppSettings.SaveSettingsAsync(current);
+		try
+		{
+			await AppSettings.SaveSettingsAsync(current);
+		}
+		catch (Exception ex)
+		{
+			_enginesErrorMessage = Loc["Settings_SaveFailed", ex.Message];
+			return;
+		}
 		LoadFromSettings();
 		_enginesSuccessMessage = Loc["Settings_EnginesSaved"];
 	}
@@ -855,7 +891,16 @@
 		current.CaissaResultsApiKey = string.IsNullOrWhiteSpace(_cloudSyncModel.CaissaResultsApiKey) ? null : _cloudSyncModel.CaissaResultsApiKey.Trim();
 		current.AutoSyncOnResultChange = _cloudSyncModel.AutoSyncOnResultChange;
 
-		await AppSettings.SaveSettingsAsync(current);
+		try
+		{
+			await AppSettings.SaveSettingsAsync(current);
+		}
+		catch (Exception ex)
+		{
+			_cloudErrorMessage = Loc["Settings_SaveFailed", ex.Message];
+			StateHasChanged();
+			return;
+		}
 		LoadFromSettings();
 
 		if (string.IsNullOrWhiteSpace(current.CaissaResultsApiKey))

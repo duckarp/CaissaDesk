@@ -93,7 +93,11 @@ internal class Program
             .SetMinSize(1000, 650)
             .SetMediaAutoplayEnabled(true)
             .SetUseOsDefaultLocation(false)
+#if DEBUG
             .SetDevToolsEnabled(true);
+#else
+            .SetDevToolsEnabled(false);
+#endif
 
         if (!string.IsNullOrEmpty(iconFile) && File.Exists(iconFile))
         {
