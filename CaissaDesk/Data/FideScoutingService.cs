@@ -2,12 +2,14 @@ using System.Net;
 using System.Text.RegularExpressions;
 using System.Web;
 using Caissa.Shared.Models;
+using Microsoft.Extensions.Logging;
 
 namespace CaissaDesk.Data;
 
 public class FideScoutingService : IFideScoutingService
 {
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly ILogger<FideScoutingService> _logger;
 
     private static readonly Regex NameRegex = new(@"<h1\s+class=""player-title"">([^<]+)</h1>", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex FideIdRegex = new(@"<p\s+class=""profile-info-id\s*"">([^<]+)</p>", RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -16,18 +18,23 @@ public class FideScoutingService : IFideScoutingService
     private static readonly Regex BirthYearRegex = new(@"<p\s+class=""profile-info-byear\s*"">(\d+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex GenderRegex = new(@"<p\s+class=""profile-info-sex\s*"">([^<]+)</p>", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    private static readonly Regex StdBlockRegex = new(@"<div\s+class=""profile-standart\s+profile-game\s*"">([\s\S]*?)</div>", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-    private static readonly Regex RapidBlockRegex = new(@"<div\s+class=""profile-rapid\s+profile-game\s*"">([\s\S]*?)</div>", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-    private static readonly Regex BlitzBlockRegex = new(@"<div\s+class=""profile-blitz\s+profile-game\s*"">([\s\S]*?)</div>", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    // Opening tags of the rating blocks. The block body is extracted with balanced <div> matching
+    // (see ExtractElementInner) so nested <div>s inside a block no longer truncate it.
+    private static readonly Regex StdBlockRegex = new(@"<div\b[^>]*\bclass=""[^""]*\bprofile-standart\b[^""]*\bprofile-game\b[^""]*""[^>]*>", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex RapidBlockRegex = new(@"<div\b[^>]*\bclass=""[^""]*\bprofile-rapid\b[^""]*\bprofile-game\b[^""]*""[^>]*>", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex BlitzBlockRegex = new(@"<div\b[^>]*\bclass=""[^""]*\bprofile-blitz\b[^""]*\bprofile-game\b[^""]*""[^>]*>", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex ResultsTableRegex = new(@"<table\b[^>]*\bid=[""']?table_results\b[^>]*>", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex AnyTableRegex = new(@"<table\b[^>]*>", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex RatingNumRegex = new(@"<p>\s*(\d+)\s*</p>", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private static readonly Regex WorldRankActiveRegex = new(@"<h5>World Rank</h5>[\s\S]*?<h6>Active players</h6>\s*<p>(\d+)</p>", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex WorldRankAllRegex = new(@"<h5>World Rank</h5>[\s\S]*?<h6>All players</h6>\s*<p>(\d+)</p>", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex NationalRankRegex = new(@"<h5>National Rank\s*([A-Z]{3})?</h5>[\s\S]*?<h6>Active players</h6>\s*<p>(\d+)</p>", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    public FideScoutingService(IHttpClientFactory httpClientFactory)
+    public FideScoutingService(IHttpClientFactory httpClientFactory, ILogger<FideScoutingService> logger)
     {
         _httpClientFactory = httpClientFactory;
+        _logger = logger;
     }
 
     public async Task<FidePlayerCard?> GetPlayerCardAsync(string fideId, CancellationToken cancellationToken = default)
@@ -43,19 +50,23 @@ public class FideScoutingService : IFideScoutingService
 
             string url = $"https://ratings.fide.com/profile/{cleanId}";
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
-            request.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+            request.Headers.UserAgent.ParseAdd(ScoutingHttp.UserAgent);
             request.Headers.Accept.ParseAdd("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
 
-            var response = await client.SendAsync(request, cancellationToken);
+            using var response = await client.SendAsync(request, cancellationToken);
             if (response.StatusCode == HttpStatusCode.NotFound) return null;
             if (!response.IsSuccessStatusCode) return null;
 
             string html = await response.Content.ReadAsStringAsync(cancellationToken);
             return ParsePlayerCardHtml(cleanId, html);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
-            Console.WriteLine($"[FideScoutingService] Error fetching FIDE profile for {fideId}: {ex.Message}");
+            _logger.LogWarning(ex, "Error fetching FIDE profile for {FideId}", cleanId);
             return null;
         }
     }
@@ -78,19 +89,23 @@ public class FideScoutingService : IFideScoutingService
 
             string url = $"https://ratings.fide.com/incl_search_l.php?search={Uri.EscapeDataString(cleanQuery)}&simple=1";
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
-            request.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+            request.Headers.UserAgent.ParseAdd(ScoutingHttp.UserAgent);
             request.Headers.Referrer = new Uri("https://ratings.fide.com/");
             request.Headers.Add("X-Requested-With", "XMLHttpRequest");
 
-            var response = await client.SendAsync(request, cancellationToken);
+            using var response = await client.SendAsync(request, cancellationToken);
             if (!response.IsSuccessStatusCode) return results;
 
             string html = await response.Content.ReadAsStringAsync(cancellationToken);
             return ParseSearchResultsHtml(html, limit);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
-            Console.WriteLine($"[FideScoutingService] Error searching FIDE players for '{query}': {ex.Message}");
+            _logger.LogWarning(ex, "Error searching FIDE players for {Query}", cleanQuery);
             return results;
         }
     }
@@ -194,14 +209,19 @@ public class FideScoutingService : IFideScoutingService
         var list = new List<FideSearchResult>();
         if (string.IsNullOrWhiteSpace(html)) return list;
 
-        // Match table rows in #table_results
-        var rowMatches = Regex.Matches(html, @"<tr[^>]*>([\s\S]*?)</tr>", RegexOptions.IgnoreCase);
+        // Restrict parsing to the #table_results table (fall back to the first table in the fragment);
+        // rows elsewhere on the page (navigation, footers, ads) are ignored.
+        string? tableHtml = ExtractElementInner(html, "table", ResultsTableRegex)
+                            ?? ExtractElementInner(html, "table", AnyTableRegex);
+        if (tableHtml == null) return list;
+
+        var rowMatches = Regex.Matches(tableHtml, @"<tr\b[^>]*>([\s\S]*?)</tr>", RegexOptions.IgnoreCase);
         foreach (Match rm in rowMatches)
         {
             string rowContent = rm.Groups[1].Value;
             if (rowContent.Contains("<th", StringComparison.OrdinalIgnoreCase)) continue;
 
-            var tdMatches = Regex.Matches(rowContent, @"<td[^>]*>([\s\S]*?)</td>", RegexOptions.IgnoreCase);
+            var tdMatches = Regex.Matches(rowContent, @"<td\b[^>]*>([\s\S]*?)</td>", RegexOptions.IgnoreCase);
             if (tdMatches.Count < 5) continue;
 
             string id = StripHtml(tdMatches[0].Groups[1].Value).Trim();
@@ -211,6 +231,7 @@ public class FideScoutingService : IFideScoutingService
             string fed = StripHtml(tdMatches[4].Groups[1].Value).Trim();
 
             if (string.IsNullOrEmpty(id) || string.IsNullOrEmpty(name)) continue;
+            if (!id.All(char.IsAsciiDigit)) continue; // FIDE IDs are numeric; skip stray non-result rows
 
             string fedDecoded = HttpUtility.HtmlDecode(fed);
             string fedCode = FideCountryHelper.ToFideCode(fedDecoded) ?? fedDecoded;
@@ -251,18 +272,46 @@ public class FideScoutingService : IFideScoutingService
         return list;
     }
 
-    private static int? ExtractRatingFromBlock(Regex blockRegex, string html)
+    private static int? ExtractRatingFromBlock(Regex blockOpenRegex, string html)
     {
-        var blockMatch = blockRegex.Match(html);
-        if (blockMatch.Success)
+        string? block = ExtractElementInner(html, "div", blockOpenRegex);
+        if (block != null)
         {
-            var numMatch = RatingNumRegex.Match(blockMatch.Groups[1].Value);
+            var numMatch = RatingNumRegex.Match(block);
             if (numMatch.Success && int.TryParse(numMatch.Groups[1].Value, out int elo))
             {
                 return elo;
             }
         }
         return null;
+    }
+
+    /// <summary>
+    /// Finds the first element whose opening tag matches <paramref name="openTagRegex"/> and returns its inner HTML,
+    /// honouring nested elements of the same <paramref name="tagName"/>. If the element is never closed,
+    /// the rest of the document is returned. Returns null when no opening tag matches.
+    /// </summary>
+    internal static string? ExtractElementInner(string html, string tagName, Regex openTagRegex)
+    {
+        var open = openTagRegex.Match(html);
+        if (!open.Success) return null;
+
+        int start = open.Index + open.Length;
+        var tokenRegex = new Regex($@"<(/?){tagName}\b[^>]*>", RegexOptions.IgnoreCase);
+        int depth = 1;
+        for (var m = tokenRegex.Match(html, start); m.Success; m = m.NextMatch())
+        {
+            if (m.Groups[1].Length > 0)
+            {
+                depth--;
+                if (depth == 0) return html[start..m.Index];
+            }
+            else if (!m.Value.EndsWith("/>", StringComparison.Ordinal))
+            {
+                depth++;
+            }
+        }
+        return html[start..];
     }
 
     private static string StripHtml(string input)

@@ -26,6 +26,7 @@ internal class Program
         // Register application services
         appBuilder.Services.AddLogging();
         appBuilder.Services.AddHttpClient();
+        appBuilder.Services.AddScoutingHttpClients();
         appBuilder.Services.AddSingleton<IAppWindowProvider, AppWindowProvider>();
         appBuilder.Services.AddSingleton<ITiebreakService, TiebreakService>();
         appBuilder.Services.AddSingleton<ITournamentRepository, TournamentRepository>();

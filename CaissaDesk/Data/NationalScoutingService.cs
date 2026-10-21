@@ -1,16 +1,19 @@
 using System.Text.RegularExpressions;
 using System.Web;
 using Caissa.Shared.Models;
+using Microsoft.Extensions.Logging;
 
 namespace CaissaDesk.Data;
 
 public class NationalScoutingService : INationalScoutingService
 {
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly ILogger<NationalScoutingService> _logger;
 
-    public NationalScoutingService(IHttpClientFactory httpClientFactory)
+    public NationalScoutingService(IHttpClientFactory httpClientFactory, ILogger<NationalScoutingService> logger)
     {
         _httpClientFactory = httpClientFactory;
+        _logger = logger;
     }
 
     public async Task<NationalPlayerCard?> LookupPlayerAsync(
@@ -110,9 +113,13 @@ public class NationalScoutingService : INationalScoutingService
                 if (match != null) return match;
             }
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
-            Console.WriteLine($"[NationalScoutingService] Slovak lookup failed: {ex.Message}");
+            _logger.LogWarning(ex, "Slovak (SŠZ) player lookup failed");
         }
 
         return null;
@@ -128,9 +135,9 @@ public class NationalScoutingService : INationalScoutingService
         {
             Content = new FormUrlEncodedContent(postData)
         };
-        request.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+        request.Headers.UserAgent.ParseAdd(ScoutingHttp.UserAgent);
 
-        var response = await client.SendAsync(request, cancellationToken);
+        using var response = await client.SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode) return [];
 
         string html = await response.Content.ReadAsStringAsync(cancellationToken);

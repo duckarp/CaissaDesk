@@ -40,18 +40,43 @@ public class CaissaResultsSyncService : ICaissaResultsSyncService
 
     public string GetPortalUrl(string tournamentId)
     {
-        return $"{GetBaseUrl()}/tournament/{tournamentId}";
+        return $"{GetBaseUrl()}/tournament/{Uri.EscapeDataString(tournamentId ?? string.Empty)}";
     }
 
-    public async Task<bool> PingServerAsync(string? serverUrl = null)
+    /// <summary>
+    /// Returns an error message when signed (credential-bearing) requests must not be sent to
+    /// <paramref name="baseUrl"/>: plain http:// is only allowed for loopback hosts (a local
+    /// development server); anywhere else the request would travel unencrypted. Returns null when OK.
+    /// </summary>
+    public static string? GetInsecureTransportError(string baseUrl)
+    {
+        if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        {
+            return $"Invalid CaissaResults server URL '{baseUrl}'. Please check Settings.";
+        }
+        if (uri.Scheme == Uri.UriSchemeHttps) return null;
+        if (uri.Scheme == Uri.UriSchemeHttp)
+        {
+            return uri.IsLoopback
+                ? null
+                : $"Refusing to send credentials over unencrypted HTTP to '{uri.Host}'. Use an https:// CaissaResults URL in Settings (plain http:// is only allowed for localhost).";
+        }
+        return $"Unsupported URL scheme '{uri.Scheme}' for the CaissaResults server. Use https://.";
+    }
+
+    public async Task<bool> PingServerAsync(string? serverUrl = null, CancellationToken cancellationToken = default)
     {
         try
         {
             var baseUrl = serverUrl?.TrimEnd('/') ?? GetBaseUrl();
             var client = _httpClientFactory.CreateClient();
             client.Timeout = TimeSpan.FromSeconds(3);
-            var response = await client.GetAsync($"{baseUrl}/api/tournaments");
+            using var response = await client.GetAsync($"{baseUrl}/api/tournaments", cancellationToken);
             return response.IsSuccessStatusCode;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -60,7 +85,7 @@ public class CaissaResultsSyncService : ICaissaResultsSyncService
         }
     }
 
-    public async Task<SyncResult> PublishTournamentAsync(Tournament tournament)
+    public async Task<SyncResult> PublishTournamentAsync(Tournament tournament, CancellationToken cancellationToken = default)
     {
         if (!IsSyncConfigured)
         {
@@ -72,6 +97,14 @@ public class CaissaResultsSyncService : ICaissaResultsSyncService
             };
         }
 
+        var baseUrl = GetBaseUrl();
+        var transportError = GetInsecureTransportError(baseUrl);
+        if (transportError != null)
+        {
+            _logger.LogWarning("Publish blocked: {Reason}", transportError);
+            return new SyncResult { Success = false, Message = transportError, TournamentId = tournament.Id };
+        }
+
         try
         {
             if (string.IsNullOrWhiteSpace(tournament.SyncKey))
@@ -79,7 +112,6 @@ public class CaissaResultsSyncService : ICaissaResultsSyncService
                 tournament.SyncKey = CaissaSecurity.GenerateSecureKey(16);
             }
 
-            var baseUrl = GetBaseUrl();
             var payload = new TournamentSyncPayload
             {
                 Tournament = tournament,
@@ -94,7 +126,7 @@ public class CaissaResultsSyncService : ICaissaResultsSyncService
 
             var pathAndQuery = "/api/sync/publish";
             var json = JsonSerializer.Serialize(payload, JsonOptions);
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}{pathAndQuery}")
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}{pathAndQuery}")
             {
                 Content = new StringContent(json, Encoding.UTF8, "application/json")
             };
@@ -102,11 +134,11 @@ public class CaissaResultsSyncService : ICaissaResultsSyncService
             var apiKey = _settingsService.Settings.CaissaResultsApiKey;
             CaissaSecurity.SignRequest(request, pathAndQuery, json, apiKey, tournament.SyncKey);
 
-            var response = await client.SendAsync(request);
+            using var response = await client.SendAsync(request, cancellationToken);
 
             if (response.IsSuccessStatusCode)
             {
-                var result = await response.Content.ReadFromJsonAsync<SyncResult>(JsonOptions);
+                var result = await response.Content.ReadFromJsonAsync<SyncResult>(JsonOptions, cancellationToken);
                 return result ?? new SyncResult
                 {
                     Success = true,
@@ -114,16 +146,19 @@ public class CaissaResultsSyncService : ICaissaResultsSyncService
                     TournamentId = tournament.Id
                 };
             }
-            else
+
+            var errorText = ScoutingHttp.SanitizeServerError(await response.Content.ReadAsStringAsync(cancellationToken));
+            _logger.LogWarning("Publish of tournament {Id} failed with {StatusCode}: {Error}", tournament.Id, (int)response.StatusCode, errorText);
+            return new SyncResult
             {
-                var errorText = await response.Content.ReadAsStringAsync();
-                return new SyncResult
-                {
-                    Success = false,
-                    Message = $"Publish failed ({response.StatusCode}): {errorText}",
-                    TournamentId = tournament.Id
-                };
-            }
+                Success = false,
+                Message = $"Publish failed ({(int)response.StatusCode} {response.StatusCode}): {errorText}",
+                TournamentId = tournament.Id
+            };
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -137,7 +172,7 @@ public class CaissaResultsSyncService : ICaissaResultsSyncService
         }
     }
 
-    public async Task<SyncResult> SyncRoundDeltaAsync(string tournamentId, int roundNumber, List<Pairing> pairings, string? tournamentSyncKey = null)
+    public async Task<SyncResult> SyncRoundDeltaAsync(string tournamentId, int roundNumber, List<Pairing> pairings, string? tournamentSyncKey = null, CancellationToken cancellationToken = default)
     {
         if (!IsSyncConfigured)
         {
@@ -148,15 +183,22 @@ public class CaissaResultsSyncService : ICaissaResultsSyncService
             };
         }
 
+        var baseUrl = GetBaseUrl();
+        var transportError = GetInsecureTransportError(baseUrl);
+        if (transportError != null)
+        {
+            _logger.LogWarning("Round sync blocked: {Reason}", transportError);
+            return new SyncResult { Success = false, Message = transportError };
+        }
+
         try
         {
-            var baseUrl = GetBaseUrl();
             var client = _httpClientFactory.CreateClient();
             client.Timeout = TimeSpan.FromSeconds(5);
 
-            var pathAndQuery = $"/api/sync/round?tournamentId={tournamentId}&roundNumber={roundNumber}";
+            var pathAndQuery = $"/api/sync/round?tournamentId={Uri.EscapeDataString(tournamentId)}&roundNumber={roundNumber}";
             var json = JsonSerializer.Serialize(pairings, JsonOptions);
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}{pathAndQuery}")
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}{pathAndQuery}")
             {
                 Content = new StringContent(json, Encoding.UTF8, "application/json")
             };
@@ -164,20 +206,25 @@ public class CaissaResultsSyncService : ICaissaResultsSyncService
             var apiKey = _settingsService.Settings.CaissaResultsApiKey;
             CaissaSecurity.SignRequest(request, pathAndQuery, json, apiKey, tournamentSyncKey);
 
-            var response = await client.SendAsync(request);
+            using var response = await client.SendAsync(request, cancellationToken);
 
             if (response.IsSuccessStatusCode)
             {
-                var result = await response.Content.ReadFromJsonAsync<SyncResult>(JsonOptions);
+                var result = await response.Content.ReadFromJsonAsync<SyncResult>(JsonOptions, cancellationToken);
                 return result ?? new SyncResult { Success = true, Message = "Round updated." };
             }
 
-            var errorText = await response.Content.ReadAsStringAsync();
+            var errorText = ScoutingHttp.SanitizeServerError(await response.Content.ReadAsStringAsync(cancellationToken));
+            _logger.LogWarning("Round {Round} sync for tournament {Id} failed with {StatusCode}: {Error}", roundNumber, tournamentId, (int)response.StatusCode, errorText);
             return new SyncResult
             {
                 Success = false,
-                Message = $"Round sync failed ({response.StatusCode}): {errorText}"
+                Message = $"Round sync failed ({(int)response.StatusCode} {response.StatusCode}): {errorText}"
             };
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -190,7 +237,7 @@ public class CaissaResultsSyncService : ICaissaResultsSyncService
         }
     }
 
-    public async Task<bool> DeleteTournamentAsync(string tournamentId, string? tournamentSyncKey = null)
+    public async Task<bool> DeleteTournamentAsync(string tournamentId, string? tournamentSyncKey = null, CancellationToken cancellationToken = default)
     {
         if (!IsSyncConfigured)
         {
@@ -198,20 +245,31 @@ public class CaissaResultsSyncService : ICaissaResultsSyncService
             return false;
         }
 
+        var baseUrl = GetBaseUrl();
+        var transportError = GetInsecureTransportError(baseUrl);
+        if (transportError != null)
+        {
+            _logger.LogWarning("Delete blocked: {Reason}", transportError);
+            return false;
+        }
+
         try
         {
-            var baseUrl = GetBaseUrl();
             var client = _httpClientFactory.CreateClient();
             client.Timeout = TimeSpan.FromSeconds(5);
 
-            var pathAndQuery = $"/api/tournaments/{tournamentId}";
-            var request = new HttpRequestMessage(HttpMethod.Delete, $"{baseUrl}{pathAndQuery}");
+            var pathAndQuery = $"/api/tournaments/{Uri.EscapeDataString(tournamentId)}";
+            using var request = new HttpRequestMessage(HttpMethod.Delete, $"{baseUrl}{pathAndQuery}");
 
             var apiKey = _settingsService.Settings.CaissaResultsApiKey;
             CaissaSecurity.SignRequest(request, pathAndQuery, string.Empty, apiKey, tournamentSyncKey);
 
-            var response = await client.SendAsync(request);
+            using var response = await client.SendAsync(request, cancellationToken);
             return response.IsSuccessStatusCode;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {

@@ -1,21 +1,36 @@
 using System.Net;
 using System.Text.RegularExpressions;
 using System.Web;
+using Microsoft.Extensions.Logging;
 
 namespace CaissaDesk.Data;
 
 public class ChessResultsScoutingService : IChessResultsScoutingService
 {
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly ILogger<ChessResultsScoutingService> _logger;
 
     private static readonly Regex ViewStateRegex = new(@"id=""__VIEWSTATE""\s+value=""([^""]+)""", RegexOptions.Compiled);
     private static readonly Regex EventValidationRegex = new(@"id=""__EVENTVALIDATION""\s+value=""([^""]+)""", RegexOptions.Compiled);
     private static readonly Regex ViewStateGenRegex = new(@"id=""__VIEWSTATEGENERATOR""\s+value=""([^""]+)""", RegexOptions.Compiled);
     private static readonly Regex FormActionRegex = new(@"<form[^>]+action=""([^""]+)""", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    public ChessResultsScoutingService(IHttpClientFactory httpClientFactory)
+    public ChessResultsScoutingService(IHttpClientFactory httpClientFactory, ILogger<ChessResultsScoutingService> logger)
     {
         _httpClientFactory = httpClientFactory;
+        _logger = logger;
+    }
+
+    /// <summary>
+    /// Creates a pooled client from the named factory registration. Cookies are not shared between calls:
+    /// each search gets its own <see cref="CookieContainer"/> applied by <see cref="ScoutingHttp.SendWithCookiesAsync"/>.
+    /// </summary>
+    private HttpClient CreateClient(TimeSpan timeout)
+    {
+        var client = _httpClientFactory.CreateClient(ScoutingHttp.ChessResultsClientName);
+        client.Timeout = timeout;
+        client.DefaultRequestHeaders.UserAgent.ParseAdd(ScoutingHttp.UserAgent);
+        return client;
     }
 
     public async Task<List<ChessResultsTournamentEntry>> SearchPlayerTournamentsAsync(
@@ -29,16 +44,12 @@ public class ChessResultsScoutingService : IChessResultsScoutingService
 
         try
         {
-            var handler = new HttpClientHandler
-            {
-                CookieContainer = new CookieContainer(),
-                AllowAutoRedirect = true
-            };
-            using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(20) };
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+            var cookies = new CookieContainer();
+            var client = CreateClient(TimeSpan.FromSeconds(20));
 
             string initialUrl = "https://chess-results.com/SpielerSuche.aspx?lan=1";
-            var getResp = await client.GetAsync(initialUrl, cancellationToken);
+            using var getReq = new HttpRequestMessage(HttpMethod.Get, initialUrl);
+            using var getResp = await ScoutingHttp.SendWithCookiesAsync(client, getReq, cookies, cancellationToken);
             if (!getResp.IsSuccessStatusCode) return list;
 
             string initialHtml = await getResp.Content.ReadAsStringAsync(cancellationToken);
@@ -71,15 +82,19 @@ public class ChessResultsScoutingService : IChessResultsScoutingService
             };
             postReq.Headers.Referrer = new Uri(baseUri);
 
-            var postResp = await client.SendAsync(postReq, cancellationToken);
+            using var postResp = await ScoutingHttp.SendWithCookiesAsync(client, postReq, cookies, cancellationToken);
             if (!postResp.IsSuccessStatusCode) return list;
 
             string resultHtml = await postResp.Content.ReadAsStringAsync(cancellationToken);
             return ParseTournamentTableHtml(resultHtml, targetUri.ToString(), limit);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
-            Console.WriteLine($"[ChessResultsScoutingService] Error searching tournaments: {ex.Message}");
+            _logger.LogWarning(ex, "Error searching chess-results tournaments (FIDE ID {FideId}, last name {LastName})", fideId, lastName);
             return list;
         }
     }
@@ -93,16 +108,12 @@ public class ChessResultsScoutingService : IChessResultsScoutingService
 
         try
         {
-            var handler = new HttpClientHandler
-            {
-                CookieContainer = new CookieContainer(),
-                AllowAutoRedirect = true
-            };
-            using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(25) };
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+            var cookies = new CookieContainer();
+            var client = CreateClient(TimeSpan.FromSeconds(25));
 
             string initialUrl = "https://chess-results.com/PartieSuche.aspx?lan=1";
-            var getResp = await client.GetAsync(initialUrl, cancellationToken);
+            using var getReq = new HttpRequestMessage(HttpMethod.Get, initialUrl);
+            using var getResp = await ScoutingHttp.SendWithCookiesAsync(client, getReq, cookies, cancellationToken);
             if (!getResp.IsSuccessStatusCode) return null;
 
             string initialHtml = await getResp.Content.ReadAsStringAsync(cancellationToken);
@@ -133,7 +144,7 @@ public class ChessResultsScoutingService : IChessResultsScoutingService
             };
             postReq.Headers.Referrer = new Uri(baseUri);
 
-            var postResp = await client.SendAsync(postReq, cancellationToken);
+            using var postResp = await ScoutingHttp.SendWithCookiesAsync(client, postReq, cookies, cancellationToken);
             if (!postResp.IsSuccessStatusCode) return null;
 
             string content = await postResp.Content.ReadAsStringAsync(cancellationToken);
@@ -144,9 +155,13 @@ public class ChessResultsScoutingService : IChessResultsScoutingService
 
             return null;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
-            Console.WriteLine($"[ChessResultsScoutingService] Error downloading PGNs: {ex.Message}");
+            _logger.LogWarning(ex, "Error downloading chess-results PGNs (FIDE ID {FideId}, last name {LastName})", fideId, lastName);
             return null;
         }
     }
