@@ -12,7 +12,7 @@
 [![Tests](https://img.shields.io/badge/Tests-86%20Passing-success.svg?style=flat-square)](https://github.com/duckarp/CaissaDesk/actions)
 [![License](https://img.shields.io/badge/License-GPLv3-blue.svg?style=flat-square)](LICENSE)
 
-*Caissalytics' sister desktop workstation: a modern, lightweight, open-source alternative to legacy tournament software. Built with .NET 10, Photino.Blazor native desktop shell, SQLite, and FIDE-certified pairing engines.*
+*Caissalytics' sister desktop workstation: a modern, lightweight, open-source alternative to legacy tournament software. Built with .NET 10, Photino.Blazor native desktop shell, SQLite, and pluggable Swiss pairing engines (including support for the FIDE-endorsed bbpPairings and JaVaFo).*
 
 [Key Features](#-key-features) • [Pairing Engines](#-fide-pairing-engines) • [Tiebreak Systems](#-fide-tiebreak-engine) • [Downloads](#-installation--downloads) • [Building](#-building-from-source)
 
@@ -30,7 +30,7 @@
   - National database scouting (Slovak Chess Federation / SŠZ rating and club integration).
   - Configurable tournament seeding precedence (FIDE first vs. National first).
   - Full title hierarchy including standard FIDE titles (`GM`, `IM`, `FM`, `CM`, `WGM`, `WIM`, `WFM`, `WCM`) and FIDE Online Arena titles (`AGM`, `AIM`, `AFM`, `ACM`).
-- **⚙️ Pluggable FIDE Pairing Engine Architecture**: Run pairings using our built-in pure C# Dutch engine (zero external dependencies) or seamlessly switch to FIDE-certified external engines (**bbpPairings** or **JaVaFo**) with integrated test diagnostics and automated downloads.
+- **⚙️ Pluggable FIDE Pairing Engine Architecture**: Run pairings using the built-in simplified Dutch engine (pure C#, zero external dependencies) or switch to the FIDE-endorsed external engines (**bbpPairings** or **JaVaFo**), recommended for rated events, with integrated test diagnostics and automated downloads.
 - **🎯 Comprehensive Arbiter Round Operations**:
   - Fast keyboard-friendly result entry (`1-0`, `0-1`, `½-½`, `1F-0`, `0-1F`, `0F-0F`, unplayed).
   - Late player registrations with automatic half-point or zero-point byes for past rounds.
@@ -48,19 +48,19 @@
 
 ---
 
-## ⚙️ FIDE Pairing Engines
+## ⚙️ Pairing Engines
 
 CaissaDesk features an engine registry supporting multiple pairing backends:
 
 | Engine | Type | Description |
 |---|---|---|
-| **Native Dutch Engine** | Built-in C# | High-speed, pure .NET implementation of FIDE Handbook C.04. Operates with zero external dependencies and handles score brackets, floaters, color balance, and pairing-allocated byes. |
-| **bbpPairings** | Native C++ binary | FIDE-certified Swiss pairing engine by Roberto Ricca. Configurable via local binary or automated download in settings. |
-| **JaVaFo** | Java (`.jar`) | Official FIDE-certified pairing engine by Roberto Ricca, run via system Java runtime. |
+| **Native Swiss (simplified Dutch)** | Built-in C# | Pure .NET engine with zero external dependencies. Implements a simplified subset of the FIDE Dutch rules (C.04.3): score brackets, floaters, color balance, and pairing-allocated byes. It is **not** FIDE-endorsed and may produce pairings that differ from bbpPairings/JaVaFo; use it for casual events and use an endorsed engine for FIDE-rated tournaments. |
+| **bbpPairings** | Native C++ binary | FIDE-endorsed Dutch pairing engine by Jeremy Bierema. Configurable via local binary or automated download in settings. |
+| **JaVaFo** | Java (`.jar`) | FIDE-endorsed Dutch pairing engine by Roberto Ricca, run via system Java runtime. |
 | **Berger Engine** | Deterministic rotational | Mathematical rotational pairing tables for Round Robin tournaments (even and odd player counts). |
 
 > [!TIP]
-> The engine registry includes automatic fallback: if a selected external engine executable is unavailable, CaissaDesk automatically falls back to the native Dutch engine so rounds are never blocked.
+> The engine registry includes automatic fallback: if a selected external engine executable is unavailable, CaissaDesk falls back to the native simplified Dutch engine so rounds are never blocked, and shows the arbiter a warning that the fallback was used.
 
 ---
 

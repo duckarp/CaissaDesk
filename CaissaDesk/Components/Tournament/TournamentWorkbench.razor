@@ -324,7 +324,7 @@
 
 									<button class="@(isPending ? "btn-secondary" : "btn-primary")"
 											@onclick="GenerateNextRoundAsync"
-											title="@(isPending ? $"Round {latestRound?.RoundNumber} has {unplayedCount} match(es) in progress. Click to view pending games." : $"Generate FIDE Dutch pairings for Round {_tournament.Rounds.Count + 1}")">
+											title="@(isPending ? $"Round {latestRound?.RoundNumber} has {unplayedCount} match(es) in progress. Click to view pending games." : $"Generate Swiss pairings for Round {_tournament.Rounds.Count + 1}")">
 										@if (isPending)
 										{
 											<span style="color: var(--brand-gold);"><AppIcon Name="warning" Size="13" /></span>
@@ -374,6 +374,19 @@
 								<span>@_pairingErrorMessage</span>
 							</div>
 							<button class="modal-close-btn" style="color: #f87171; width: 24px; height: 24px;" @onclick="() => _pairingErrorMessage = null" type="button" title="@Loc["Common_Dismiss"]">
+								<AppIcon Name="x" Size="13" />
+							</button>
+						</div>
+					}
+
+					@if (!string.IsNullOrEmpty(_pairingWarningMessage))
+					{
+						<div class="panel-card" style="background: rgba(210, 153, 34, 0.15); border: 1px solid var(--accent-warning); padding: 10px 14px; display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+							<div style="display: flex; align-items: center; gap: 8px; color: var(--accent-warning); font-size: 13px;">
+								<AppIcon Name="warning" Size="16" />
+								<span>@_pairingWarningMessage</span>
+							</div>
+							<button class="modal-close-btn" style="color: var(--accent-warning); width: 24px; height: 24px;" @onclick="() => _pairingWarningMessage = null" type="button" title="@Loc["Common_Dismiss"]">
 								<AppIcon Name="x" Size="13" />
 							</button>
 						</div>
@@ -2301,7 +2314,7 @@
 
 	private string GetActiveEngineName()
 	{
-		if (_tournament == null) return "FIDE Dutch";
+		if (_tournament == null) return "Swiss";
 		if (_tournament.System == TournamentSystem.RoundRobin) return "Berger Tables";
 		var engine = EngineRegistry.GetEngine(_tournament.PairingEngineId);
 		return engine.DisplayName;
@@ -2314,8 +2327,8 @@
 	private async Task SelectPairingEngine(string engineId)
 	{
 		if (_tournament == null) return;
-		var engine = EngineRegistry.GetEngine(engineId);
-		if (!engine.IsAvailable) return;
+		// GetEngine never reports unavailability (it falls back to native), so resolve explicitly
+		if (EngineRegistry.ResolveEngine(engineId).IsFallback) return;
 		_tournament.PairingEngineId = engineId;
 		await TournamentRepo.SaveAsync(_tournament);
 		Tab.NotifyChanged();
@@ -2352,6 +2365,8 @@
 	private async Task GeneratePairingsAsync()
 	{
 		if (_tournament == null || _tournament.Players.Count < 2) return;
+		_pairingErrorMessage = null;
+		_pairingWarningMessage = null;
 
 		if (_tournament.System == TournamentSystem.RoundRobin)
 		{
@@ -2364,10 +2379,15 @@
 		{
 			var engine = EngineRegistry.GetEngine(_tournament.PairingEngineId);
 			var result = engine.GenerateRoundPairings(_tournament, 1);
+			_pairingWarningMessage = result.Warning;
 			if (result.Success)
 			{
 				_tournament.Rounds = [new Round { RoundNumber = 1, Pairings = result.Pairings }];
 				_activeRoundNumber = 1;
+			}
+			else
+			{
+				_pairingErrorMessage = result.ErrorMessage ?? "Failed to generate round pairings.";
 			}
 		}
 
@@ -2376,11 +2396,13 @@
 	}
 
 	private string? _pairingErrorMessage;
+	private string? _pairingWarningMessage;
 
 	private async Task GenerateNextRoundAsync()
 	{
 		if (_tournament == null) return;
 		_pairingErrorMessage = null;
+		_pairingWarningMessage = null;
 		int nextRoundNumber = _tournament.Rounds.Count + 1;
 		if (nextRoundNumber > _tournament.TotalRounds) return;
 
@@ -2399,6 +2421,7 @@
 
 		var engine = EngineRegistry.GetEngine(_tournament.PairingEngineId);
 		var result = engine.GenerateRoundPairings(_tournament, nextRoundNumber);
+		_pairingWarningMessage = result.Warning;
 		if (result.Success)
 		{
 			_tournament.Rounds.Add(new Round { RoundNumber = nextRoundNumber, Pairings = result.Pairings });
@@ -2458,6 +2481,7 @@
 	{
 		if (_tournament == null) return;
 		_pairingErrorMessage = null;
+		_pairingWarningMessage = null;
 
 		if (_tournament.System == TournamentSystem.RoundRobin)
 		{
@@ -2477,6 +2501,7 @@
 
 			var engine = EngineRegistry.GetEngine(_tournament.PairingEngineId);
 			var result = engine.GenerateRoundPairings(_tournament, roundNumber);
+			_pairingWarningMessage = result.Warning;
 			if (result.Success)
 			{
 				_tournament.Rounds.Add(new Round { RoundNumber = roundNumber, Pairings = result.Pairings });
@@ -2510,6 +2535,7 @@
 	{
 		if (_tournament == null) return;
 		_pairingErrorMessage = null;
+		_pairingWarningMessage = null;
 
 		_tournament.Rounds.RemoveAll(r => r.RoundNumber == roundNumber);
 		_activeRoundNumber = Math.Max(1, _tournament.Rounds.Count);
@@ -2522,6 +2548,7 @@
 	{
 		if (_tournament == null) return;
 		_pairingErrorMessage = null;
+		_pairingWarningMessage = null;
 		_tournament.Rounds.Clear();
 		await GeneratePairingsAsync();
 	}
@@ -2536,6 +2563,7 @@
 	{
 		if (_tournament == null) return;
 		_pairingErrorMessage = null;
+		_pairingWarningMessage = null;
 		await TournamentRepo.SaveAsync(_tournament);
 		Tab.NotifyChanged();
 	}
