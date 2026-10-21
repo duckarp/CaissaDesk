@@ -3,8 +3,9 @@ using Caissa.Shared.Models;
 namespace Caissa.Shared.Tiebreak;
 
 /// <summary>
-/// Standings and tie-breaks following FIDE C.07 (2023): unplayed rounds per Article 16 (Swiss),
-/// Direct Encounter per Article 6, ARO / games with Black over the board only.
+/// Standings and tie-breaks following FIDE C.07 Play-Off and Tie-Break Regulations (effective 1 March 2026):
+/// unplayed rounds per Article 16 (Swiss, with the 16.4 dummy-score caps), forfeits in pre-determined
+/// pairings per 15.2, Direct Encounter per Article 6, ARO / WON / games with Black over the board only.
 /// </summary>
 public class TiebreakService : ITiebreakService
 {
@@ -59,6 +60,10 @@ public class TiebreakService : ITiebreakService
             : (tournament.Rounds.Count > 0 ? tournament.Rounds.Count : Math.Max(1, tournament.Players.Count - 1));
         double koya50Threshold = maxTournamentScore * 0.5;
 
+        // 16.4.2: dummy score cap for byes / absences = points for a draw × number of rounds in the tournament
+        const double drawPoints = 0.5;
+        double byeDummyCap = drawPoints * maxTournamentScore;
+
         bool CountsAsGame(RoundEntry e) =>
             e.OpponentId != null && stats.ContainsKey(e.OpponentId) &&
             (e.Kind == EntryKind.Played || (predetermined && e.Kind is EntryKind.ForfeitWin or EntryKind.ForfeitLoss));
@@ -82,6 +87,8 @@ public class TiebreakService : ITiebreakService
                 GamesPlayed = pStat.Entries.Count(e => e.Kind != EntryKind.Absent),
                 // WIN (C.07 7.1): rounds scored as a win, with or without playing
                 Wins = pStat.Entries.Count(e => e.Points == 1.0),
+                // WON (C.07 7.2): games won over the board
+                GamesWon = pStat.Entries.Count(e => e.Kind == EntryKind.Played && e.Points == 1.0),
                 // BPG (C.07 7.3): games played over the board with Black
                 BlackGames = pStat.Entries.Count(e => e.Kind == EntryKind.Played && e.IsBlack),
                 TiebreakValues = []
@@ -107,9 +114,11 @@ public class TiebreakService : ITiebreakService
                 }
                 else if (isSwiss)
                 {
-                    // 16.4: an unplayed round is a game against a dummy opponent with the participant's own score
-                    contributions.Add(new Contribution(pStat.Points, entry.IsVoluntaryUnplayed));
-                    sbScore += entry.Points * pStat.Points;
+                    // 16.4: an unplayed round is a game against a dummy opponent whose score is the participant's
+                    // own score, capped per 16.4.1 (forfeits) / 16.4.2 (other unplayed rounds)
+                    double dummy = DummyScore(entry, pStat, stats, byeDummyCap);
+                    contributions.Add(new Contribution(dummy, entry.IsVoluntaryUnplayed));
+                    sbScore += entry.Points * dummy;
                 }
 
                 // ARO (C.07 10.1): opponents played over the board only
@@ -131,12 +140,14 @@ public class TiebreakService : ITiebreakService
             standing.TiebreakValues[TiebreakType.ExtendedKoya] = koyaScore;
             standing.TiebreakValues[TiebreakType.MostWins] = standing.Wins;
             standing.TiebreakValues[TiebreakType.MostBlack] = standing.BlackGames;
+            standing.TiebreakValues[TiebreakType.GamesWon] = standing.GamesWon;
 
-            standing.TiebreakValues[TiebreakType.Aroc] = opponentRatings.Count > 0 ? opponentRatings.Average() : 0.0;
+            // 10.1: ARO is rounded to the nearest whole number (0.5 rounded up)
+            standing.TiebreakValues[TiebreakType.Aroc] = opponentRatings.Count > 0 ? RoundAro(opponentRatings.Average()) : 0.0;
             if (opponentRatings.Count > 1)
             {
                 opponentRatings.Sort();
-                standing.TiebreakValues[TiebreakType.Aroc1] = opponentRatings.Skip(1).Average();
+                standing.TiebreakValues[TiebreakType.Aroc1] = RoundAro(opponentRatings.Skip(1).Average());
             }
             else
             {
@@ -174,7 +185,7 @@ public class TiebreakService : ITiebreakService
             List<List<PlayerStanding>> parts = tb switch
             {
                 TiebreakType.DirectEncounter => PartitionByDirectEncounter(group, stats, CountsAsGame),
-                TiebreakType.ExtendedKoya => PartitionByComparer(group, (a, b) => CompareExtendedKoya(a.PlayerId, b.PlayerId, stats, maxTournamentScore)),
+                TiebreakType.ExtendedKoya => PartitionByComparer(group, (a, b) => CompareExtendedKoya(a.PlayerId, b.PlayerId, stats, maxTournamentScore, CountsAsGame)),
                 _ => PartitionByValue(group, s => s.TiebreakValues.GetValueOrDefault(tb, 0.0))
             };
 
@@ -294,6 +305,22 @@ public class TiebreakService : ITiebreakService
     }
 
     /// <summary>
+    /// C.07 (2026) 16.4: score of the dummy opponent for an unplayed round = the participant's own score, capped at
+    /// the scheduled opponent's adjusted score (16.3) for forfeit wins / losses (16.4.1), or at draw points × number
+    /// of rounds in the tournament for byes and other unplayed rounds (16.4.2).
+    /// </summary>
+    private static double DummyScore(RoundEntry entry, PlayerStats self, Dictionary<string, PlayerStats> stats, double byeCap)
+    {
+        bool isForfeit = entry.Kind is EntryKind.ForfeitWin or EntryKind.ForfeitLoss;
+        double cap = isForfeit && entry.OpponentId != null && stats.TryGetValue(entry.OpponentId, out var opp)
+            ? opp.AdjustedScore
+            : byeCap;
+        return Math.Min(self.Points, cap);
+    }
+
+    private static double RoundAro(double value) => Math.Round(value, MidpointRounding.AwayFromZero);
+
+    /// <summary>
     /// Sum after cutting the <paramref name="cutLowest"/> least significant and <paramref name="cutHighest"/>
     /// most significant contributions. Per C.07 16.5 the lowest-cut slots are taken first by contributions of
     /// voluntarily unplayed rounds (forfeit losses, requested byes), lowest first.
@@ -385,7 +412,12 @@ public class TiebreakService : ITiebreakService
         return [[leader], .. PartitionByDirectEncounter(rest, stats, countsAsGame)];
     }
 
-    private static int CompareExtendedKoya(string playerAId, string playerBId, Dictionary<string, PlayerStats> stats, double maxScore)
+    /// <summary>
+    /// Extended Koya: Koya (9.2) with the 14.5 limit modifier applied repeatedly, lowering the 50% threshold
+    /// in half-point steps until the players are separated. Games are counted exactly as for Koya.
+    /// </summary>
+    private static int CompareExtendedKoya(
+        string playerAId, string playerBId, Dictionary<string, PlayerStats> stats, double maxScore, Func<RoundEntry, bool> countsAsGame)
     {
         if (!stats.TryGetValue(playerAId, out var statsA) || !stats.TryGetValue(playerBId, out var statsB))
             return 0;
@@ -394,11 +426,11 @@ public class TiebreakService : ITiebreakService
         for (double t = maxScore * 0.5; t >= 0; t -= 0.5)
         {
             double scoreA = statsA.Entries
-                .Where(e => e.Kind == EntryKind.Played && stats.TryGetValue(e.OpponentId!, out var opp) && opp.Points >= t)
+                .Where(e => countsAsGame(e) && stats[e.OpponentId!].Points >= t)
                 .Sum(e => e.Points);
 
             double scoreB = statsB.Entries
-                .Where(e => e.Kind == EntryKind.Played && stats.TryGetValue(e.OpponentId!, out var opp) && opp.Points >= t)
+                .Where(e => countsAsGame(e) && stats[e.OpponentId!].Points >= t)
                 .Sum(e => e.Points);
 
             int comp = scoreB.CompareTo(scoreA); // descending

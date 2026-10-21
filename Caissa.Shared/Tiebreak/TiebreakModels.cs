@@ -15,7 +15,9 @@ public enum TiebreakType
     Aroc1 = 8,
     Koya = 9,
     ExtendedKoya = 10,
-    Aroc = 11
+    Aroc = 11,
+    /// <summary>C.07 7.2 (WON): games won over the board (forfeit wins and byes excluded).</summary>
+    GamesWon = 12
 }
 
 public enum TiebreakPreset
@@ -42,6 +44,7 @@ public static class TiebreakExtensions
         TiebreakType.Koya => "Koya",
         TiebreakType.ExtendedKoya => "Ext-Koya",
         TiebreakType.Aroc => "AROC",
+        TiebreakType.GamesWon => "WON",
         _ => type.ToString()
     };
 
@@ -59,6 +62,7 @@ public static class TiebreakExtensions
         TiebreakType.Koya => "Koya System",
         TiebreakType.ExtendedKoya => "Extended Koya System",
         TiebreakType.Aroc => "Average Rating of Opponents (Full)",
+        TiebreakType.GamesWon => "Games Won over the Board",
         _ => type.ToString()
     };
 
@@ -105,6 +109,7 @@ public class PlayerStanding
     public int GamesPlayed { get; set; }
     public int Wins { get; set; }
     public int BlackGames { get; set; }
+    public int GamesWon { get; set; }
     public Dictionary<TiebreakType, double> TiebreakValues { get; set; } = [];
 
     public string FormatTiebreak(TiebreakType type)
@@ -113,7 +118,7 @@ public class PlayerStanding
 
         return type switch
         {
-            TiebreakType.MostWins or TiebreakType.MostBlack => ((int)val).ToString(),
+            TiebreakType.MostWins or TiebreakType.MostBlack or TiebreakType.GamesWon => ((int)val).ToString(),
             TiebreakType.Aroc or TiebreakType.Aroc1 => val.ToString("F0"),
             TiebreakType.DirectEncounter or TiebreakType.Koya or TiebreakType.ExtendedKoya => val.ToString("0.0"),
             _ => val.ToString("F2")

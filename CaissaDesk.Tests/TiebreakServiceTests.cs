@@ -520,7 +520,7 @@ public class TiebreakServiceTests
     }
 
     [Fact]
-    public void Buchholz_ForfeitWin_UsesDummy_AndForfeitOpponentIsNotInAroOrBlackGames()
+    public void Buchholz_ForfeitWin_UsesCappedDummy_AndForfeitOpponentIsNotInAroOrBlackGames()
     {
         var service = new TiebreakService();
         var t = Swiss(("P", 1), ("F", 2), ("X", 3), ("Y", 4));
@@ -536,8 +536,9 @@ public class TiebreakServiceTests
         var p = Of(standings, "P");
 
         // P = 1 (forfeit win) + ½ + ½ = 2. X = 2, Y = 2, F = 0.
-        // BH = dummy(2) + X(2) + Y(2) = 6, the forfeiting F does not contribute
-        Assert.Equal(6.0, p.TiebreakValues[TiebreakType.Buchholz]);
+        // C.07 (2026) 16.4.1: the forfeit win is a game vs a dummy scoring min(own 2, F's adjusted score 0) = 0
+        // BH = dummy(0) + X(2) + Y(2) = 4
+        Assert.Equal(4.0, p.TiebreakValues[TiebreakType.Buchholz]);
         // ARO over the board only: (2000 + 2200) / 2
         Assert.Equal(2100.0, p.TiebreakValues[TiebreakType.Aroc]);
         // Black over the board: only round 2 (the forfeit as Black does not count)
