@@ -154,8 +154,24 @@
 		Loc.OnLanguageChanged += StateHasChanged;
 	}
 
+	private bool _wasOpen;
+	private Pairing? _loadedPairing;
+	private Round? _loadedRound;
+
 	protected override void OnParametersSet()
 	{
+		// Load the form only when the dialog opens or is pointed at another board/round; ordinary parent
+		// re-renders must not discard what the arbiter has typed so far.
+		bool opened = IsOpen && !_wasOpen;
+		bool otherTarget = IsOpen && (!ReferenceEquals(Pairing, _loadedPairing) || !ReferenceEquals(Round, _loadedRound));
+		_wasOpen = IsOpen;
+		_loadedPairing = IsOpen ? Pairing : null;
+		_loadedRound = IsOpen ? Round : null;
+		if (!opened && !otherTarget)
+		{
+			return;
+		}
+
 		if (Pairing != null)
 		{
 			_boardNumber = Pairing.BoardNumber;

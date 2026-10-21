@@ -225,10 +225,37 @@
 	private string _lateFed = "SVK";
 	private int _lateRating = 0;
 	private ByeType _lateByeType = ByeType.HalfPoint;
+	private bool _wasOpen;
+	private Tournament? _loadedTournament;
 
 	protected override void OnInitialized()
 	{
 		Loc.OnLanguageChanged += StateHasChanged;
+	}
+
+	protected override void OnParametersSet()
+	{
+		// Start with a clean late-registration form when the dialog opens or switches tournament, but keep
+		// what is being typed across ordinary parent re-renders (e.g. after a bye toggle is saved).
+		bool opened = IsOpen && !_wasOpen;
+		bool otherTournament = IsOpen && !ReferenceEquals(Tournament, _loadedTournament);
+		if (opened || otherTournament)
+		{
+			ResetLateEntryForm();
+		}
+		_wasOpen = IsOpen;
+		_loadedTournament = IsOpen ? Tournament : null;
+	}
+
+	private void ResetLateEntryForm()
+	{
+		_showLateEntry = false;
+		_lateLastName = "";
+		_lateFirstName = "";
+		_lateTitle = "";
+		_lateFed = "SVK";
+		_lateRating = 0;
+		_lateByeType = ByeType.HalfPoint;
 	}
 
 	public void Dispose()
