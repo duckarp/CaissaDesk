@@ -9,211 +9,210 @@
 
 @if (IsOpen && Tournament != null)
 {
-	<div class="modal-overlay" @onclick="CloseAsync">
-		<div class="modal-content" style="max-width: 900px; max-height: 90vh;" @onclick:stopPropagation="true">
-			<div class="modal-header">
-				<div class="modal-title">
-					<span style="color: var(--brand-gold);"><AppIcon Name="users" Size="18" /></span>
-					<span>@Loc["Attendance_Title"]</span>
+	<ModalDialog LabelledBy="@_titleId" OnCancel="CloseAsync" Style="max-width: 900px; max-height: 90vh;">
+		<div class="modal-header">
+			<div class="modal-title" id="@_titleId">
+				<span style="color: var(--brand-gold);"><AppIcon Name="users" Size="18" /></span>
+				<span>@Loc["Attendance_Title"]</span>
+			</div>
+			<button class="modal-close-btn" @onclick="CloseAsync" type="button" title="@Loc["Common_Close"]" aria-label="@Loc["Common_Close"]">
+				<AppIcon Name="x" Size="15" />
+			</button>
+		</div>
+
+		<div class="modal-body" style="display: flex; flex-direction: column; gap: 18px; overflow-y: auto;">
+			<!-- Top Actions: Late Registration Toggle -->
+			<div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+				<div style="font-size: 13px; color: var(--text-secondary);">
+					@Loc["Attendance_Subtitle"]
 				</div>
-				<button class="modal-close-btn" @onclick="CloseAsync" type="button" title="@Loc["Common_Close"]">
-					<AppIcon Name="x" Size="15" />
+				<button class="btn-secondary" @onclick="() => _showLateEntry = !_showLateEntry">
+					<AppIcon Name="@(_showLateEntry ? "x" : "plus")" Size="13" />
+					<span>@(_showLateEntry ? Loc["Attendance_HideLateReg"] : Loc["Attendance_LateReg"])</span>
 				</button>
 			</div>
 
-			<div class="modal-body" style="display: flex; flex-direction: column; gap: 18px; overflow-y: auto;">
-				<!-- Top Actions: Late Registration Toggle -->
-				<div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
-					<div style="font-size: 13px; color: var(--text-secondary);">
-						@Loc["Attendance_Subtitle"]
+			@if (_showLateEntry)
+			{
+				<!-- Late Registration Card -->
+				<div class="panel-card" style="background-color: var(--bg-surface-elevated); border-left: 3px solid var(--brand-gold);">
+					<div class="panel-title" style="margin-bottom: 8px;">@Loc["Attendance_LateRegTitle"]</div>
+					<div style="display: grid; grid-template-columns: 1.5fr 1.5fr 1fr 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+						<div>
+							<label class="form-label">@Loc["Common_LastName"]</label>
+							<input type="text" class="form-input" placeholder="e.g. Anand" @bind="_lateLastName" />
+						</div>
+						<div>
+							<label class="form-label">@Loc["Common_FirstName"]</label>
+							<input type="text" class="form-input" placeholder="e.g. Viswanathan" @bind="_lateFirstName" />
+						</div>
+						<div>
+							<label class="form-label">@Loc["Common_Title"]</label>
+							<select class="form-select" @bind="_lateTitle">
+								<option value="">None</option>
+								<option value="GM">GM</option>
+								<option value="IM">IM</option>
+								<option value="FM">FM</option>
+								<option value="CM">CM</option>
+								<option value="WGM">WGM</option>
+								<option value="WIM">WIM</option>
+								<option value="WFM">WFM</option>
+								<option value="WCM">WCM</option>
+								<option value="AGM">AGM</option>
+								<option value="AIM">AIM</option>
+								<option value="AFM">AFM</option>
+								<option value="ACM">ACM</option>
+							</select>
+						</div>
+						<div>
+							<label class="form-label">@Loc["Common_Federation"]</label>
+							<input type="text" class="form-input" @bind="_lateFed" maxlength="3" />
+						</div>
+						<div>
+							<label class="form-label">@Loc["Roster_FideElo"]</label>
+							<input type="number" class="form-input" @bind="_lateRating" min="0" max="3000" />
+						</div>
 					</div>
-					<button class="btn-secondary" @onclick="() => _showLateEntry = !_showLateEntry">
-						<AppIcon Name="@(_showLateEntry ? "x" : "plus")" Size="13" />
-						<span>@(_showLateEntry ? Loc["Attendance_HideLateReg"] : Loc["Attendance_LateReg"])</span>
-					</button>
+
+					<div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+						<div style="display: flex; align-items: center; gap: 8px;">
+							<span class="form-label" style="margin: 0;">@Loc["Attendance_MissedRounds"]</span>
+							<select class="form-select" style="width: auto;" @bind="_lateByeType">
+								<option value="@ByeType.HalfPoint">@Loc["Bye_HalfPerRound"]</option>
+								<option value="@ByeType.ZeroPoint">@Loc["Bye_ZeroPerRound"]</option>
+								<option value="@ByeType.None">@Loc["Bye_NoByes"]</option>
+							</select>
+						</div>
+
+						<button class="btn-primary" @onclick="RegisterLatePlayerAsync" disabled="@(string.IsNullOrWhiteSpace(_lateLastName) && string.IsNullOrWhiteSpace(_lateFirstName))">
+							<AppIcon Name="plus" Size="13" />
+							<span>@Loc["Attendance_AddLateBtn"]</span>
+						</button>
+					</div>
 				</div>
+			}
 
-				@if (_showLateEntry)
-				{
-					<!-- Late Registration Card -->
-					<div class="panel-card" style="background-color: var(--bg-surface-elevated); border-left: 3px solid var(--brand-gold);">
-						<div class="panel-title" style="margin-bottom: 8px;">@Loc["Attendance_LateRegTitle"]</div>
-						<div style="display: grid; grid-template-columns: 1.5fr 1.5fr 1fr 1fr 1fr; gap: 10px; margin-bottom: 10px;">
-							<div>
-								<label class="form-label">@Loc["Common_LastName"]</label>
-								<input type="text" class="form-input" placeholder="e.g. Anand" @bind="_lateLastName" />
-							</div>
-							<div>
-								<label class="form-label">@Loc["Common_FirstName"]</label>
-								<input type="text" class="form-input" placeholder="e.g. Viswanathan" @bind="_lateFirstName" />
-							</div>
-							<div>
-								<label class="form-label">@Loc["Common_Title"]</label>
-								<select class="form-select" @bind="_lateTitle">
-									<option value="">None</option>
-									<option value="GM">GM</option>
-									<option value="IM">IM</option>
-									<option value="FM">FM</option>
-									<option value="CM">CM</option>
-									<option value="WGM">WGM</option>
-									<option value="WIM">WIM</option>
-									<option value="WFM">WFM</option>
-									<option value="WCM">WCM</option>
-									<option value="AGM">AGM</option>
-									<option value="AIM">AIM</option>
-									<option value="AFM">AFM</option>
-									<option value="ACM">ACM</option>
-								</select>
-							</div>
-							<div>
-								<label class="form-label">@Loc["Common_Federation"]</label>
-								<input type="text" class="form-input" @bind="_lateFed" maxlength="3" />
-							</div>
-							<div>
-								<label class="form-label">@Loc["Roster_FideElo"]</label>
-								<input type="number" class="form-input" @bind="_lateRating" min="0" max="3000" />
-							</div>
-						</div>
+			<!-- Player Attendance & Round Bye Grid -->
+			<div class="data-table-container">
+				<table class="data-table">
+					<thead>
+						<tr>
+							<th style="width: 40px; text-align: center;">#</th>
+							<th>@Loc["Common_Name"]</th>
+							<th style="width: 70px; text-align: right;">@Loc["Common_Rating"]</th>
+							<th style="width: 95px; text-align: center;">@Loc["Common_Status"]</th>
+							@for (int r = 1; r <= Tournament.TotalRounds; r++)
+							{
+								int roundNum = r;
+								<th style="width: 65px; text-align: center;">R@(roundNum)</th>
+							}
+							<th style="width: 100px; text-align: center;">@Loc["Common_Actions"]</th>
+						</tr>
+					</thead>
+					<tbody>
+						@foreach (var player in Tournament.Players.OrderBy(p => p.StartRank))
+						{
+							bool isWithdrawn = player.Status == PlayerStatus.Withdrawn;
+							<tr style="@(isWithdrawn ? "opacity: 0.6;" : "")">
+								<td style="text-align: center; font-weight: 700; color: var(--text-secondary); font-family: var(--font-mono);">
+									@player.StartRank
+								</td>
+								<td style="font-weight: 600;">
+									@if (!string.IsNullOrEmpty(player.Title))
+									{
+										<span class="badge badge-gold" style="margin-right: 4px;">@player.Title</span>
+									}
+									<span>@player.FullName</span>
+								</td>
+								<td style="text-align: right; font-family: var(--font-mono); color: var(--text-secondary);">
+									@(player.FideRating > 0 ? player.FideRating.ToString() : "-")
+								</td>
+								<td style="text-align: center;">
+									<span class="@(player.Status == PlayerStatus.Active ? "badge badge-green" : "badge badge-gray")">
+										@player.Status
+									</span>
+								</td>
 
-						<div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
-							<div style="display: flex; align-items: center; gap: 8px;">
-								<span class="form-label" style="margin: 0;">@Loc["Attendance_MissedRounds"]</span>
-								<select class="form-select" style="width: auto;" @bind="_lateByeType">
-									<option value="@ByeType.HalfPoint">@Loc["Bye_HalfPerRound"]</option>
-									<option value="@ByeType.ZeroPoint">@Loc["Bye_ZeroPerRound"]</option>
-									<option value="@ByeType.None">@Loc["Bye_NoByes"]</option>
-								</select>
-							</div>
-
-							<button class="btn-primary" @onclick="RegisterLatePlayerAsync" disabled="@(string.IsNullOrWhiteSpace(_lateLastName) && string.IsNullOrWhiteSpace(_lateFirstName))">
-								<AppIcon Name="plus" Size="13" />
-								<span>@Loc["Attendance_AddLateBtn"]</span>
-							</button>
-						</div>
-					</div>
-				}
-
-				<!-- Player Attendance & Round Bye Grid -->
-				<div class="data-table-container">
-					<table class="data-table">
-						<thead>
-							<tr>
-								<th style="width: 40px; text-align: center;">#</th>
-								<th>@Loc["Common_Name"]</th>
-								<th style="width: 70px; text-align: right;">@Loc["Common_Rating"]</th>
-								<th style="width: 95px; text-align: center;">@Loc["Common_Status"]</th>
+								<!-- Round by Round advance bye selectors -->
 								@for (int r = 1; r <= Tournament.TotalRounds; r++)
 								{
 									int roundNum = r;
-									<th style="width: 65px; text-align: center;">R@(roundNum)</th>
-								}
-								<th style="width: 100px; text-align: center;">@Loc["Common_Actions"]</th>
-							</tr>
-						</thead>
-						<tbody>
-							@foreach (var player in Tournament.Players.OrderBy(p => p.StartRank))
-							{
-								bool isWithdrawn = player.Status == PlayerStatus.Withdrawn;
-								<tr style="@(isWithdrawn ? "opacity: 0.6;" : "")">
-									<td style="text-align: center; font-weight: 700; color: var(--text-secondary); font-family: var(--font-mono);">
-										@player.StartRank
-									</td>
-									<td style="font-weight: 600;">
-										@if (!string.IsNullOrEmpty(player.Title))
+									bool roundGenerated = Tournament.Rounds.Any(rnd => rnd.RoundNumber == roundNum);
+									player.ByeRequests.TryGetValue(roundNum, out var currentBye);
+
+									<td style="text-align: center; padding: 4px;">
+										@if (isWithdrawn)
 										{
-											<span class="badge badge-gold" style="margin-right: 4px;">@player.Title</span>
+											<span style="color: var(--text-muted); font-size: 11px;">-</span>
 										}
-										<span>@player.FullName</span>
-									</td>
-									<td style="text-align: right; font-family: var(--font-mono); color: var(--text-secondary);">
-										@(player.FideRating > 0 ? player.FideRating.ToString() : "-")
-									</td>
-									<td style="text-align: center;">
-										<span class="@(player.Status == PlayerStatus.Active ? "badge badge-green" : "badge badge-gray")">
-											@player.Status
-										</span>
-									</td>
+										else if (roundGenerated)
+										{
+											<!-- Round already paired/generated -->
+											var existingPairing = Tournament.Rounds
+												.FirstOrDefault(rnd => rnd.RoundNumber == roundNum)?
+												.Pairings.FirstOrDefault(p => p.WhitePlayerId == player.Id || p.BlackPlayerId == player.Id);
 
-									<!-- Round by Round advance bye selectors -->
-									@for (int r = 1; r <= Tournament.TotalRounds; r++)
-									{
-										int roundNum = r;
-										bool roundGenerated = Tournament.Rounds.Any(rnd => rnd.RoundNumber == roundNum);
-										player.ByeRequests.TryGetValue(roundNum, out var currentBye);
-
-										<td style="text-align: center; padding: 4px;">
-											@if (isWithdrawn)
+											if (existingPairing != null && existingPairing.IsBye)
 											{
-												<span style="color: var(--text-muted); font-size: 11px;">-</span>
+												<span class="badge badge-gold" style="font-size: 10px;" title="@existingPairing.Remarks">
+													@(existingPairing.Result == MatchResult.ByeHalf ? "½ Bye" :
+													  existingPairing.Result is MatchResult.ByeFull or MatchResult.ByeFullRequested ? "1 Bye" : "0 Bye")
+												</span>
 											}
-											else if (roundGenerated)
+											else if (existingPairing != null)
 											{
-												<!-- Round already paired/generated -->
-												var existingPairing = Tournament.Rounds
-													.FirstOrDefault(rnd => rnd.RoundNumber == roundNum)?
-													.Pairings.FirstOrDefault(p => p.WhitePlayerId == player.Id || p.BlackPlayerId == player.Id);
-
-												if (existingPairing != null && existingPairing.IsBye)
-												{
-													<span class="badge badge-gold" style="font-size: 10px;" title="@existingPairing.Remarks">
-														@(existingPairing.Result == MatchResult.ByeHalf ? "½ Bye" :
-														  existingPairing.Result is MatchResult.ByeFull or MatchResult.ByeFullRequested ? "1 Bye" : "0 Bye")
-													</span>
-												}
-												else if (existingPairing != null)
-												{
-													<span class="badge badge-blue" style="font-size: 10px;" title="Paired">Paired</span>
-												}
-												else
-												{
-													<span style="color: var(--text-muted); font-size: 11px;">-</span>
-												}
+												<span class="badge badge-blue" style="font-size: 10px;" title="Paired">Paired</span>
 											}
 											else
 											{
-												<!-- Future round: clickable bye cycle button -->
-												<button type="button"
-														class="@GetByeButtonClass(currentBye)"
-														style="padding: 2px 6px; font-size: 11px; min-width: 44px; cursor: pointer;"
-														title="Click to cycle: None -> ½ Pt -> 0 Pt"
-														@onclick="() => CycleByeRequest(player, roundNum)">
-													@GetByeDisplayLabel(currentBye)
-												</button>
+												<span style="color: var(--text-muted); font-size: 11px;">-</span>
 											}
-										</td>
-									}
-
-									<td style="text-align: center;">
-										@if (player.Status == PlayerStatus.Active)
-										{
-											<button class="btn-danger" style="padding: 3px 8px; font-size: 11px;" title="Withdraw player from future rounds" @onclick="() => WithdrawPlayer(player.Id)">
-												@Loc["Attendance_Withdraw"]
-											</button>
 										}
 										else
 										{
-											<button class="btn-secondary" style="padding: 3px 8px; font-size: 11px;" title="Reactivate player" @onclick="() => ReactivatePlayer(player.Id)">
-												@Loc["Attendance_Reactivate"]
+											<!-- Future round: clickable bye cycle button -->
+											<button type="button"
+													class="@GetByeButtonClass(currentBye)"
+													style="padding: 2px 6px; font-size: 11px; min-width: 44px; cursor: pointer;"
+													title="Click to cycle: None -> ½ Pt -> 0 Pt"
+													@onclick="() => CycleByeRequest(player, roundNum)">
+												@GetByeDisplayLabel(currentBye)
 											</button>
 										}
 									</td>
-								</tr>
-							}
-						</tbody>
-					</table>
-				</div>
-			</div>
+								}
 
-			<div class="modal-footer">
-				<button class="btn-primary" @onclick="CloseAsync">
-					<span>@Loc["Common_Done"]</span>
-				</button>
+								<td style="text-align: center;">
+									@if (player.Status == PlayerStatus.Active)
+									{
+										<button class="btn-danger" style="padding: 3px 8px; font-size: 11px;" title="Withdraw player from future rounds" @onclick="() => WithdrawPlayer(player.Id)">
+											@Loc["Attendance_Withdraw"]
+										</button>
+									}
+									else
+									{
+										<button class="btn-secondary" style="padding: 3px 8px; font-size: 11px;" title="Reactivate player" @onclick="() => ReactivatePlayer(player.Id)">
+											@Loc["Attendance_Reactivate"]
+										</button>
+									}
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
 			</div>
 		</div>
-	</div>
+
+		<div class="modal-footer">
+			<button class="btn-primary" @onclick="CloseAsync">
+				<span>@Loc["Common_Done"]</span>
+			</button>
+		</div>
+	</ModalDialog>
 }
 
 @code {
+	private readonly string _titleId = DomIds.Next("attendance-title");
 	[Parameter] public bool IsOpen { get; set; }
 	[Parameter] public Tournament? Tournament { get; set; }
 	[Parameter] public EventCallback OnClose { get; set; }

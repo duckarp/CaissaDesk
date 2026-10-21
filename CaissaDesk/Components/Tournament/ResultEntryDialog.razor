@@ -6,145 +6,144 @@
 
 @if (IsOpen && Pairing != null)
 {
-	<div class="modal-overlay" @onclick="Close">
-		<div class="modal-content" style="max-width: 520px;" @onclick:stopPropagation="true">
-			<div class="modal-header">
-				<div class="modal-title">
-					<span style="color: var(--brand-gold);"><AppIcon Name="pairings" Size="18" /></span>
-					<span>@Loc["Result_DialogTitle", Pairing.RoundNumber, Pairing.BoardNumber]</span>
-				</div>
-				<button class="modal-close-btn" @onclick="Close" type="button" title="@Loc["Common_Close"]">
-					<AppIcon Name="x" Size="15" />
-				</button>
+	<ModalDialog LabelledBy="@_titleId" OnCancel="Close" Style="max-width: 520px;">
+		<div class="modal-header">
+			<div class="modal-title" id="@_titleId">
+				<span style="color: var(--brand-gold);"><AppIcon Name="pairings" Size="18" /></span>
+				<span>@Loc["Result_DialogTitle", Pairing.RoundNumber, Pairing.BoardNumber]</span>
 			</div>
+			<button class="modal-close-btn" @onclick="Close" type="button" title="@Loc["Common_Close"]" aria-label="@Loc["Common_Close"]">
+				<AppIcon Name="x" Size="15" />
+			</button>
+		</div>
 
-			<div class="modal-body">
-				<!-- Matchup Presentation Cards -->
-				<div style="display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; margin-bottom: 24px; padding: 14px; background-color: var(--bg-surface-elevated); border-radius: 8px; border: 1px solid var(--border-subtle);">
-					<!-- White Player -->
-					<div style="display: flex; flex-direction: column; align-items: center; text-align: center;">
-						<div style="width: 28px; height: 28px; border-radius: 50%; background-color: #ffffff; border: 2px solid #e2e8f0; display: flex; align-items: center; justify-content: center; margin-bottom: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.3);">
-							<span style="font-size: 14px; color: #0f172a;">♔</span>
-						</div>
-						<div style="font-weight: 700; font-size: 14px; color: var(--text-primary); line-height: 1.2;">
-							@(WhitePlayer?.FullName ?? (Pairing.IsBye ? "BYE" : Loc["Common_White"]))
-						</div>
-						@if (WhitePlayer != null)
-						{
-							<div style="display: flex; align-items: center; gap: 4px; margin-top: 4px;">
-								@if (!string.IsNullOrEmpty(WhitePlayer.Title))
-								{
-									<span class="badge badge-gold" style="font-size: 10px; padding: 1px 5px;">@WhitePlayer.Title</span>
-								}
-								<span style="font-size: 12px; color: var(--text-secondary); font-family: var(--font-mono);">
-									@(WhitePlayer.FideRating > 0 ? WhitePlayer.FideRating.ToString() : "-")
-								</span>
-							</div>
-						}
+		<div class="modal-body">
+			<!-- Matchup Presentation Cards -->
+			<div style="display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; margin-bottom: 24px; padding: 14px; background-color: var(--bg-surface-elevated); border-radius: 8px; border: 1px solid var(--border-subtle);">
+				<!-- White Player -->
+				<div style="display: flex; flex-direction: column; align-items: center; text-align: center;">
+					<div style="width: 28px; height: 28px; border-radius: 50%; background-color: #ffffff; border: 2px solid #e2e8f0; display: flex; align-items: center; justify-content: center; margin-bottom: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.3);">
+						<span style="font-size: 14px; color: #0f172a;">♔</span>
 					</div>
-
-					<div style="font-weight: 800; font-size: 16px; color: var(--text-muted); padding: 0 4px;">
-						VS
+					<div style="font-weight: 700; font-size: 14px; color: var(--text-primary); line-height: 1.2;">
+						@(WhitePlayer?.FullName ?? (Pairing.IsBye ? "BYE" : Loc["Common_White"]))
 					</div>
-
-					<!-- Black Player -->
-					<div style="display: flex; flex-direction: column; align-items: center; text-align: center;">
-						<div style="width: 28px; height: 28px; border-radius: 50%; background-color: #1e293b; border: 2px solid #475569; display: flex; align-items: center; justify-content: center; margin-bottom: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.3);">
-							<span style="font-size: 14px; color: #f8fafc;">♚</span>
+					@if (WhitePlayer != null)
+					{
+						<div style="display: flex; align-items: center; gap: 4px; margin-top: 4px;">
+							@if (!string.IsNullOrEmpty(WhitePlayer.Title))
+							{
+								<span class="badge badge-gold" style="font-size: 10px; padding: 1px 5px;">@WhitePlayer.Title</span>
+							}
+							<span style="font-size: 12px; color: var(--text-secondary); font-family: var(--font-mono);">
+								@(WhitePlayer.FideRating > 0 ? WhitePlayer.FideRating.ToString() : "-")
+							</span>
 						</div>
-						<div style="font-weight: 700; font-size: 14px; color: var(--text-primary); line-height: 1.2;">
-							@(BlackPlayer?.FullName ?? (Pairing.IsBye ? "BYE" : Loc["Common_Black"]))
-						</div>
-						@if (BlackPlayer != null)
-						{
-							<div style="display: flex; align-items: center; gap: 4px; margin-top: 4px;">
-								@if (!string.IsNullOrEmpty(BlackPlayer.Title))
-								{
-									<span class="badge badge-gold" style="font-size: 10px; padding: 1px 5px;">@BlackPlayer.Title</span>
-								}
-								<span style="font-size: 12px; color: var(--text-secondary); font-family: var(--font-mono);">
-									@(BlackPlayer.FideRating > 0 ? BlackPlayer.FideRating.ToString() : "-")
-								</span>
-							</div>
-						}
-					</div>
+					}
 				</div>
 
-				<!-- Standard Match Result Selection Buttons -->
-				<div style="margin-bottom: 18px;">
-					<label class="form-label" style="margin-bottom: 8px;">@Loc["Common_Result"]</label>
-					<div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
-						<button type="button"
-								class="@GetResultButtonClass(MatchResult.WhiteWin)"
-								@onclick="() => SelectResult(MatchResult.WhiteWin)">
-							<div style="font-size: 18px; font-weight: 800;">1 - 0</div>
-							<div style="font-size: 11px; margin-top: 2px; opacity: 0.85;">@Loc["Result_WhiteWinShort"]</div>
-						</button>
-
-						<button type="button"
-								class="@GetResultButtonClass(MatchResult.Draw)"
-								@onclick="() => SelectResult(MatchResult.Draw)">
-							<div style="font-size: 18px; font-weight: 800;">½ - ½</div>
-							<div style="font-size: 11px; margin-top: 2px; opacity: 0.85;">@Loc["Result_DrawShort"]</div>
-						</button>
-
-						<button type="button"
-								class="@GetResultButtonClass(MatchResult.BlackWin)"
-								@onclick="() => SelectResult(MatchResult.BlackWin)">
-							<div style="font-size: 18px; font-weight: 800;">0 - 1</div>
-							<div style="font-size: 11px; margin-top: 2px; opacity: 0.85;">@Loc["Result_BlackWinShort"]</div>
-						</button>
-					</div>
+				<div style="font-weight: 800; font-size: 16px; color: var(--text-muted); padding: 0 4px;">
+					VS
 				</div>
 
-				<!-- Secondary / Forfeit & Bye Options -->
-				<div style="margin-bottom: 16px;">
-					<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-						<label class="form-label">@Loc["Result_Forfeits"]</label>
+				<!-- Black Player -->
+				<div style="display: flex; flex-direction: column; align-items: center; text-align: center;">
+					<div style="width: 28px; height: 28px; border-radius: 50%; background-color: #1e293b; border: 2px solid #475569; display: flex; align-items: center; justify-content: center; margin-bottom: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.3);">
+						<span style="font-size: 14px; color: #f8fafc;">♚</span>
 					</div>
-					<div style="display: flex; flex-wrap: wrap; gap: 6px;">
-						<button type="button"
-								class="@GetPillClass(MatchResult.WhiteForfeit)"
-								@onclick="() => SelectResult(MatchResult.WhiteForfeit)">
-							@Loc["Result_WhiteForfeit"]
-						</button>
-						<button type="button"
-								class="@GetPillClass(MatchResult.BlackForfeit)"
-								@onclick="() => SelectResult(MatchResult.BlackForfeit)">
-							@Loc["Result_BlackForfeit"]
-						</button>
-						<button type="button"
-								class="@GetPillClass(MatchResult.DoubleForfeit)"
-								@onclick="() => SelectResult(MatchResult.DoubleForfeit)">
-							@Loc["Result_DoubleForfeit"]
-						</button>
-						<button type="button"
-								class="@GetPillClass(MatchResult.NotPlayed)"
-								@onclick="() => SelectResult(MatchResult.NotPlayed)">
-							@Loc["Result_ResetNotPlayed"]
-						</button>
+					<div style="font-weight: 700; font-size: 14px; color: var(--text-primary); line-height: 1.2;">
+						@(BlackPlayer?.FullName ?? (Pairing.IsBye ? "BYE" : Loc["Common_Black"]))
 					</div>
-				</div>
-
-				<!-- Remarks / Arbiter Notes -->
-				<div class="form-group" style="margin-bottom: 0;">
-					<label class="form-label">@Loc["Result_ArbiterRemarks"]</label>
-					<input type="text" class="form-input" @bind="_remarks" placeholder="@Loc["Result_RemarksPlaceholder"]" />
+					@if (BlackPlayer != null)
+					{
+						<div style="display: flex; align-items: center; gap: 4px; margin-top: 4px;">
+							@if (!string.IsNullOrEmpty(BlackPlayer.Title))
+							{
+								<span class="badge badge-gold" style="font-size: 10px; padding: 1px 5px;">@BlackPlayer.Title</span>
+							}
+							<span style="font-size: 12px; color: var(--text-secondary); font-family: var(--font-mono);">
+								@(BlackPlayer.FideRating > 0 ? BlackPlayer.FideRating.ToString() : "-")
+							</span>
+						</div>
+					}
 				</div>
 			</div>
 
-			<div class="modal-footer">
-				<button class="btn-secondary" @onclick="Close">@Loc["Common_Cancel"]</button>
-				<button class="btn-primary" @onclick="SaveResult">
-					<AppIcon Name="check" Size="14" />
-					<span>@Loc["Result_ConfirmBtn"]</span>
-				</button>
+			<!-- Standard Match Result Selection Buttons -->
+			<div style="margin-bottom: 18px;">
+				<label class="form-label" style="margin-bottom: 8px;">@Loc["Common_Result"]</label>
+				<div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+					<button type="button"
+							class="@GetResultButtonClass(MatchResult.WhiteWin)"
+							@onclick="() => SelectResult(MatchResult.WhiteWin)">
+						<div style="font-size: 18px; font-weight: 800;">1 - 0</div>
+						<div style="font-size: 11px; margin-top: 2px; opacity: 0.85;">@Loc["Result_WhiteWinShort"]</div>
+					</button>
+
+					<button type="button"
+							class="@GetResultButtonClass(MatchResult.Draw)"
+							@onclick="() => SelectResult(MatchResult.Draw)">
+						<div style="font-size: 18px; font-weight: 800;">½ - ½</div>
+						<div style="font-size: 11px; margin-top: 2px; opacity: 0.85;">@Loc["Result_DrawShort"]</div>
+					</button>
+
+					<button type="button"
+							class="@GetResultButtonClass(MatchResult.BlackWin)"
+							@onclick="() => SelectResult(MatchResult.BlackWin)">
+						<div style="font-size: 18px; font-weight: 800;">0 - 1</div>
+						<div style="font-size: 11px; margin-top: 2px; opacity: 0.85;">@Loc["Result_BlackWinShort"]</div>
+					</button>
+				</div>
+			</div>
+
+			<!-- Secondary / Forfeit & Bye Options -->
+			<div style="margin-bottom: 16px;">
+				<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+					<label class="form-label">@Loc["Result_Forfeits"]</label>
+				</div>
+				<div style="display: flex; flex-wrap: wrap; gap: 6px;">
+					<button type="button"
+							class="@GetPillClass(MatchResult.WhiteForfeit)"
+							@onclick="() => SelectResult(MatchResult.WhiteForfeit)">
+						@Loc["Result_WhiteForfeit"]
+					</button>
+					<button type="button"
+							class="@GetPillClass(MatchResult.BlackForfeit)"
+							@onclick="() => SelectResult(MatchResult.BlackForfeit)">
+						@Loc["Result_BlackForfeit"]
+					</button>
+					<button type="button"
+							class="@GetPillClass(MatchResult.DoubleForfeit)"
+							@onclick="() => SelectResult(MatchResult.DoubleForfeit)">
+						@Loc["Result_DoubleForfeit"]
+					</button>
+					<button type="button"
+							class="@GetPillClass(MatchResult.NotPlayed)"
+							@onclick="() => SelectResult(MatchResult.NotPlayed)">
+						@Loc["Result_ResetNotPlayed"]
+					</button>
+				</div>
+			</div>
+
+			<!-- Remarks / Arbiter Notes -->
+			<div class="form-group" style="margin-bottom: 0;">
+				<label class="form-label">@Loc["Result_ArbiterRemarks"]</label>
+				<input type="text" class="form-input" @bind="_remarks" placeholder="@Loc["Result_RemarksPlaceholder"]" />
 			</div>
 		</div>
-	</div>
+
+		<div class="modal-footer">
+			<button class="btn-secondary" @onclick="Close">@Loc["Common_Cancel"]</button>
+			<button class="btn-primary" @onclick="SaveResult">
+				<AppIcon Name="check" Size="14" />
+				<span>@Loc["Result_ConfirmBtn"]</span>
+			</button>
+		</div>
+	</ModalDialog>
 }
 
 @code {
+	private readonly string _titleId = DomIds.Next("result-title");
 	[Parameter] public bool IsOpen { get; set; }
 	[Parameter] public Pairing? Pairing { get; set; }
 	[Parameter] public Player? WhitePlayer { get; set; }

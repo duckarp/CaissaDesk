@@ -100,19 +100,53 @@
 			<img src="icon-128.png" alt="CaissaDesk" class="app-splash-logo" />
 			<div class="app-splash-title">CaissaDesk</div>
 			<div class="app-splash-spinner"></div>
-			<div class="app-splash-text">App is loading, please wait...</div>
+			<div class="app-splash-text" data-l10n="loading">App is loading, please wait...</div>
 		</div>
 	</div>
-	<div id="blazor-error-ui" style="display: none;">
-		An unhandled error has occurred.
-		<a href="" class="reload">Reload</a>
-		<a class="dismiss">🗙</a>
+	<div id="blazor-error-ui" style="display: none;" role="alert">
+		<span data-l10n="error">An unhandled error has occurred.</span>
+		<a href="" class="reload" data-l10n="reload">Reload</a>
+		<a class="dismiss" role="button" tabindex="0" aria-label="Dismiss" data-l10n-label="dismiss">🗙</a>
 	</div>
 	<script>
 		window.printCurrentPage = function() {
 			window.print();
 		};
+
+		// Static texts shown before Blazor starts. The UI language is remembered in localStorage by the app
+		// (caissaLocale.set, called from MainLayout); before the first run the system language is used.
+		window.caissaLocale = (function () {
+			var texts = {
+				en: { loading: "App is loading, please wait...", error: "An unhandled error has occurred.", reload: "Reload", dismiss: "Dismiss" },
+				sk: { loading: "Aplikácia sa načítava, čakajte prosím...", error: "Vyskytla sa neočakávaná chyba.", reload: "Načítať znova", dismiss: "Zavrieť" }
+			};
+			function stored() {
+				try { return window.localStorage.getItem("caissadesk.lang"); } catch (e) { return null; }
+			}
+			function apply(code) {
+				var lang = texts[code] ? code : "en";
+				var t = texts[lang];
+				document.documentElement.lang = lang;
+				Array.prototype.forEach.call(document.querySelectorAll("[data-l10n]"), function (el) {
+					var v = t[el.getAttribute("data-l10n")];
+					if (v) el.textContent = v;
+				});
+				Array.prototype.forEach.call(document.querySelectorAll("[data-l10n-label]"), function (el) {
+					var v = t[el.getAttribute("data-l10n-label")];
+					if (v) el.setAttribute("aria-label", v);
+				});
+			}
+			var initial = stored() || ((navigator.language || "en").toLowerCase().indexOf("sk") === 0 ? "sk" : "en");
+			apply(initial);
+			return {
+				set: function (code) {
+					try { window.localStorage.setItem("caissadesk.lang", code); } catch (e) { }
+					apply(code);
+				}
+			};
+		})();
 	</script>
+	<script src="js/dialog.js"></script>
 	<script src="_framework/blazor.webview.js"></script>
 </body>
 </html>

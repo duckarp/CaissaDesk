@@ -9,103 +9,101 @@
 
 @if (IsOpen && Tournament != null && Round != null)
 {
-	<div class="modal-overlay" @onclick="CloseAsync">
-		<div class="modal-content" style="max-width: 560px;" @onclick:stopPropagation="true">
-			<div class="modal-header">
-				<div class="modal-title">
-					<span style="color: var(--brand-gold);"><AppIcon Name="edit" Size="18" /></span>
-					<span>@(Pairing == null ? Loc["Manual_TitleAdd"] : Loc["Manual_TitleEdit", Pairing.BoardNumber, Round.RoundNumber])</span>
-				</div>
-				<button class="modal-close-btn" @onclick="CloseAsync" type="button" title="@Loc["Common_Close"]">
-					<AppIcon Name="x" Size="15" />
-				</button>
+	<ModalDialog LabelledBy="@_titleId" OnCancel="CloseAsync" Style="max-width: 560px;">
+		<div class="modal-header">
+			<div class="modal-title" id="@_titleId">
+				<span style="color: var(--brand-gold);"><AppIcon Name="edit" Size="18" /></span>
+				<span>@(Pairing == null ? Loc["Manual_TitleAdd"] : Loc["Manual_TitleEdit", Pairing.BoardNumber, Round.RoundNumber])</span>
+			</div>
+			<button class="modal-close-btn" @onclick="CloseAsync" type="button" title="@Loc["Common_Close"]" aria-label="@Loc["Common_Close"]">
+				<AppIcon Name="x" Size="15" />
+			</button>
+		</div>
+
+		<div class="modal-body" style="display: flex; flex-direction: column; gap: 16px;">
+			<div class="form-group">
+				<label class="form-label">@Loc["Manual_BoardNumber"]</label>
+				<input type="number" class="form-input" min="1" max="500" @bind="_boardNumber" />
 			</div>
 
-			<div class="modal-body" style="display: flex; flex-direction: column; gap: 16px;">
-				<div class="form-group">
-					<label class="form-label">@Loc["Manual_BoardNumber"]</label>
-					<input type="number" class="form-input" min="1" max="500" @bind="_boardNumber" />
-				</div>
+			<!-- White Player Selector -->
+			<div class="form-group">
+				<label class="form-label">@Loc["Manual_WhitePlayer"]</label>
+				<select class="form-select" @bind="_whitePlayerId">
+					<option value="">@Loc["Manual_SelectWhite"]</option>
+					@foreach (var p in Tournament.Players.OrderBy(p => p.StartRank))
+					{
+						<option value="@p.Id">
+							@p.StartRank. @(!string.IsNullOrEmpty(p.Title) ? $"[{p.Title}] " : "")@p.FullName (@(p.FideRating > 0 ? p.FideRating.ToString() : "-"))
+						</option>
+					}
+				</select>
+			</div>
 
-				<!-- White Player Selector -->
-				<div class="form-group">
-					<label class="form-label">@Loc["Manual_WhitePlayer"]</label>
-					<select class="form-select" @bind="_whitePlayerId">
-						<option value="">@Loc["Manual_SelectWhite"]</option>
-						@foreach (var p in Tournament.Players.OrderBy(p => p.StartRank))
+			<!-- Black Player Selector (or Bye) -->
+			<div class="form-group">
+				<label class="form-label">@Loc["Manual_BlackPlayer"]</label>
+				<select class="form-select" @bind="_blackPlayerId">
+					<option value="">@Loc["Manual_NoneBye"]</option>
+					@foreach (var p in Tournament.Players.OrderBy(p => p.StartRank))
+					{
+						if (p.Id != _whitePlayerId)
 						{
 							<option value="@p.Id">
 								@p.StartRank. @(!string.IsNullOrEmpty(p.Title) ? $"[{p.Title}] " : "")@p.FullName (@(p.FideRating > 0 ? p.FideRating.ToString() : "-"))
 							</option>
 						}
-					</select>
-				</div>
-
-				<!-- Black Player Selector (or Bye) -->
-				<div class="form-group">
-					<label class="form-label">@Loc["Manual_BlackPlayer"]</label>
-					<select class="form-select" @bind="_blackPlayerId">
-						<option value="">@Loc["Manual_NoneBye"]</option>
-						@foreach (var p in Tournament.Players.OrderBy(p => p.StartRank))
-						{
-							if (p.Id != _whitePlayerId)
-							{
-								<option value="@p.Id">
-									@p.StartRank. @(!string.IsNullOrEmpty(p.Title) ? $"[{p.Title}] " : "")@p.FullName (@(p.FideRating > 0 ? p.FideRating.ToString() : "-"))
-								</option>
-							}
-						}
-					</select>
-				</div>
-
-				<!-- Initial Match Result -->
-				<div class="form-group">
-					<label class="form-label">@Loc["Common_Result"]</label>
-					<select class="form-select" @bind="_result">
-						<option value="@MatchResult.NotPlayed">@Loc["Result_ResetNotPlayed"]</option>
-						<option value="@MatchResult.WhiteWin">@Loc["Result_WhiteWin"]</option>
-						<option value="@MatchResult.Draw">@Loc["Result_Draw"]</option>
-						<option value="@MatchResult.BlackWin">@Loc["Result_BlackWin"]</option>
-						<option value="@MatchResult.WhiteForfeit">@Loc["Result_WhiteForfeit"]</option>
-						<option value="@MatchResult.BlackForfeit">@Loc["Result_BlackForfeit"]</option>
-						<option value="@MatchResult.DoubleForfeit">@Loc["Result_DoubleForfeit"]</option>
-						<option value="@MatchResult.ByeFull">@Loc["Result_FullBye"]</option>
-						<option value="@MatchResult.ByeFullRequested">@Loc["Result_FullByeRequested"]</option>
-						<option value="@MatchResult.ByeHalf">@Loc["Result_HalfBye"]</option>
-						<option value="@MatchResult.ByeZero">@Loc["Result_ZeroBye"]</option>
-					</select>
-				</div>
-
-				<!-- Remarks -->
-				<div class="form-group">
-					<label class="form-label">@Loc["Result_ArbiterRemarks"]</label>
-					<input type="text" class="form-input" placeholder="@Loc["Result_RemarksPlaceholder"]" @bind="_remarks" />
-				</div>
+					}
+				</select>
 			</div>
 
-			<div class="modal-footer" style="justify-content: space-between;">
-				@if (Pairing != null)
-				{
-					<button class="btn-danger" @onclick="RequestDeleteCurrentPairing">
-						<AppIcon Name="trash" Size="13" />
-						<span>@Loc["Manual_DeleteBoard"]</span>
-					</button>
-				}
-				else
-				{
-					<div></div>
-				}
+			<!-- Initial Match Result -->
+			<div class="form-group">
+				<label class="form-label">@Loc["Common_Result"]</label>
+				<select class="form-select" @bind="_result">
+					<option value="@MatchResult.NotPlayed">@Loc["Result_ResetNotPlayed"]</option>
+					<option value="@MatchResult.WhiteWin">@Loc["Result_WhiteWin"]</option>
+					<option value="@MatchResult.Draw">@Loc["Result_Draw"]</option>
+					<option value="@MatchResult.BlackWin">@Loc["Result_BlackWin"]</option>
+					<option value="@MatchResult.WhiteForfeit">@Loc["Result_WhiteForfeit"]</option>
+					<option value="@MatchResult.BlackForfeit">@Loc["Result_BlackForfeit"]</option>
+					<option value="@MatchResult.DoubleForfeit">@Loc["Result_DoubleForfeit"]</option>
+					<option value="@MatchResult.ByeFull">@Loc["Result_FullBye"]</option>
+					<option value="@MatchResult.ByeFullRequested">@Loc["Result_FullByeRequested"]</option>
+					<option value="@MatchResult.ByeHalf">@Loc["Result_HalfBye"]</option>
+					<option value="@MatchResult.ByeZero">@Loc["Result_ZeroBye"]</option>
+				</select>
+			</div>
 
-				<div style="display: flex; gap: 8px;">
-					<button class="btn-secondary" @onclick="CloseAsync">@Loc["Common_Cancel"]</button>
-					<button class="btn-primary" @onclick="SavePairingAsync" disabled="@string.IsNullOrEmpty(_whitePlayerId)">
-						<AppIcon Name="check" Size="13" />
-						<span>@Loc["Manual_SavePairing"]</span>
-					</button>
-				</div>
+			<!-- Remarks -->
+			<div class="form-group">
+				<label class="form-label">@Loc["Result_ArbiterRemarks"]</label>
+				<input type="text" class="form-input" placeholder="@Loc["Result_RemarksPlaceholder"]" @bind="_remarks" />
 			</div>
 		</div>
-	</div>
+
+		<div class="modal-footer" style="justify-content: space-between;">
+			@if (Pairing != null)
+			{
+				<button class="btn-danger" @onclick="RequestDeleteCurrentPairing">
+					<AppIcon Name="trash" Size="13" />
+					<span>@Loc["Manual_DeleteBoard"]</span>
+				</button>
+			}
+			else
+			{
+				<div></div>
+			}
+
+			<div style="display: flex; gap: 8px;">
+				<button class="btn-secondary" @onclick="CloseAsync">@Loc["Common_Cancel"]</button>
+				<button class="btn-primary" @onclick="SavePairingAsync" disabled="@string.IsNullOrEmpty(_whitePlayerId)">
+					<AppIcon Name="check" Size="13" />
+					<span>@Loc["Manual_SavePairing"]</span>
+				</button>
+			</div>
+		</div>
+	</ModalDialog>
 
 	<ConfirmModal IsOpen="_showConfirmDelete"
 				  Title="@_confirmDeleteTitle"
@@ -120,6 +118,7 @@
 }
 
 @code {
+	private readonly string _titleId = DomIds.Next("manual-pairing-title");
 	[Parameter] public bool IsOpen { get; set; }
 	[Parameter] public Tournament? Tournament { get; set; }
 	[Parameter] public Round? Round { get; set; }
