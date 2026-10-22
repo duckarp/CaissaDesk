@@ -7,6 +7,12 @@ public class AppSettings
     // General Preferences
     public string Language { get; set; } = "en";
 
+    /// <summary>
+    /// GPU rendering of the Windows WebView2 control; read at startup by Program, so changes need a restart.
+    /// Turning it off helps drivers that leave the window black or flickering.
+    /// </summary>
+    public bool HardwareAccelerationEnabled { get; set; } = true;
+
     // Tournament Defaults
     public string DefaultChiefArbiter { get; set; } = "";
     public string DefaultDeputyArbiter { get; set; } = string.Empty;

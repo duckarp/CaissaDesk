@@ -49,6 +49,16 @@ internal class Program
 
         SetLinuxProgramName("caissadesk", log);
 
+        // WebView2 reads this when the browser process starts, so it must be set before the window exists
+        string? windowsBrowserArgs = null;
+        if (OperatingSystem.IsWindows())
+        {
+            bool hardwareAcceleration = WebViewOptions.IsHardwareAccelerationEnabled(args, AppSettingsService.DefaultConfigFilePath);
+            windowsBrowserArgs = WebViewOptions.BuildWindowsBrowserArguments(hardwareAcceleration);
+            Environment.SetEnvironmentVariable("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", windowsBrowserArgs);
+            log.LogInformation("WebView2 browser arguments: {Arguments}", windowsBrowserArgs);
+        }
+
         var appBuilder = PhotinoBlazorAppBuilder.CreateDefault(args);
 
         // Register application services
@@ -149,6 +159,18 @@ internal class Program
 #else
             .SetDevToolsEnabled(false);
 #endif
+
+        if (windowsBrowserArgs != null)
+        {
+            try
+            {
+                app.MainWindow.SetBrowserControlInitParameters(windowsBrowserArgs);
+            }
+            catch (Exception ex)
+            {
+                log.LogWarning(ex, "Could not set WebView2 browser arguments on the window.");
+            }
+        }
 
         if (!string.IsNullOrEmpty(iconFile) && File.Exists(iconFile))
         {

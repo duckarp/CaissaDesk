@@ -568,6 +568,9 @@ public class LocalizationService : ILocalizationService
         ["Settings_LangRegional"] = "Language & Regional",
         ["Settings_InterfaceLang"] = "Interface Language",
         ["Settings_InterfaceLangDesc"] = "Select the language for arbiter menus and reports",
+        ["Settings_HardwareAccel"] = "Hardware acceleration",
+        ["Settings_HardwareAccelDesc"] = "Render the interface on the GPU. Turn off if the window stays black or flickers. Takes effect after a restart.",
+        ["Settings_HardwareAccelSaved"] = "Saved. Restart CaissaDesk to apply the change.",
 
         // Tournament import errors
         ["Dashboard_ImportInvalid"] = "Could not import \"{0}\": {1}",
@@ -1197,6 +1200,9 @@ public class LocalizationService : ILocalizationService
         ["Settings_LangRegional"] = "Jazyk a región",
         ["Settings_InterfaceLang"] = "Jazyk rozhrania",
         ["Settings_InterfaceLangDesc"] = "Vyberte jazyk pre ponuky rozhodcu a výstupy",
+        ["Settings_HardwareAccel"] = "Hardvérová akcelerácia",
+        ["Settings_HardwareAccelDesc"] = "Vykresľovať rozhranie na grafickej karte. Vypnite, ak okno zostáva čierne alebo bliká. Prejaví sa po reštarte.",
+        ["Settings_HardwareAccelSaved"] = "Uložené. Zmena sa prejaví po reštarte CaissaDesk.",
 
         // Tournament import errors
         ["Dashboard_ImportInvalid"] = "Súbor \"{0}\" sa nepodarilo importovať: {1}",

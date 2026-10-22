@@ -113,6 +113,19 @@
 							}
 						</div>
 					</div>
+
+					@if (OperatingSystem.IsWindows())
+					{
+						<div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; padding: 16px; margin-top: 12px; background-color: var(--bg-surface-elevated); border: 1px solid var(--border-subtle); border-radius: 8px;">
+							<div>
+								<label for="@($"{_uid}-hwAccel")" style="font-weight: 600; color: var(--text-primary); font-size: 14px; cursor: pointer;">@Loc["Settings_HardwareAccel"]</label>
+								<div id="@($"{_uid}-hwAccel-desc")" style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">@Loc["Settings_HardwareAccelDesc"]</div>
+							</div>
+							<input type="checkbox" id="@($"{_uid}-hwAccel")" aria-describedby="@($"{_uid}-hwAccel-desc")"
+								   checked="@AppSettings.Settings.HardwareAccelerationEnabled" @onchange="SetHardwareAccelerationAsync"
+								   style="cursor: pointer; width: 16px; height: 16px; accent-color: var(--brand-gold);" />
+						</div>
+					}
 				</div>
 			}
 			else if (_activeCategory == "defaults")
@@ -977,6 +990,20 @@
 		if (!ExternalLinks.TryOpen(url))
 		{
 			Notifications.ShowError(Loc["Toast_OpenLinkFailed", url]);
+		}
+	}
+
+	private async Task SetHardwareAccelerationAsync(ChangeEventArgs e)
+	{
+		bool enabled = e.Value is true;
+		try
+		{
+			await AppSettings.UpdateSettingsAsync(s => s.HardwareAccelerationEnabled = enabled);
+			Notifications.ShowSuccess(Loc["Settings_HardwareAccelSaved"]);
+		}
+		catch (Exception ex)
+		{
+			Notifications.ShowError(Loc["Settings_SaveFailed", ex.Message]);
 		}
 	}
 

@@ -88,6 +88,8 @@ Pre-built standalone desktop packages for **Linux (x64)** and **Windows (x64)** 
 2. Extract the archive.
 3. Run `CaissaDesk.exe`.
 
+*(Uses the Microsoft Edge WebView2 Runtime, preinstalled on Windows 10/11. If the window stays black, start it once as `CaissaDesk.exe --disable-gpu` and turn off **Settings → General → Hardware acceleration**. Logs are in `%LOCALAPPDATA%\CaissaDesk\logs`.)*
+
 ### Linux (x64)
 1. Download `CaissaDesk-linux-x64.tar.gz` from the latest release.
 2. Extract the archive:

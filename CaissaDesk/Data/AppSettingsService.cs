@@ -55,12 +55,13 @@ public class AppSettingsService : IAppSettingsService
             return _customConfigPath;
         }
 
-        string configDir = Path.Combine(
-            AppPaths.LocalAppDataRoot,
-            "CaissaDesk");
-        Directory.CreateDirectory(configDir);
-        return Path.Combine(configDir, "desk_settings.json");
+        string path = DefaultConfigFilePath;
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        return path;
     }
+
+    /// <summary>Where the settings live unless a custom path is given (no directory is created).</summary>
+    public static string DefaultConfigFilePath => Path.Combine(AppPaths.LocalAppDataRoot, "CaissaDesk", "desk_settings.json");
 
     private void LoadSettingsSync()
     {
